@@ -1,10 +1,46 @@
 # 磁力方块探险家 / Magnet Island
 
-Rust + Bevy 的离线 3D 儿童编程游戏原型。以柔和纯色的立体磁力方块为材料，先面向安卓，提供 macOS 桌面调试版。不是网页或 WebView 应用。
+Rust + Bevy 制作的离线小游戏合集，以立体磁力方块编程世界为主线，包含益智、动作与休闲玩法。先面向安卓，提供 macOS 桌面调试版。不是网页或 WebView 应用。
+
+## 游戏画面一览
+
+以下直接使用项目已有的实机截图。点击图片可查看大图；每张图下方是对应的画面与玩法介绍。
+
+| 游戏 | 游戏 |
+| --- | --- |
+| **磁力小岛**<br><a href="docs/screenshots/island.jpg"><img src="docs/screenshots/island.jpg" width="360" alt="磁力小岛游戏画面"></a><br>在立体方块小岛上搭桥、放置材料，再编排指令让机器人抵达目标。 | **2048 球球**<br><a href="docs/screenshots/ball2048.jpg"><img src="docs/screenshots/ball2048.jpg" width="240" alt="2048 球球游戏画面"></a><br>在三条彩色跑道之间换道，让相同数字的球相撞合并。 |
+| **方块消消乐**<br><a href="docs/screenshots/tetris.jpg"><img src="docs/screenshots/tetris.jpg" width="240" alt="方块消消乐游戏画面"></a><br>在竖屏棋盘中移动、旋转下落方块，拼满一行即可消除。 | **数学游乐岛**<br><a href="docs/screenshots/math.jpg"><img src="docs/screenshots/math.jpg" width="360" alt="数学游乐岛游戏画面"></a><br>根据岛上的情景题选择答案，也能展开实物帮助数数。 |
+| **识字小岛**<br><a href="docs/screenshots/literacy.jpg"><img src="docs/screenshots/literacy.jpg" width="360" alt="识字小岛游戏画面"></a><br>看图认字、组词闯关，答题后会得到即时提示。 | **小小消防队**<br><a href="docs/screenshots/fire.jpg"><img src="docs/screenshots/fire.jpg" width="360" alt="小小消防队游戏画面"></a><br>在消防场景里判断情况，选择救援工具完成任务。 |
+| **神秘博物馆侦探**<br><a href="docs/screenshots/detective.jpg"><img src="docs/screenshots/detective.jpg" width="360" alt="神秘博物馆侦探游戏画面"></a><br>跟随线索与脚印，在博物馆里逐步找回展品。 | **太空种植园**<br><a href="docs/screenshots/farm.jpg"><img src="docs/screenshots/farm.jpg" width="360" alt="太空种植园游戏画面"></a><br>调整光照、水分和温度，让星球植物成长。 |
+| **彩虹钢琴派对**<br><a href="docs/screenshots/piano.jpg"><img src="docs/screenshots/piano.jpg" width="360" alt="彩虹钢琴派对游戏画面"></a><br>看着彩色音符落到琴键，跟着节奏弹奏。 | **迷你坦克大战**<br><a href="docs/screenshots/tank.jpg"><img src="docs/screenshots/tank.jpg" width="360" alt="迷你坦克大战游戏画面"></a><br>在砖墙迷宫中移动、躲避炮弹并守住基地。 |
+| **彩虹泡泡岛**<br><a href="docs/screenshots/bubble.jpg"><img src="docs/screenshots/bubble.jpg" width="360" alt="彩虹泡泡岛游戏画面"></a><br>沿着瞄准线发射泡泡，连接同色泡泡将它们消除。 | **泡泡爆破王**<br><a href="docs/screenshots/bomber.jpg"><img src="docs/screenshots/bomber.jpg" width="360" alt="泡泡爆破王游戏画面"></a><br>在方格迷宫中放下水泡，避开水柱并追击怪物。 |
+| **水果忍者派对**<br><a href="docs/screenshots/fruit.jpg"><img src="docs/screenshots/fruit.jpg" width="360" alt="水果忍者派对游戏画面"></a><br>划开飞起的水果获取分数，小心混在其中的炸弹。 | **口袋大富翁**<br><a href="docs/screenshots/fortune.jpg"><img src="docs/screenshots/fortune.jpg" width="360" alt="口袋大富翁游戏画面"></a><br>沿着彩色小镇棋盘掷骰前进，购买地块并建起房屋。 |
+| **水果转转乐**<br><a href="docs/screenshots/slots.jpg"><img src="docs/screenshots/slots.jpg" width="360" alt="水果转转乐游戏画面"></a><br>转动三列水果图案，按中间一行结算免费虚拟积分。 | **经典水果机**<br><a href="docs/screenshots/arcade.jpg"><img src="docs/screenshots/arcade.jpg" width="360" alt="经典水果机游戏画面"></a><br>在复古机柜上选择水果，看环形跑灯停在哪一格。 |
+| **捕鱼达人**<br><a href="docs/screenshots/fishing.jpg"><img src="docs/screenshots/fishing.jpg" width="360" alt="捕鱼达人游戏画面"></a><br>向游动的鱼群撒网，捕获不同鱼种获得金币。 | **小熊寻蜜**<br><a href="docs/screenshots/honey.jpg"><img src="docs/screenshots/honey.jpg" width="360" alt="小熊寻蜜游戏画面"></a><br>等摇摆抓钩对准蜂蜜罐，再放下抓钩把蜂蜜带回小熊身边。 |
+
+游戏库还有这些入口；目前项目中没有它们的现成实机截图：
+
+- **云桥工程师**：在云海间放置方块，用指令引导机器人过桥。
+- **小小动物餐厅**：在方块世界里布置餐桌、厨房和食材区。
+- **自由搭建工坊**：使用十种磁力方块自由搭建，作品保存在本机档案。
+- **像素突击队**：横版奔跑、跳跃和射击，抵挡机械小怪。
+- **蘑菇跳跳岛**：踩小怪、收金币，跑到终点旗帜。
+- **星际飞行队**：驾驶战机左右移动，射击敌机并躲开陨石。
+- **中秋博饼会**：摇六颗骰子，收集本局的中秋福礼。
+- **贪吃蛇**：控制小蛇吃果实，避开边界和自己的身体。
+- **扫雷**：翻开安全格，并用旗帜标记可疑的地雷。
+- **经典 2048**：滑动数字方块，合并成更大的数字。
+- **华容道**：移动棋子，为曹操打开通往出口的路。
+- **推箱子**：把箱子逐个推到发光的目标格。
+- **数独乐园**：选择 4×4 或 9×9 棋盘，按行、列和宫格填数。
+- **霓虹打砖块**：移动挡板反弹小球，打碎砖块并接住道具。
+- **元素小实验室**：在元素周期表上选择元素，完成配方拼图。
+- **光路小侦探**：旋转镜片，让光束反射到水晶。
+- **花园守卫**：收集阳光、种下植物，守住五条花园战线。
 
 ## 这一版可以做什么
 
-- 游戏库入口：磁力小岛、云桥工程师、水晶花园、自由搭建工坊，以及独立的 2048 球球游戏。
+- 游戏库入口：磁力小岛、云桥工程师、小小动物餐厅、自由搭建工坊，以及独立的 2048 球球游戏。
 - 2048 球球游戏从 2 开始自动向前滚动，左右换道；撞到相同数字会合并翻倍，撞到陷阱会失败。
 - 草地、木头、石头、水晶四种方块；点击放置、拆除、撤销，网格吸附。
 - 左右拖动旋转、上下拖动调整俯仰视角、滚轮/双指缩放，也有明确的旋转和缩放按钮。
@@ -192,3 +228,7 @@ MAGNET_CAPTURE=output/preview.png MAGNET_SAVE_DIR=/tmp/magnet-preview cargo run 
 屏幕方向按当前游戏切换：飞机大战（SkyRaid）、2048 球球、方块消消乐、数独和光路小侦探竖屏，游戏库和其他游戏使用横屏。返回游戏库立即请求恢复横屏。安卓通过 Activity 的方向请求切换，旋转配置变化由现有 Activity 处理，保留游戏状态。
 
 坦克大战触屏控制：左侧 180 点圆形摇杆支持按住连续移动、滑动换向和松手停止，中心死区防止轻微抖动误走；右侧独立大开火键支持按住连发、双指边走边打。移动触点绑定手指 ID，不受界面重建或另一根手指影响。
+
+## 开源协议
+
+项目代码与原创素材采用 [MIT License](LICENSE)。随项目提供的 Noto Sans SC 字体遵循 [SIL Open Font License 1.1](assets/fonts/OFL.txt)。
