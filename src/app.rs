@@ -3143,6 +3143,8 @@ struct Session {
     material: Material,
     erase: bool,
     build: bool,
+    island_3d_view: bool,
+    island_menu_open: bool,
     editor_open: bool,
     undo: Vec<game::World>,
     message: String,
@@ -3253,6 +3255,8 @@ impl Session {
             material: Material::Wood,
             erase: false,
             build: true,
+            island_3d_view: false,
+            island_menu_open: false,
             editor_open: std::env::var_os("MAGNET_CAPTURE").is_some()
                 && std::env::var("MAGNET_PREVIEW_MODE").as_deref() == Ok("code"),
             undo: vec![],
@@ -3264,6 +3268,7 @@ impl Session {
             pitch: 0.762,
             zoom: 16.0,
         };
+        session.island_3d_view = !island_base_intact(&session.work);
         if let Some(mode) = match std::env::var("MAGNET_START_GAME").as_deref() {
             Ok("fire") => Some(GameMode::Firefighters),
             Ok("detective") => Some(GameMode::Detective),
@@ -3606,6 +3611,19 @@ impl Session {
     }
 }
 
+fn island_base_intact(work: &Work) -> bool {
+    game::level(work.level)
+        .blocks
+        .iter()
+        .filter(|block| block.pos[1] == 0 && block.material == Material::Grass)
+        .all(|block| work.world.material(block.pos) == Some(Material::Grass))
+}
+
+fn free_build_base_intact(work: &Work) -> bool {
+    game::free_build_world().blocks.iter().all(|block|
+        work.world.material(block.pos) == Some(Material::Grass))
+}
+
 fn select_game(s: &mut Session, mode: GameMode) {
     s.help_open = false;
     s.magnet_modes_open = false;
@@ -3626,8 +3644,10 @@ fn select_game(s: &mut Session, mode: GameMode) {
     s.yaw = 0.68;
     s.pitch = 0.762;
     s.zoom = 16.0;
+    s.island_3d_view = false;
     if mode == GameMode::Island {
         s.work = s.save.profiles[&s.save.active].clone();
+        s.island_3d_view = !island_base_intact(&s.work);
         s.build = true;
         s.message = game::LEVEL_HINTS[s.work.level].into();
     } else {
@@ -3814,9 +3834,15 @@ struct BuilderBackdrop;
 #[derive(Component)]
 struct BuilderBackdropCamera;
 #[derive(Component)]
+struct IslandPlate;
+#[derive(Component)]
+struct IslandGoalSprite;
+#[derive(Component)]
 struct BuilderGhost;
 #[derive(Component)]
 struct Robot;
+#[derive(Component)]
+struct IslandRobotBillboard;
 #[derive(Component)]
 struct GameCamera;
 #[derive(Component)]
@@ -3959,10 +3985,13 @@ enum Action {
     Next,
     Previous,
     Undo,
+    ClearFreeBuild,
     Rotate,
     ResetView,
     ZoomIn,
     ZoomOut,
+    ToggleIslandView,
+    ToggleIslandMenu,
     Finish,
     ToggleEditor,
 }
@@ -4097,7 +4126,13 @@ struct FruitSlash {
 #[derive(Resource)]
 struct Art {
     cube: Handle<Mesh>,
+    round: Handle<Mesh>,
     grass: Handle<StandardMaterial>,
+    island_grass: Handle<StandardMaterial>,
+    island_cliff: Handle<StandardMaterial>,
+    island_wood: Handle<StandardMaterial>,
+    island_ghost: Handle<StandardMaterial>,
+    island_crystal: Handle<StandardMaterial>,
     wood: Handle<StandardMaterial>,
     stone: Handle<StandardMaterial>,
     crystal: Handle<StandardMaterial>,
@@ -4135,6 +4170,11 @@ struct Art {
     garden_enemies: Handle<Image>,
     garden_props: Handle<Image>,
     builder_backdrop: Handle<Image>,
+    island_landscape: Handle<Image>,
+    island_free_build: Handle<Image>,
+    island_goal_star: Handle<Image>,
+    island_star_empty: Handle<Image>,
+    island_materials: Handle<Image>,
     placement_preview: Handle<StandardMaterial>,
     snake_reference: Handle<Image>,
 }
@@ -4525,6 +4565,7 @@ pub fn run() {
                 (sync_game_orientation, layout_camera).chain(),
                 rebuild_world,
                 animate_robot,
+                sync_island_robot_billboard,
                 animate_crystals,
                 animate_ball_scene,
                 rebuild_ui,
@@ -4742,7 +4783,36 @@ fn setup(
     });
     let art = Art {
         cube: meshes.add(Cuboid::new(1., 1., 1.)),
+        round: meshes.add(Sphere::new(1.).mesh().uv(16, 12)),
         grass,
+        island_grass: materials.add(StandardMaterial {
+            base_color_texture: Some(assets.load("builders/island-grass-v2.png")),
+            perceptual_roughness: 0.9,
+            ..default()
+        }),
+        island_cliff: materials.add(StandardMaterial {
+            base_color_texture: Some(assets.load("builders/island-cliff-v2.png")),
+            perceptual_roughness: 0.9,
+            ..default()
+        }),
+        island_wood: materials.add(StandardMaterial {
+            base_color_texture: Some(assets.load("builders/island-wood-v3.png")),
+            perceptual_roughness: 0.83,
+            ..default()
+        }),
+        island_ghost: materials.add(StandardMaterial {
+            base_color: Color::srgba(0.70, 0.97, 1.0, 0.78),
+            emissive: LinearRgba::new(0.20, 0.65, 0.85, 1.0),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            ..default()
+        }),
+        island_crystal: materials.add(StandardMaterial {
+            base_color: Color::srgb(0.45, 0.92, 1.0),
+            emissive: LinearRgba::new(0.10, 0.48, 0.67, 1.0),
+            perceptual_roughness: 0.12,
+            ..default()
+        }),
         wood,
         stone,
         crystal,
@@ -4809,11 +4879,16 @@ fn setup(
             },
         ),
         builder_backdrop: assets.load_with_settings(
-            "builders/island-world-v1.png",
+            "builders/island-sky-v4.png",
             |settings: &mut bevy::image::ImageLoaderSettings| {
                 settings.sampler = bevy::image::ImageSampler::linear();
             },
         ),
+        island_landscape: assets.load("builders/island-landscape-v4.png"),
+        island_free_build: assets.load("builders/island-free-build-v1.png"),
+        island_goal_star: assets.load("builders/island-goal-star-v1.png"),
+        island_star_empty: assets.load("builders/island-star-empty-v1.png"),
+        island_materials: assets.load("builders/island-materials-v2.png"),
         placement_preview: materials.add(StandardMaterial {
             base_color: Color::srgba(1.0, 0.83, 0.25, 0.46),
             emissive: LinearRgba::new(0.45, 0.28, 0.02, 1.0),
@@ -4848,16 +4923,18 @@ fn setup(
             ..default()
         },
     ));
-    let builder_backdrop_camera = commands.spawn((
-        Camera2d,
-        Camera {
-            order: 0,
-            clear_color: ClearColorConfig::Custom(Color::srgb(0.49, 0.78, 0.96)),
-            ..default()
-        },
-        bevy::render::view::RenderLayers::layer(1),
-        BuilderBackdropCamera,
-    )).id();
+    let builder_backdrop_camera = commands
+        .spawn((
+            Camera2d,
+            Camera {
+                order: 0,
+                clear_color: ClearColorConfig::Custom(Color::srgb(0.49, 0.78, 0.96)),
+                ..default()
+            },
+            bevy::render::view::RenderLayers::layer(1),
+            BuilderBackdropCamera,
+        ))
+        .id();
     let mut builder_background = ImageNode::new(art.builder_backdrop.clone());
     builder_background.image_mode = NodeImageMode::Stretch;
     commands.spawn((
@@ -4872,6 +4949,33 @@ fn setup(
         bevy::render::view::RenderLayers::layer(1),
         Visibility::Visible,
         BuilderBackdrop,
+    ));
+    let mut island_plate = ImageNode::new(art.island_landscape.clone());
+    island_plate.image_mode = NodeImageMode::Stretch;
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(125.), top: Val::Px(215.),
+            width: Val::Px(760.), height: Val::Px(475.),
+            ..default()
+        },
+        island_plate,
+        UiTargetCamera(builder_backdrop_camera),
+        bevy::render::view::RenderLayers::layer(1),
+        Visibility::Visible,
+        IslandPlate,
+    ));
+    commands.spawn((
+        Node {
+            position_type: PositionType::Absolute,
+            left: Val::Px(640.), top: Val::Px(420.),
+            width: Val::Px(95.), height: Val::Px(95.), display: Display::None,
+            ..default()
+        },
+        ImageNode::new(art.island_goal_star.clone()),
+        UiTargetCamera(builder_backdrop_camera),
+        bevy::render::view::RenderLayers::layer(1),
+        IslandGoalSprite,
     ));
     commands.spawn((
         Mesh3d(art.cube.clone()),
@@ -4889,7 +4993,7 @@ fn setup(
         Transform::from_xyz(-4., 12., 8.).looking_at(Vec3::ZERO, Vec3::Y),
     ));
     commands
-        .spawn((Transform::default(), Visibility::default(), Robot))
+        .spawn((Transform::from_scale(Vec3::splat(1.28)), Visibility::default(), Robot))
         .with_children(|p| {
             let parts = [
                 (
@@ -4956,6 +5060,18 @@ fn setup(
                 ));
             }
         });
+    commands.spawn((
+        IslandRobotBillboard,
+        Mesh3d(meshes.add(Rectangle::new(1., 1.))),
+        MeshMaterial3d(materials.add(StandardMaterial {
+            base_color_texture: Some(assets.load("builders/island-robot-v1.png")),
+            alpha_mode: AlphaMode::Blend,
+            unlit: true,
+            ..default()
+        })),
+        Transform::from_scale(Vec3::new(2.8, 2.8, 1.)),
+        Visibility::Hidden,
+    ));
     commands.insert_resource(art);
     commands.insert_resource(SoundBank {
         tap: audio_sources.add(synthesized_wav(&[(660., 0.045)], 0.24)),
@@ -4998,6 +5114,8 @@ fn layout_camera(
     mut cameras: Query<(&mut Camera, &mut Transform, &mut Projection), With<GameCamera>>,
     mut backdrop_camera: Query<&mut Camera, (With<BuilderBackdropCamera>, Without<GameCamera>)>,
     mut backdrop_visibility: Query<&mut Visibility, With<BuilderBackdrop>>,
+    mut island_plate: Query<&mut Node, (With<IslandPlate>, Without<IslandGoalSprite>)>,
+    mut island_goal_sprite: Query<&mut Node, (With<IslandGoalSprite>, Without<IslandPlate>)>,
     mut ui_scale: ResMut<UiScale>,
     mut layout: ResMut<Layout>,
     s: Res<Session>,
@@ -5018,16 +5136,61 @@ fn layout_camera(
         // this camera briefly so those attachments are never mixed in a pass.
         *resize_cooldown = 3;
     }
-    let show_builder_backdrop = s.mode == GameMode::Island;
+    let show_builder_backdrop = matches!(s.mode, GameMode::Island | GameMode::FreeBuild);
     if let Ok(mut camera) = backdrop_camera.single_mut() {
         camera.is_active = show_builder_backdrop;
     }
     if let Ok(mut visibility) = backdrop_visibility.single_mut() {
-        *visibility = if show_builder_backdrop { Visibility::Visible } else { Visibility::Hidden };
+        *visibility = if show_builder_backdrop {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
     }
     // Portrait phones are tall, so height alone cannot identify their compact
     // touch layout.  A narrow viewport needs the same treatment as a short one.
     let compact = cfg!(target_os = "android") || window.height() < 650. || window.width() < 650.;
+    if let Ok(mut plate) = island_plate.single_mut() {
+        if s.mode == GameMode::FreeBuild && compact {
+            plate.left = Val::Px(85.);
+            plate.top = Val::Px(72.);
+            plate.width = Val::Px(585.);
+            plate.height = Val::Px(360.);
+        } else if s.mode == GameMode::FreeBuild {
+            plate.left = Val::Px(100.);
+            plate.top = Val::Px(114.);
+            plate.width = Val::Px(790.);
+            plate.height = Val::Px(505.);
+        } else if compact {
+            plate.left = Val::Px(60.);
+            plate.top = Val::Px(70.);
+            plate.width = Val::Px(585.);
+            plate.height = Val::Px(366.);
+        } else {
+            plate.left = Val::Px(125.);
+            plate.top = Val::Px(215.);
+            plate.width = Val::Px(760.);
+            plate.height = Val::Px(475.);
+        }
+    }
+    if let Ok(mut goal) = island_goal_sprite.single_mut() {
+        let illustrated_goal = s.mode == GameMode::Island
+            && !s.island_3d_view
+            && island_base_intact(&s.work)
+            && s.work.level == 3;
+        goal.display = if illustrated_goal { Display::Flex } else { Display::None };
+        if compact {
+            goal.left = Val::Px(457.);
+            goal.top = Val::Px(228.);
+            goal.width = Val::Px(75.);
+            goal.height = Val::Px(75.);
+        } else {
+            goal.left = Val::Px(640.);
+            goal.top = Val::Px(420.);
+            goal.width = Val::Px(95.);
+            goal.height = Val::Px(95.);
+        }
+    }
     if layout.compact != compact
         || layout.width != window.width()
         || layout.height != window.height()
@@ -5190,8 +5353,15 @@ fn layout_camera(
     }
     let dpi = window.scale_factor();
     let island_desktop = s.mode == GameMode::Island && !compact;
+    let island_compact = s.mode == GameMode::Island && compact;
     let origin = if island_desktop {
-        Vec2::new(300., 102.) * scale
+        Vec2::new(18., 166.) * scale
+    } else if island_compact {
+        Vec2::new(8., 85.) * scale
+    } else if s.mode == GameMode::FreeBuild && !compact {
+        Vec2::new(60., 60.) * scale
+    } else if s.mode == GameMode::FreeBuild {
+        Vec2::new(8., 48.) * scale
     } else if compact {
         Vec2::new(16., 116.) * scale
     } else {
@@ -5200,7 +5370,9 @@ fn layout_camera(
     let size = Vec2::new(
         (window.width()
             - if island_desktop {
-                600. * scale
+                340. * scale
+            } else if island_compact {
+                226. * scale
             } else if compact {
                 if s.build { 288. } else { 32. }
             } else {
@@ -5209,7 +5381,9 @@ fn layout_camera(
             .max(100.),
         (window.height()
             - if island_desktop {
-                276. * scale
+                266. * scale
+            } else if island_compact {
+                204. * scale
             } else if compact {
                 if s.build {
                     132.
@@ -5238,7 +5412,7 @@ fn layout_camera(
     .looking_at(Vec3::ZERO, Vec3::Y);
     if let Projection::Orthographic(p) = &mut *projection {
         p.scaling_mode = ScalingMode::AutoMin {
-            min_width: s.zoom * if island_desktop { 0.95 } else { 1.25 },
+            min_width: s.zoom * if island_desktop { 0.90 } else if island_compact { 1.18 } else { 1.25 },
             min_height: s.zoom * 0.85,
         };
     }
@@ -5257,12 +5431,33 @@ fn cube(
         Transform::from_translation(pos).with_scale(scale),
     ));
 }
+
+fn island_bridge_guide(commands: &mut Commands, art: &Art, x: f32) {
+    let edge = 0.43;
+    let thin = 0.025;
+    for y in [-edge, edge] {
+        for z in [-edge, edge] {
+            cube(commands, art, Vec3::new(x, y, z), Vec3::new(edge * 2., thin, thin), art.island_ghost.clone());
+        }
+    }
+    for x_offset in [-edge, edge] {
+        for z in [-edge, edge] {
+            cube(commands, art, Vec3::new(x + x_offset, 0., z), Vec3::new(thin, edge * 2., thin), art.island_ghost.clone());
+        }
+    }
+    for x_offset in [-edge, edge] {
+        for y in [-edge, edge] {
+            cube(commands, art, Vec3::new(x + x_offset, y, 0.), Vec3::new(thin, thin, edge * 2.), art.island_ghost.clone());
+        }
+    }
+}
 fn rebuild_world(
     mut commands: Commands,
     mut s: ResMut<Session>,
     art: Res<Art>,
     entities: Query<Entity, With<WorldPiece>>,
-    mut robots: Query<&mut Visibility, With<Robot>>,
+    mut robots: Query<&mut Visibility, (With<Robot>, Without<IslandPlate>)>,
+    mut island_plate: Query<(&mut Visibility, &mut ImageNode), (With<IslandPlate>, Without<Robot>)>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -5270,11 +5465,16 @@ fn rebuild_world(
         return;
     }
     s.world_dirty = false;
+    let illustrated_island = s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
+    if let Ok((mut visibility, mut image)) = island_plate.single_mut() {
+        *visibility = if illustrated_island || (s.mode == GameMode::FreeBuild && !s.island_3d_view) { Visibility::Visible } else { Visibility::Hidden };
+        image.image = if s.mode == GameMode::FreeBuild { art.island_free_build.clone() } else { art.island_landscape.clone() };
+    }
     for e in &entities {
         commands.entity(e).despawn();
     }
     for mut visibility in &mut robots {
-        *visibility = if matches!(
+        *visibility = if illustrated_island || matches!(
             s.mode,
             GameMode::Ball2048
                 | GameMode::Tetris
@@ -5369,7 +5569,7 @@ fn rebuild_world(
     if s.mode == GameMode::FruitNinja {
         return;
     }
-    if s.mode != GameMode::Island {
+    if !matches!(s.mode, GameMode::Island | GameMode::FreeBuild) {
         cube(
             &mut commands,
             &art,
@@ -5380,20 +5580,23 @@ fn rebuild_world(
     }
     for b in &s.work.world.blocks {
         let [x, y, z] = b.pos;
+        if (illustrated_island || (s.mode == GameMode::FreeBuild && !s.island_3d_view)) && y == 0 && b.material == Material::Grass {
+            continue;
+        }
         if b.material == Material::Grass {
             cube(
                 &mut commands,
                 &art,
                 Vec3::new(x as f32, y as f32 - 0.05, z as f32),
-                Vec3::new(0.94, 0.84, 0.94),
-                art.soil.clone(),
+                Vec3::new(0.995, 0.84, 0.995),
+                if s.mode == GameMode::Island { art.island_cliff.clone() } else { art.soil.clone() },
             );
             cube(
                 &mut commands,
                 &art,
                 Vec3::new(x as f32, y as f32 + 0.40, z as f32),
-                Vec3::new(0.98, 0.18, 0.98),
-                art.grass.clone(),
+                Vec3::new(1.0, 0.18, 1.0),
+                if s.mode == GameMode::Island { art.island_grass.clone() } else { art.grass.clone() },
             );
         } else {
             cube(
@@ -5401,47 +5604,20 @@ fn rebuild_world(
                 &art,
                 Vec3::new(x as f32, y as f32, z as f32),
                 Vec3::splat(0.94),
-                art.material(b.material),
+                if s.mode == GameMode::Island && b.material == Material::Wood {
+                    art.island_wood.clone()
+                } else {
+                    art.material(b.material)
+                },
             );
         }
     }
-    if s.mode == GameMode::Island {
-        // Give the playable grass tiles a real floating-island underside.
-        // The top remains the same editable voxel grid; these lower tiers are
-        // scenery only and make the land read as two raised islands above the sea.
-        for block in s.work.world.blocks.iter().filter(|block| block.pos[1] == 0) {
-            let [x, _, z] = block.pos;
-            if (-2..=2).contains(&x) {
-                continue;
-            }
-            let neighbors = [[1, 0], [-1, 0], [0, 1], [0, -1]]
-                .into_iter()
-                .filter(|delta| s.work.world.material([x + delta[0], 0, z + delta[1]]).is_some())
-                .count();
-            cube(
-                &mut commands,
-                &art,
-                Vec3::new(x as f32, -0.70, z as f32),
-                Vec3::new(0.96, 0.56, 0.96),
-                art.soil.clone(),
-            );
-            if neighbors >= 2 {
-                cube(
-                    &mut commands,
-                    &art,
-                    Vec3::new(x as f32, -1.27, z as f32),
-                    Vec3::new(0.86, 0.60, 0.86),
-                    art.stone.clone(),
-                );
-            }
-            if neighbors == 4 {
-                cube(
-                    &mut commands,
-                    &art,
-                    Vec3::new(x as f32, -1.86, z as f32),
-                    Vec3::new(0.66, 0.58, 0.66),
-                    art.stone.clone(),
-                );
+    if s.mode == GameMode::Island && s.work.level == 3 {
+        // Pale magnetic landing guides show the five missing bridge positions.
+        // They are scenery only; the player still has to place real blocks.
+        for x in -2..=2 {
+            if s.work.world.material([x, 0, 0]).is_none() {
+                island_bridge_guide(&mut commands, &art, x as f32);
             }
         }
     }
@@ -5450,7 +5626,7 @@ fn rebuild_world(
             WorldPiece,
             CrystalSparkle(index as f32 * 1.7),
             Mesh3d(art.cube.clone()),
-            MeshMaterial3d(art.crystal.clone()),
+            MeshMaterial3d(if s.mode == GameMode::Island { art.island_crystal.clone() } else { art.crystal.clone() }),
             Transform::from_xyz(x as f32, 1.18, z as f32)
                 .with_rotation(Quat::from_rotation_z(0.55))
                 .with_scale(Vec3::new(0.42, 0.70, 0.42)),
@@ -5462,24 +5638,38 @@ fn rebuild_world(
         }
         let [gx, gz] = s.work.world.goal;
         if s.mode == GameMode::Island {
+            if !(illustrated_island && s.work.level == 3) {
+            // Five gold rays make the live 3D destination read as the star in
+            // the design, from the playable isometric camera.
+            for ray in 0..5 {
+                let angle = ray as f32 * std::f32::consts::TAU / 5.;
+                commands.spawn((
+                    WorldPiece,
+                    Mesh3d(art.cube.clone()),
+                    MeshMaterial3d(art.lamp.clone()),
+                    Transform::from_xyz(
+                        gx as f32 + angle.sin() * 0.28,
+                        1.38 + angle.cos() * 0.28,
+                        gz as f32,
+                    )
+                    .with_rotation(Quat::from_rotation_z(-angle))
+                    .with_scale(Vec3::new(0.18, 0.52, 0.16)),
+                ));
+            }
             commands.spawn((
                 WorldPiece,
                 CrystalSparkle(2.4),
                 Mesh3d(art.cube.clone()),
                 MeshMaterial3d(art.lamp.clone()),
-                Transform::from_xyz(gx as f32, 1.18, gz as f32)
+                Transform::from_xyz(gx as f32, 1.38, gz as f32)
                     .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_4))
-                    .with_scale(Vec3::splat(0.48)),
+                    .with_scale(Vec3::new(0.42, 0.42, 0.18)),
             ));
-            spawn_island_cottage(&mut commands, &art);
-            for x in [-4.0, 4.0] {
-                cube(
-                    &mut commands,
-                    &art,
-                    Vec3::new(x, -1.55, 3.14),
-                    Vec3::new(0.22, 2.5, 0.30),
-                    art.glass.clone(),
-                );
+            }
+            // Keep the destination clear during bridge challenges; the cottage
+            // belongs only in the final free-building home level.
+            if s.work.level == 5 {
+                spawn_island_cottage(&mut commands, &art);
             }
         } else {
             cube(
@@ -5497,7 +5687,11 @@ fn rebuild_world(
                 art.red.clone(),
             );
         }
-        for (x, z) in if s.mode == GameMode::Island { vec![(-5., -2.)] } else { vec![(5., -2.), (-5., -2.)] } {
+        for (x, z) in if s.mode == GameMode::Island {
+            if s.island_3d_view { vec![(-5., -2.), (5., -2.)] } else { vec![] }
+        } else {
+            vec![(5., -2.), (-5., -2.)]
+        } {
             cube(
                 &mut commands,
                 &art,
@@ -5505,20 +5699,27 @@ fn rebuild_world(
                 Vec3::new(0.30, 0.9, 0.30),
                 art.wood.clone(),
             );
-            cube(
-                &mut commands,
-                &art,
-                Vec3::new(x, 1.55, z),
-                Vec3::new(1.15, 0.65, 1.10),
-                art.leaf.clone(),
-            );
-            cube(
-                &mut commands,
-                &art,
-                Vec3::new(x, 2., z),
-                Vec3::new(0.70, 0.40, 0.70),
-                art.grass.clone(),
-            );
+            if s.mode == GameMode::Island {
+                for (dx, dy, dz, size) in [
+                    (0., 1.68, 0., 0.74),
+                    (-0.48, 1.55, 0., 0.46),
+                    (0.43, 1.58, 0.05, 0.48),
+                    (0., 1.89, -0.31, 0.42),
+                ] {
+                    commands.spawn((
+                        WorldPiece,
+                        Mesh3d(art.round.clone()),
+                        MeshMaterial3d(art.leaf.clone()),
+                        Transform::from_xyz(x + dx, dy, z + dz)
+                            .with_scale(Vec3::new(size, size * 0.8, size)),
+                    ));
+                }
+            } else {
+                cube(&mut commands, &art, Vec3::new(x, 1.55, z),
+                    Vec3::new(1.15, 0.65, 1.10), art.leaf.clone());
+                cube(&mut commands, &art, Vec3::new(x, 2., z),
+                    Vec3::new(0.70, 0.40, 0.70), art.grass.clone());
+            }
         }
     }
 }
@@ -5528,12 +5729,42 @@ fn spawn_island_cottage(commands: &mut Commands, art: &Art) {
     let z = 1.05;
     // Warm little voxel cottage: cream walls, timber door, blue windows and a
     // two-piece terracotta roof, placed on the goal island beside the star.
-    cube(commands, art, Vec3::new(x, 0.98, z), Vec3::new(1.55, 0.98, 1.28), art.snow.clone());
-    cube(commands, art, Vec3::new(x, 0.55, z + 0.67), Vec3::new(0.36, 0.74, 0.10), art.wood.clone());
+    cube(
+        commands,
+        art,
+        Vec3::new(x, 0.98, z),
+        Vec3::new(1.55, 0.98, 1.28),
+        art.snow.clone(),
+    );
+    cube(
+        commands,
+        art,
+        Vec3::new(x, 0.55, z + 0.67),
+        Vec3::new(0.36, 0.74, 0.10),
+        art.wood.clone(),
+    );
     for wx in [x - 0.48, x + 0.48] {
-        cube(commands, art, Vec3::new(wx, 1.12, z + 0.66), Vec3::new(0.31, 0.32, 0.08), art.glass.clone());
-        cube(commands, art, Vec3::new(wx, 1.12, z + 0.66), Vec3::new(0.38, 0.045, 0.10), art.wood.clone());
-        cube(commands, art, Vec3::new(wx, 1.12, z + 0.66), Vec3::new(0.045, 0.37, 0.10), art.wood.clone());
+        cube(
+            commands,
+            art,
+            Vec3::new(wx, 1.12, z + 0.66),
+            Vec3::new(0.31, 0.32, 0.08),
+            art.glass.clone(),
+        );
+        cube(
+            commands,
+            art,
+            Vec3::new(wx, 1.12, z + 0.66),
+            Vec3::new(0.38, 0.045, 0.10),
+            art.wood.clone(),
+        );
+        cube(
+            commands,
+            art,
+            Vec3::new(wx, 1.12, z + 0.66),
+            Vec3::new(0.045, 0.37, 0.10),
+            art.wood.clone(),
+        );
     }
     for (roof_x, tilt) in [(x - 0.40, 0.55), (x + 0.40, -0.55)] {
         commands.spawn((
@@ -5545,7 +5776,13 @@ fn spawn_island_cottage(commands: &mut Commands, art: &Art) {
                 .with_scale(Vec3::new(0.96, 0.18, 1.48)),
         ));
     }
-    cube(commands, art, Vec3::new(x + 0.45, 2.02, z - 0.28), Vec3::new(0.22, 0.58, 0.22), art.brick.clone());
+    cube(
+        commands,
+        art,
+        Vec3::new(x + 0.45, 2.02, z - 0.28),
+        Vec3::new(0.22, 0.58, 0.22),
+        art.brick.clone(),
+    );
 }
 
 fn spawn_island_people(
@@ -5955,6 +6192,22 @@ fn animate_robot(s: Res<Session>, time: Res<Time>, mut robots: Query<&mut Transf
         Quat::from_rotation_y(-(s.work.world.facing as f32) * std::f32::consts::FRAC_PI_2),
         alpha,
     );
+}
+
+fn sync_island_robot_billboard(
+    s: Res<Session>,
+    robots: Query<&Transform, (With<Robot>, Without<IslandRobotBillboard>)>,
+    cameras: Query<&Transform, (With<GameCamera>, Without<IslandRobotBillboard>)>,
+    mut billboards: Query<(&mut Transform, &mut Visibility), With<IslandRobotBillboard>>,
+) {
+    let Ok((mut billboard, mut visibility)) = billboards.single_mut() else { return; };
+    let illustrated = s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
+    *visibility = if illustrated { Visibility::Visible } else { Visibility::Hidden };
+    if !illustrated { return; }
+    let (Ok(robot), Ok(camera)) = (robots.single(), cameras.single()) else { return; };
+    billboard.translation = robot.translation + Vec3::new(0., 0.62, 0.);
+    billboard.rotation = camera.rotation;
+    billboard.scale = Vec3::new(2.8, 2.8, 1.);
 }
 
 fn animate_crystals(time: Res<Time>, mut crystals: Query<(&mut Transform, &CrystalSparkle)>) {
@@ -7497,9 +7750,18 @@ fn buttons(
                             _ => continue,
                         };
                         match (target + 4 - facing) % 4 {
-                            1 => { route.push(Instruction::Right); facing = (facing + 1) % 4; }
-                            2 => { route.extend([Instruction::Right, Instruction::Right]); facing = (facing + 2) % 4; }
-                            3 => { route.push(Instruction::Left); facing = (facing + 3) % 4; }
+                            1 => {
+                                route.push(Instruction::Right);
+                                facing = (facing + 1) % 4;
+                            }
+                            2 => {
+                                route.extend([Instruction::Right, Instruction::Right]);
+                                facing = (facing + 2) % 4;
+                            }
+                            3 => {
+                                route.push(Instruction::Left);
+                                facing = (facing + 3) % 4;
+                            }
                             _ => {}
                         }
                         route.push(Instruction::Forward);
@@ -7593,10 +7855,11 @@ fn buttons(
             }
             Action::Add(op) => {
                 s.edit_program();
-                if s.work.program.len() < 16 {
+                let limit = if s.mode == GameMode::Island { 8 } else { 16 };
+                if s.work.program.len() < limit {
                     s.work.program.push(op);
                 } else {
-                    s.message = "最多放 16 张卡片，试试用重复减少指令。".into();
+                    s.message = format!("最多放 {limit} 张卡片，试试用重复减少指令。");
                 }
             }
             Action::Remove(i) => {
@@ -7646,6 +7909,7 @@ fn buttons(
                     );
                 } else {
                     s.work = s.save.profiles[&i].clone();
+                    s.island_3d_view = !island_base_intact(&s.work);
                     s.runner = None;
                     s.undo.clear();
                     s.world_dirty = true;
@@ -7669,6 +7933,12 @@ fn buttons(
                     (s.work.level + 5) % 6
                 };
                 s.work.choose_level(index);
+                if s.mode == GameMode::Island {
+                    s.island_3d_view = false;
+                    s.yaw = 0.68;
+                    s.pitch = 0.762;
+                    s.zoom = 16.;
+                }
                 s.build = true;
                 s.undo.clear();
                 s.world_dirty = true;
@@ -7684,13 +7954,61 @@ fn buttons(
                     s.message = "还没有需要撤销的搭建。".into();
                 }
             }
+            Action::ClearFreeBuild => {
+                if s.mode == GameMode::FreeBuild {
+                    let empty = game::free_build_world();
+                    if s.work.world != empty {
+                        if s.undo.len() >= 40 { s.undo.remove(0); }
+                        let previous = s.work.world.clone();
+                        s.undo.push(previous);
+                        s.work.world = empty;
+                        s.island_3d_view = false;
+                        s.yaw = 0.68;
+                        s.pitch = 0.762;
+                        s.zoom = 22.;
+                        s.world_dirty = true;
+                        s.persist();
+                        s.message = "作品已清空，可点撤销找回。".into();
+                    } else {
+                        s.message = "现在就是空白小岛。".into();
+                    }
+                }
+            }
             Action::ResetView => {
                 s.yaw = 0.68;
                 s.pitch = 0.762;
                 s.zoom = 16.;
                 s.message = "视角已回正，可以继续搭建。".into();
             }
-            Action::Rotate => s.yaw += std::f32::consts::FRAC_PI_2,
+            Action::ToggleIslandView => {
+                let base_intact = if s.mode == GameMode::FreeBuild {
+                    free_build_base_intact(&s.work)
+                } else {
+                    island_base_intact(&s.work)
+                };
+                if s.island_3d_view && !base_intact {
+                    s.message = "地形已修改，继续使用可旋转的立体视角。".into();
+                } else {
+                    s.island_3d_view = !s.island_3d_view;
+                    s.yaw = 0.68;
+                    s.pitch = 0.762;
+                    s.zoom = if s.mode == GameMode::FreeBuild { 22. } else { 16. };
+                    s.world_dirty = true;
+                    s.message = if s.island_3d_view {
+                        "已切换到可旋转的立体搭建视角。".into()
+                    } else {
+                        "已回到插画场景视角。".into()
+                    };
+                }
+            }
+            Action::ToggleIslandMenu => s.island_menu_open = !s.island_menu_open,
+            Action::Rotate => {
+                if s.mode == GameMode::FreeBuild {
+                    s.island_3d_view = true;
+                    s.world_dirty = true;
+                }
+                s.yaw += std::f32::consts::FRAC_PI_2;
+            }
             Action::ZoomIn => s.zoom = (s.zoom - 1.5).max(8.),
             Action::ZoomOut => s.zoom = (s.zoom + 1.5).min(30.),
         }
@@ -7767,7 +8085,7 @@ fn world_input(
         let distance = ts[0].position().distance(ts[1].position());
         if let Some(old) = g
             .pinch
-            .filter(|_| g.world && !blocked(ts[0].position()) && !blocked(ts[1].position()))
+            .filter(|_| (s.mode != GameMode::Island || s.island_3d_view) && g.world && !blocked(ts[0].position()) && !blocked(ts[1].position()))
         {
             s.zoom = (s.zoom * old / distance.max(1.)).clamp(8., 30.);
         }
@@ -7780,7 +8098,7 @@ fn world_input(
         return;
     }
     for wheel in wheels.read() {
-        if position.is_some_and(in_world) {
+        if (s.mode != GameMode::Island || s.island_3d_view) && position.is_some_and(in_world) {
             let d = match wheel.unit {
                 MouseScrollUnit::Line => wheel.y,
                 MouseScrollUnit::Pixel => wheel.y * 0.025,
@@ -7796,7 +8114,7 @@ fn world_input(
                 if p.distance(start) > drag_slop(g.touch.is_some(), scale.0) {
                     g.moved = true;
                 }
-                if g.moved && g.world {
+                if g.moved && g.world && (s.mode != GameMode::Island || s.island_3d_view) {
                     s.yaw -= (p.x - g.last.x) * 0.006;
                     // Stop short of the poles to keep the camera upright.
                     s.pitch = (s.pitch + (p.y - g.last.y) * 0.006).clamp(0.20, 1.30);
@@ -7865,8 +8183,16 @@ fn world_input(
     let before = s.work.world.clone();
     let material = s.material;
     let erase = s.erase;
+    let erased_illustrated_ground = matches!(s.mode, GameMode::Island | GameMode::FreeBuild)
+        && !s.island_3d_view
+        && erase
+        && pos[1] == 0
+        && before.material(pos) == Some(Material::Grass);
     match s.work.world.edit(pos, material, erase) {
         Ok(()) => {
+            if erased_illustrated_ground {
+                s.island_3d_view = true;
+            }
             if s.undo.len() >= 40 {
                 s.undo.remove(0);
             }
@@ -7886,7 +8212,10 @@ fn world_input(
             } else if erase {
                 "拿走了一块。随时可以撤销。".into()
             } else if s.mode == GameMode::Island && s.work.level == 3 {
-                format!("磁吸咔嗒！桥面已铺 {}/5 格，积木吸附成功。", s.work.world.bridge_progress())
+                format!(
+                    "磁吸咔嗒！桥面已铺 {}/5 格，积木吸附成功。",
+                    s.work.world.bridge_progress()
+                )
             } else if s.mode == GameMode::Island && s.work.level == 5 {
                 format!(
                     "咔嗒！已搭 {} 块，用了 {} 种材料（目标 10 块 / 3 种）。",
@@ -7944,7 +8273,7 @@ fn update_builder_preview(
     let Ok((mut transform, mut visibility)) = preview.single_mut() else {
         return;
     };
-    if s.mode != GameMode::Island || !s.build || s.erase {
+    if !matches!(s.mode, GameMode::Island | GameMode::FreeBuild) || !s.build || s.erase {
         *visibility = Visibility::Hidden;
         return;
     }
@@ -7974,7 +8303,11 @@ fn update_builder_preview(
     };
     let mut best: Option<(f32, [i32; 3], Vec3)> = None;
     for block in &s.work.world.blocks {
-        let center = Vec3::new(block.pos[0] as f32, block.pos[1] as f32, block.pos[2] as f32);
+        let center = Vec3::new(
+            block.pos[0] as f32,
+            block.pos[1] as f32,
+            block.pos[2] as f32,
+        );
         if let Some((distance, normal)) = ray_box(ray.origin, *ray.direction, center) {
             if best.is_none_or(|(old, _, _)| distance < old) {
                 best = Some((distance, block.pos, normal));
@@ -8001,16 +8334,23 @@ fn update_builder_preview(
         return;
     };
     let connected = [
-        [1, 0, 0], [-1, 0, 0], [0, 1, 0], [0, -1, 0], [0, 0, 1], [0, 0, -1],
+        [1, 0, 0],
+        [-1, 0, 0],
+        [0, 1, 0],
+        [0, -1, 0],
+        [0, 0, 1],
+        [0, 0, -1],
     ]
     .iter()
     .any(|delta| {
-        s.work.world.material([
-            target[0] + delta[0],
-            target[1] + delta[1],
-            target[2] + delta[2],
-        ])
-        .is_some()
+        s.work
+            .world
+            .material([
+                target[0] + delta[0],
+                target[1] + delta[1],
+                target[2] + delta[2],
+            ])
+            .is_some()
     });
     let character_tile = target[1] == 0
         && ([target[0], target[2]] == s.work.world.robot
@@ -8521,11 +8861,11 @@ fn rebuild_ui(
         return;
     }
     if s.mode == GameMode::FreeBuild {
-        if layout.compact {
-            mobile_ui(&mut commands, &s, &art);
-        } else {
-            magnet_ui(&mut commands, &s, &art);
-        }
+        free_build_ui(&mut commands, &s, &art, layout.compact);
+        return;
+    }
+    if s.mode == GameMode::Island && layout.compact {
+        island_compact_ui(&mut commands, &s, &art);
         return;
     }
     if layout.compact {
@@ -9307,119 +9647,439 @@ fn magnet_ui(commands: &mut Commands, s: &Session, art: &Art) {
         });
 }
 
-// The island builder follows its illustrated layout: materials on the left,
-// the building mission on the right, and construction controls below.
-fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
-    let wood = Color::srgb(0.39, 0.22, 0.11);
-    let wood_light = Color::srgb(0.67, 0.39, 0.18);
-    let paper = Color::srgb(1.0, 0.96, 0.81);
-    let ink = Color::srgb(0.27, 0.18, 0.10);
-    let blue = Color::srgb(0.14, 0.48, 0.94);
-    let green = Color::srgb(0.31, 0.69, 0.22);
-    let orange = Color::srgb(1.0, 0.66, 0.16);
-    let panel = Color::srgba(1.0, 0.97, 0.84, 0.96);
-    let total_stars: u8 = s.work.stars.iter().sum();
-    commands.spawn((
-        UiRoot,
-        Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() },
-    )).with_children(|root| {
-        // Wooden title board
-        root.spawn((WorldInputBlocker, Node {
-            position_type: PositionType::Absolute, left: Val::Px(20.), right: Val::Px(20.),
-            top: Val::Px(14.), height: Val::Px(72.), padding: UiRect::horizontal(Val::Px(24.)),
-            justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..row()
-        }, BackgroundColor(wood), BorderColor(wood_light), BorderRadius::all(Val::Px(24.))))
-        .with_children(|header| {
-            header.spawn(Node { flex_direction: FlexDirection::Column, row_gap: Val::Px(2.), ..default() })
-                .with_children(|title| {
-                    label(title, art, "🧲 磁力小岛", 29., paper);
-                    label(title, art, "搭起磁力桥梁，让机器人抵达星星", 12., Color::srgb(0.98, 0.79, 0.45));
+fn island_score_stars(parent: &mut ChildSpawnerCommands, art: &Art, earned: u8, size: f32) {
+    for index in 0..3 {
+        parent.spawn((
+            Node { width: Val::Px(size), height: Val::Px(size), ..default() },
+            ImageNode::new(if index < earned { art.island_goal_star.clone() } else { art.island_star_empty.clone() }),
+        ));
+    }
+}
+
+fn island_material_card(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    material: Material,
+    selected: bool,
+    width: f32,
+    height: f32,
+) {
+    let index = match material {
+        Material::Grass => 0, Material::Wood => 1,
+        Material::Stone => 2, Material::Crystal => 3,
+        _ => return,
+    };
+    let x = (index % 2) as f32 * 627.;
+    let y = (index / 2) as f32 * 627.;
+    let mut icon = ImageNode::new(art.island_materials.clone());
+    icon.rect = Some(Rect::new(x, y, x + 627., y + 627.));
+    icon.image_mode = NodeImageMode::Stretch;
+    let tone = if selected { Color::srgb(0.76, 0.89, 1.) } else { Color::WHITE };
+    parent.spawn((
+        Button,
+        ButtonTone(tone),
+        Action::Material(material),
+        Node {
+            width: Val::Px(width), height: Val::Px(height),
+            min_height: Val::Px(height), flex_shrink: 0.,
+            border: UiRect::all(Val::Px(if selected { 3. } else { 1. })),
+            padding: UiRect::all(Val::Px(3.)),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            ..default()
+        },
+        BackgroundColor(tone),
+        BorderColor(if selected { Color::srgb(0.11, 0.51, 0.98) } else { Color::srgb(0.87, 0.90, 0.91) }),
+        BorderRadius::all(Val::Px(15.)),
+    )).with_children(|card| {
+        card.spawn((Node { width: Val::Px(height - 28.), height: Val::Px(height - 28.), ..default() }, icon));
+        label(card, art, material.label(), if height < 70. { 12. } else { 16. }, Color::srgb(0.05, 0.20, 0.30));
+    });
+}
+
+fn island_command_card(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    instruction: Instruction,
+    icon: &str,
+    title: &str,
+    width: f32,
+    height: f32,
+    background: Color,
+    accent: Color,
+) {
+    parent.spawn((
+        Button,
+        ButtonTone(background),
+        Action::Add(instruction),
+        Node {
+            width: Val::Px(width), height: Val::Px(height), min_height: Val::Px(height),
+            flex_shrink: 0., flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center, justify_content: JustifyContent::Center,
+            row_gap: Val::Px(2.), border: UiRect::all(Val::Px(1.)), ..default()
+        },
+        BackgroundColor(background),
+        BorderColor(accent),
+        BorderRadius::all(Val::Px(17.)),
+    )).with_children(|card| {
+        if instruction == Instruction::Place {
+            let mut image = ImageNode::new(art.island_materials.clone());
+            image.rect = Some(Rect::new(627., 0., 1254., 627.));
+            image.image_mode = NodeImageMode::Stretch;
+            let size = if height < 70. { 27. } else { 36. };
+            card.spawn((Node { width: Val::Px(size), height: Val::Px(size), ..default() }, image));
+        } else {
+            label(card, art, icon, if height < 70. { 28. } else { 36. }, accent);
+        }
+        label(card, art, title, if height < 70. { 13. } else { 16. }, Color::srgb(0.06, 0.20, 0.28));
+    });
+}
+
+fn island_run_button(parent: &mut ChildSpawnerCommands, art: &Art, running: bool, width: f32, height: f32) {
+    let green = Color::srgb(0.03, 0.72, 0.41);
+    parent.spawn((
+        Button,
+        ButtonTone(green),
+        Action::Run,
+        Node {
+            width: Val::Px(width), height: Val::Px(height), min_height: Val::Px(height),
+            flex_shrink: 0., align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center, ..default()
+        },
+        BackgroundColor(green),
+        BorderRadius::all(Val::Px(height * 0.42)),
+    )).with_children(|button| {
+        label(button, art, if running { "Ⅱ  暂停" } else { "▶  运行" }, if height < 70. { 19. } else { 24. }, Color::WHITE);
+    });
+}
+
+fn free_build_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
+    let ink = Color::srgb(0.23, 0.12, 0.07);
+    let panel = Color::srgba(1.0, 0.985, 0.945, 0.96);
+    let soft = Color::srgb(0.96, 0.91, 0.82);
+    let tray_width = if compact { 206. } else { 294. };
+    let card_width = if compact { 86. } else { 126. };
+    let card_height = if compact { 70. } else { 120. };
+    let dock_height = if compact { 68. } else { 112. };
+    commands.spawn((UiRoot, Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() }))
+        .with_children(|root| {
+            root.spawn((WorldInputBlocker, Node {
+                position_type: PositionType::Absolute, left: Val::Px(18.), top: Val::Px(14.),
+                height: Val::Px(if compact { 44. } else { 54. }), align_items: AlignItems::Center,
+                ..row()
+            })).with_children(|header| {
+                button(header, art, "←", Action::Library, if compact { 44. } else { 54. }, if compact { 44. } else { 54. }, panel, ink);
+                header.spawn((Node { height: Val::Px(if compact { 44. } else { 54. }),
+                    padding: UiRect::horizontal(Val::Px(12.)), align_items: AlignItems::Center,
+                    column_gap: Val::Px(9.), ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(18.))))
+                    .with_children(|brand| {
+                        let mut icon = ImageNode::new(art.island_materials.clone());
+                        icon.rect = Some(Rect::new(0., 0., 627., 627.));
+                        brand.spawn((Node { width: Val::Px(if compact { 27. } else { 36. }), height: Val::Px(if compact { 27. } else { 36. }), ..default() }, icon));
+                        label(brand, art, "磁力小岛  自由搭建", if compact { 18. } else { 24. }, ink);
+                    });
+                if s.island_3d_view {
+                    button(header, art, "插画视角", Action::ToggleIslandView,
+                        if compact { 92. } else { 120. }, if compact { 44. } else { 54. }, panel, ink);
+                }
+            });
+            root.spawn((WorldInputBlocker, Node { position_type: PositionType::Absolute,
+                right: Val::Px(18.), top: Val::Px(if compact { 68. } else { 105. }),
+                width: Val::Px(tray_width), height: Val::Px(if compact { 229. } else { 326. }),
+                padding: UiRect::all(Val::Px(if compact { 8. } else { 14. })),
+                flex_direction: FlexDirection::Column, row_gap: Val::Px(7.), ..default()
+            }, BackgroundColor(panel), BorderRadius::all(Val::Px(24.))))
+            .with_children(|tray| {
+                label(tray, art, "选择材料", if compact { 15. } else { 19. }, ink);
+                for pair in build_materials()[..4].chunks(2) {
+                    tray.spawn(row()).with_children(|cards| {
+                        for &(material, _) in pair {
+                            island_material_card(cards, art, material, s.material == material && !s.erase, card_width, card_height);
+                        }
+                    });
+                }
+            });
+            root.spawn((WorldInputBlocker, Node { position_type: PositionType::Absolute,
+                left: Val::Px(18.), right: Val::Px(18.), bottom: Val::Px(10.),
+                height: Val::Px(dock_height), padding: UiRect::all(Val::Px(if compact { 7. } else { 14. })),
+                flex_direction: FlexDirection::Column, row_gap: Val::Px(6.), ..default()
+            }, BackgroundColor(panel), BorderRadius::all(Val::Px(24.))))
+            .with_children(|dock| {
+                if !compact { label(dock, art, "自由搭建 · 作品自动保存", 17., ink); }
+                dock.spawn(Node { width: Val::Percent(100.), justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center, ..row() }).with_children(|tools| {
+                    let w = if compact { 163. } else { 225. };
+                    let h = if compact { 45. } else { 66. };
+                    button(tools, art, "搭建", Action::Build, w, h,
+                        if !s.erase { Color::srgb(1., 0.92, 0.75) } else { soft }, ink);
+                    button(tools, art, "拆除", Action::Erase, w, h,
+                        if s.erase { Color::srgb(1., 0.82, 0.82) } else { soft }, ink);
+                    button(tools, art, "撤销", Action::Undo, w, h, Color::srgb(0.82, 0.92, 1.), ink);
+                    button(tools, art, "旋转", Action::Rotate, w, h, Color::srgb(0.83, 0.96, 0.86), ink);
+                    button(tools, art, "清空作品", Action::ClearFreeBuild, w, h, Color::srgb(0.91, 0.85, 1.), ink);
                 });
-            header.spawn(row()).with_children(|buttons| {
-                label(buttons, art, format!("第 {} 关 · {}", s.work.level + 1, game::LEVEL_NAMES[s.work.level]), 18., Color::WHITE);
-                button(buttons, art, "小芽 · 6岁", Action::Profile(0), 104., 44., wood_light, paper);
-                button(buttons, art, "小树 · 9岁", Action::Profile(1), 104., 44., wood_light, paper);
-                button(buttons, art, "保存作品", Action::Save, 108., 44., wood_light, paper);
-                button(buttons, art, "游戏库", Action::Library, 96., 44., wood_light, paper);
             });
         });
+}
 
-        // Left material tray
-        root.spawn((WorldInputBlocker, Node {
-            position_type: PositionType::Absolute, left: Val::Px(20.), top: Val::Px(102.),
-            bottom: Val::Px(174.), width: Val::Px(276.), padding: UiRect::all(Val::Px(13.)),
-            flex_direction: FlexDirection::Column, row_gap: Val::Px(8.), ..default()
-        }, BackgroundColor(panel), BorderColor(Color::srgb(0.95, 0.71, 0.25)), BorderRadius::all(Val::Px(22.))))
-        .with_children(|library| {
-            label(library, art, "🧱 方块卡片", 22., wood);
-            label(library, art, "选择材料后，在岛上放置", 12., ink);
-            for pair in build_materials().chunks(2) {
-                library.spawn(row()).with_children(|cards| {
-                    for &(material, color) in pair {
-                        let selected = s.material == material && !s.erase;
-                        button(cards, art, format!("{}\n{}", if selected { "✓" } else { "◆" }, material.label()), Action::Material(material), 116., 54., if selected { Color::srgb(0.96, 0.82, 0.42) } else { color }, Color::srgb(0.20, 0.25, 0.28));
+fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
+    let ink = Color::srgb(0.23, 0.12, 0.07);
+    let muted = Color::srgb(0.48, 0.37, 0.29);
+    let panel = Color::srgba(1.0, 0.985, 0.945, 0.96);
+    let soft = Color::srgb(0.96, 0.91, 0.82);
+    let running = s.runner.as_ref().is_some_and(|runner| runner.running);
+    let primary = &build_materials()[..4];
+    commands
+        .spawn((
+            UiRoot,
+            Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() },
+        ))
+        .with_children(|root| {
+            // The approved design uses separate title and star plaques above the scene.
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(18.), right: Val::Px(18.), top: Val::Px(14.),
+                    height: Val::Px(58.),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceBetween,
+                    ..row()
+                },
+            ))
+            .with_children(|header| {
+                header.spawn(row()).with_children(|left| {
+                    button(left, art, "←", Action::Library, 54., 54., panel, ink);
+                    left.spawn((Node { height: Val::Px(54.), padding: UiRect::horizontal(Val::Px(12.)), align_items: AlignItems::Center, column_gap: Val::Px(10.), ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(18.))))
+                        .with_children(|brand| {
+                            let mut icon = ImageNode::new(art.island_materials.clone());
+                            icon.rect = Some(Rect::new(0., 0., 627., 627.));
+                            brand.spawn((Node { width: Val::Px(40.), height: Val::Px(40.), ..default() }, icon));
+                            label(brand, art, "磁力小岛", 25., ink);
+                            label(brand, art, format!("  {}  {}/6", game::LEVEL_NAMES[s.work.level].split('·').next().unwrap_or("关卡").trim(), s.work.level + 1), 16., muted);
+                        });
+                });
+                header.spawn(row()).with_children(|right| {
+                    right.spawn((Node { height: Val::Px(54.), padding: UiRect::horizontal(Val::Px(18.)), align_items: AlignItems::Center, ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(18.))))
+                        .with_children(|score| {
+                            island_score_stars(score, art, s.work.stars[s.work.level], 36.);
+                        });
+                    button(right, art, "...", Action::ToggleIslandMenu, 66., 54., panel, ink);
+                });
+            });
+            if s.island_menu_open {
+                root.spawn((WorldInputBlocker, GlobalZIndex(30), Node {
+                    position_type: PositionType::Absolute, right: Val::Px(18.), top: Val::Px(78.),
+                    width: Val::Px(180.), padding: UiRect::all(Val::Px(10.)),
+                    flex_direction: FlexDirection::Column, row_gap: Val::Px(7.), ..default()
+                }, BackgroundColor(panel), BorderRadius::all(Val::Px(18.))))
+                .with_children(|menu| {
+                    button(menu, art, "下一关", Action::Next, 160., 40., soft, ink);
+                    button(menu, art, "保存进度", Action::Save, 160., 40., soft, ink);
+                    button(menu, art, if s.island_3d_view { "插画视角" } else { "立体视角" }, Action::ToggleIslandView, 160., 40., soft, ink);
+                });
+            }
+
+            // The four bridge materials are the large, direct choices from the concept.
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(18.), top: Val::Px(104.),
+                    width: Val::Px(294.), height: Val::Px(if s.island_3d_view { 522. } else { 326. }),
+                    padding: UiRect::all(Val::Px(14.)),
+                    flex_direction: FlexDirection::Column, row_gap: Val::Px(8.),
+                    ..default()
+                },
+                BackgroundColor(panel),
+                BorderRadius::all(Val::Px(24.)),
+            ))
+            .with_children(|tray| {
+                label(tray, art, "选择材料 · 搭建磁力桥", 19., ink);
+                for pair in primary.chunks(2) {
+                    tray.spawn(row()).with_children(|cards| {
+                        for &(material, _) in pair {
+                            let selected = s.material == material && !s.erase;
+                            island_material_card(cards, art, material, selected, 126., if s.island_3d_view { 92. } else { 120. });
+                        }
+                    });
+                }
+                if s.island_3d_view {
+                    label(tray, art, "点岛上的方块表面放置", 13., muted);
+                    for pair in build_materials()[4..].chunks(3) {
+                        tray.spawn(row()).with_children(|cards| {
+                            for &(material, color) in pair {
+                                let selected = s.material == material && !s.erase;
+                                button(cards, art, material.label(), Action::Material(material),
+                                    80., 34., if selected { soft } else { color }, ink);
+                            }
+                        });
+                    }
+                    tray.spawn(Node { flex_grow: 1., ..default() });
+                    tray.spawn(row()).with_children(|actions| {
+                        button(actions, art, if s.erase { "✓ 拆除" } else { "拆除" },
+                            Action::Erase, 126., 42., soft, ink);
+                        button(actions, art, "缩放 +", Action::ZoomIn, 64., 42., soft, ink);
+                        button(actions, art, "−", Action::ZoomOut, 48., 42., soft, ink);
+                    });
+                    tray.spawn(row()).with_children(|tools| {
+                        button(tools, art, format!("重复 {}", s.work.repeat), Action::Repeat, 80., 30., soft, ink);
+                        button(tools, art, "单步", Action::Step, 56., 30., soft, ink);
+                        button(tools, art, "复位", Action::Reset, 56., 30., soft, ink);
+                    });
+                    tray.spawn(row()).with_children(|tools| {
+                        button(tools, art, "搭建", Action::Build, 80., 30., soft, ink);
+                        button(tools, art, "检查", Action::BuilderTest, 80., 30., soft, ink);
+                    });
+                }
+            });
+
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(18.), right: Val::Px(18.), bottom: Val::Px(12.),
+                    height: Val::Px(139.), padding: UiRect::all(Val::Px(14.)),
+                    flex_direction: FlexDirection::Column, row_gap: Val::Px(8.),
+                    ..default()
+                },
+                BackgroundColor(panel),
+                BorderRadius::all(Val::Px(24.)),
+            ))
+            .with_children(|dock| {
+                dock.spawn(row()).with_children(|heading| {
+                    label(heading, art, "编写行动 · 让机器人到达星星", 19., ink);
+                    if !s.work.program.is_empty() {
+                        label(heading, art, format!("  ·  已编排 {} 步  ·  {}", s.work.program.len(), s.message), 13., muted);
                     }
                 });
-            }
-            library.spawn(Node { flex_grow: 1., ..default() });
-            label(library, art, if s.erase { "当前工具：拆除方块".to_owned() } else { format!("当前材料：{}", s.material.label()) }, 14., wood_light);
-        });
-
-        // Right-side building mission and direct construction controls
-        root.spawn((WorldInputBlocker, Node {
-            position_type: PositionType::Absolute, right: Val::Px(20.), top: Val::Px(102.),
-            bottom: Val::Px(174.), width: Val::Px(284.), padding: UiRect::all(Val::Px(14.)),
-            flex_direction: FlexDirection::Column, row_gap: Val::Px(9.), ..default()
-        }, BackgroundColor(Color::srgba(1.0, 0.97, 0.84, 0.96)), BorderColor(Color::srgb(0.95, 0.71, 0.25)), BorderRadius::all(Val::Px(22.))))
-        .with_children(|mission| {
-            label(mission, art, "🎯 建造目标", 22., wood);
-            label(mission, art, format!("第 {} 关 · {}", s.work.level + 1, game::LEVEL_NAMES[s.work.level]), 14., blue);
-            if s.work.level == 3 {
-                label(mission, art, "搭出通往星星的桥", 17., ink);
-                let built = s.work.world.bridge_progress();
-                label(mission, art, format!("桥面  {built} / 5 格"), 16., wood_light);
-                mission.spawn((Node { height: Val::Px(14.), width: Val::Percent(100.), ..default() }, BackgroundColor(Color::srgb(0.91, 0.82, 0.62))))
-                    .with_child((Node { width: Val::Percent((built as f32 / 5. * 100.).clamp(0., 100.)), height: Val::Percent(100.), ..default() }, BackgroundColor(green), BorderRadius::all(Val::Px(7.))));
-                label(mission, art, "磁力方块能吸附在任意一面", 13., ink);
-            } else {
-                label(mission, art, format!("目标：{}", game::LEVEL_HINTS[s.work.level]), 13., ink);
-            }
-            mission.spawn(Node { flex_grow: 1., ..default() });
-            mission.spawn((Node { padding: UiRect::all(Val::Px(10.)), flex_direction: FlexDirection::Column, row_gap: Val::Px(4.), ..default() }, BackgroundColor(Color::srgba(1.0, 1.0, 1.0, 0.75)), BorderRadius::all(Val::Px(12.))))
-                .with_children(|hint| {
-                    label(hint, art, "磁吸提示", 13., wood_light);
-                    label(hint, art, "放置预览会显示金色方块。点击任意吸附面即可搭建；桥接通后按「测试路线」。", 12., ink);
+                dock.spawn(row()).with_children(|controls| {
+                    for (op, icon, title, color, accent) in [
+                        (Instruction::Place, "+", "放木块", Color::srgb(1.0, 0.92, 0.75), Color::srgb(0.76, 0.42, 0.12)),
+                        (Instruction::Forward, "↑", "前进", Color::srgb(0.82, 0.92, 1.0), Color::srgb(0.12, 0.49, 0.88)),
+                        (Instruction::Left, "←", "左转", Color::srgb(0.83, 0.96, 0.86), Color::srgb(0.09, 0.58, 0.31)),
+                        (Instruction::Right, "→", "右转", Color::srgb(1.0, 0.86, 0.86), Color::srgb(0.84, 0.22, 0.25)),
+                    ] {
+                        island_command_card(controls, art, op, icon, title, 185., 76., color, accent);
+                    }
+                    controls.spawn((Node { width: Val::Px(20.), height: Val::Px(54.), border: UiRect::left(Val::Px(1.)), ..default() }, BorderColor(Color::srgb(0.75, 0.82, 0.85))));
+                    button(controls, art, "↶  撤销", Action::Undo, 108., 76., soft, ink);
+                    controls.spawn(Node { flex_grow: 1., ..default() });
+                    island_run_button(controls, art, running, 190., 76.);
                 });
-            label(mission, art, format!("⭐ 已收集星星：{total_stars} / 18"), 13., wood_light);
-            label(mission, art, &s.message, 12., ink);
-            mission.spawn(row()).with_children(|buttons| {
-                button(buttons, art, "▦ 放置方块", Action::Build, 112., 42., green, Color::WHITE);
-                button(buttons, art, "⟳ 旋转视角", Action::Rotate, 124., 42., blue, Color::WHITE);
-            });
-            mission.spawn(row()).with_children(|buttons| {
-                button(buttons, art, if s.erase { "✓ 拆除模式" } else { "拆除方块" }, Action::Erase, 236., 42., if s.erase { orange } else { paper }, ink);
             });
         });
+}
 
-        // Wooden control dock
-        root.spawn((WorldInputBlocker, Node {
-            position_type: PositionType::Absolute, left: Val::Px(20.), right: Val::Px(20.),
-            bottom: Val::Px(12.), height: Val::Px(58.), padding: UiRect::horizontal(Val::Px(12.)),
-            column_gap: Val::Px(12.), align_items: AlignItems::Stretch, ..row()
-        }, BackgroundColor(wood), BorderColor(wood_light), BorderRadius::all(Val::Px(18.))))
-        .with_children(|dock| {
-            button(dock, art, "← 上一关", Action::Previous, 142., 40., wood_light, paper);
-            button(dock, art, "撤销", Action::Undo, 128., 40., paper, ink);
-            button(dock, art, "重置", Action::Reset, 128., 40., paper, ink);
-            button(dock, art, if s.build { "✓ 开始搭建" } else { "开始搭建" }, Action::Build, 170., 44., green, Color::WHITE);
-            button(dock, art, "测试路线", Action::BuilderTest, 160., 44., orange, ink);
-            dock.spawn(Node { flex_grow: 1., ..default() });
-            dock.spawn(row()).with_children(|buttons| {
-                button(buttons, art, "保存", Action::Save, 100., 40., wood_light, paper);
-                button(buttons, art, "下一关 →", Action::Next, 142., 40., wood_light, paper);
+fn island_compact_ui(commands: &mut Commands, s: &Session, art: &Art) {
+    let ink = Color::srgb(0.23, 0.12, 0.07);
+    let panel = Color::srgba(1.0, 0.985, 0.945, 0.96);
+    let soft = Color::srgb(0.96, 0.91, 0.82);
+    let running = s.runner.as_ref().is_some_and(|runner| runner.running);
+    commands.spawn((UiRoot, Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() }))
+        .with_children(|root| {
+            root.spawn((WorldInputBlocker, Node {
+                position_type: PositionType::Absolute, left: Val::Px(8.), right: Val::Px(8.),
+                top: Val::Px(6.), height: Val::Px(52.),
+                justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..row()
+            }))
+            .with_children(|bar| {
+                bar.spawn(row()).with_children(|p| {
+                    button(p, art, "←", Action::Library, 44., 48., panel, ink);
+                    p.spawn((Node { height: Val::Px(48.), padding: UiRect::horizontal(Val::Px(9.)), align_items: AlignItems::Center, column_gap: Val::Px(7.), ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(16.))))
+                        .with_children(|brand| {
+                            let mut icon = ImageNode::new(art.island_materials.clone());
+                            icon.rect = Some(Rect::new(0., 0., 627., 627.));
+                            brand.spawn((Node { width: Val::Px(30.), height: Val::Px(30.), ..default() }, icon));
+                            label(brand, art, "磁力小岛", 20., ink);
+                            label(brand, art, format!("{}/6", s.work.level + 1), 14., ink);
+                        });
+                });
+                bar.spawn(row()).with_children(|p| {
+                    p.spawn((Node { height: Val::Px(48.), padding: UiRect::horizontal(Val::Px(10.)), align_items: AlignItems::Center, ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(16.))))
+                        .with_children(|score| {
+                            island_score_stars(score, art, s.work.stars[s.work.level], 28.);
+                        });
+                    button(p, art, "...", Action::ToggleIslandMenu, 58., 48., panel, ink);
+                });
+            });
+            if s.island_menu_open {
+                root.spawn((WorldInputBlocker, GlobalZIndex(30), Node {
+                    position_type: PositionType::Absolute, right: Val::Px(8.), top: Val::Px(64.),
+                    width: Val::Px(146.), padding: UiRect::all(Val::Px(8.)),
+                    flex_direction: FlexDirection::Column, row_gap: Val::Px(5.), ..default()
+                }, BackgroundColor(panel), BorderRadius::all(Val::Px(16.))))
+                .with_children(|menu| {
+                    button(menu, art, "下一关", Action::Next, 130., 34., soft, ink);
+                    button(menu, art, "保存进度", Action::Save, 130., 34., soft, ink);
+                    button(menu, art, if s.island_3d_view { "插画视角" } else { "立体视角" }, Action::ToggleIslandView, 130., 34., soft, ink);
+                });
+            }
+            root.spawn((WorldInputBlocker, Node {
+                position_type: PositionType::Absolute, right: Val::Px(8.), top: Val::Px(72.),
+                width: Val::Px(206.), height: Val::Px(if s.island_3d_view { 448. } else { 255. }),
+                padding: UiRect::all(Val::Px(8.)),
+                flex_direction: FlexDirection::Column, row_gap: Val::Px(5.), ..default()
+            }, BackgroundColor(panel), BorderRadius::all(Val::Px(17.))))
+            .with_children(|tray| {
+                label(tray, art, "搭建磁力桥", 16., ink);
+                for pair in build_materials()[..4].chunks(2) {
+                    tray.spawn(row()).with_children(|cards| {
+                        for &(material, _) in pair {
+                            let selected = s.material == material && !s.erase;
+                            island_material_card(cards, art, material, selected, 90., if s.island_3d_view { 56. } else { 91. });
+                        }
+                    });
+                }
+                if s.island_3d_view {
+                    for pair in build_materials()[4..].chunks(3) {
+                        tray.spawn(row()).with_children(|cards| {
+                            for &(material, color) in pair {
+                                let selected = s.material == material && !s.erase;
+                                button(cards, art, material.label(), Action::Material(material), 58., 30.,
+                                    if selected { soft } else { color }, ink);
+                            }
+                        });
+                    }
+                    tray.spawn(Node { flex_grow: 1., ..default() });
+                    tray.spawn(row()).with_children(|p| {
+                        button(p, art, if s.erase { "✓ 拆除" } else { "拆除" }, Action::Erase, 90., 36., soft, ink);
+                        button(p, art, "缩放 +", Action::ZoomIn, 90., 36., soft, ink);
+                    });
+                    tray.spawn(row()).with_children(|p| {
+                        button(p, art, format!("重复 {}", s.work.repeat), Action::Repeat, 62., 29., soft, ink);
+                        button(p, art, "单步", Action::Step, 55., 29., soft, ink);
+                        button(p, art, "复位", Action::Reset, 55., 29., soft, ink);
+                    });
+                    tray.spawn(row()).with_children(|p| {
+                        button(p, art, "搭建", Action::Build, 62., 29., soft, ink);
+                        button(p, art, "检查", Action::BuilderTest, 80., 29., soft, ink);
+                    });
+                }
+            });
+            root.spawn((WorldInputBlocker, Node {
+                position_type: PositionType::Absolute, left: Val::Px(8.), right: Val::Px(8.),
+                bottom: Val::Px(6.), height: Val::Px(112.), padding: UiRect::all(Val::Px(8.)),
+                flex_direction: FlexDirection::Column, row_gap: Val::Px(5.), ..default()
+            }, BackgroundColor(panel), BorderRadius::all(Val::Px(17.))))
+            .with_children(|dock| {
+                label(dock, art, format!("编写行动 · 让机器人到达星星{}", if s.work.program.is_empty() { String::new() } else { format!("  ·  已编排 {} 步", s.work.program.len()) }), 16., ink);
+                dock.spawn(row()).with_children(|p| {
+                    for (op, icon, title, color, accent) in [
+                        (Instruction::Place, "+", "放木块", Color::srgb(1., 0.92, 0.75), Color::srgb(0.76, 0.42, 0.12)),
+                        (Instruction::Forward, "↑", "前进", Color::srgb(0.82, 0.92, 1.), Color::srgb(0.12, 0.49, 0.88)),
+                        (Instruction::Left, "←", "左转", Color::srgb(0.83, 0.96, 0.86), Color::srgb(0.09, 0.58, 0.31)),
+                        (Instruction::Right, "→", "右转", Color::srgb(1., 0.86, 0.86), Color::srgb(0.84, 0.22, 0.25)),
+                    ] {
+                        island_command_card(p, art, op, icon, title, 105., 62., color, accent);
+                    }
+                    p.spawn(Node { flex_grow: 1., ..default() });
+                    button(p, art, "撤销", Action::Undo, 68., 62., soft, ink);
+                    island_run_button(p, art, running, 112., 62.);
+                });
             });
         });
-    });
 }
 
 fn build_materials() -> [(Material, Color); 10] {
