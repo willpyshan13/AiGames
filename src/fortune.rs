@@ -126,6 +126,11 @@ fn rent(level: u8) -> i32 {
 }
 
 impl FortuneGame {
+    #[cfg(debug_assertions)]
+    pub(super) fn qa_state(&self) -> serde_json::Value {
+        serde_json::json!({"phase": format!("{:?}", self.phase), "active": self.active,
+            "turns": self.turns, "positions": self.positions, "cash": self.cash})
+    }
     pub(super) fn new() -> Self {
         let seed = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -1446,17 +1451,26 @@ mod tests {
     }
     #[test]
     fn computer_finishes_its_turn_without_player_input() {
-        let mut g = FortuneGame::new();
-        g.active = 1;
-        g.phase = Phase::BotWait;
-        for _ in 0..150 {
-            g.advance(0.1);
-            if g.active == 0 {
-                break;
+        for seed in 1..=32 {
+            let mut g = FortuneGame::new();
+            g.seed = seed;
+            g.active = 1;
+            g.phase = Phase::BotWait;
+            // Three bots can each need 0.8s wait + 1.35s roll + six
+            // 0.3s moves + 1s choice + 1.6s effect, plus frame rounding.
+            for _ in 0..240 {
+                g.advance(0.1);
+                if g.active == 0 {
+                    break;
+                }
             }
+            assert_eq!(g.active, 0, "seed {seed} stalled at {:?}", g.phase);
+            assert_eq!(g.phase, Phase::Ready);
+            assert_eq!(g.turns, PLAYER_COUNT - 1);
+            let positions = g.positions;
+            g.advance(0.1);
+            assert_eq!(g.positions, positions, "the human turn waits for input");
         }
-        assert_eq!(g.active, 0);
-        assert_eq!(g.phase, Phase::Ready);
     }
     #[test]
     fn twelve_rounds_end_in_a_result() {

@@ -1059,3 +1059,135 @@ mod tests {
         assert!(game.balls[0].vel.x > 0.);
     }
 }
+
+/// The playfield keeps the model's 900:500 aspect and its original pointer mapping.
+pub(super) fn storybook_board(p: &mut ChildSpawnerCommands, s: &Session, art: &Art, k: f32) {
+    let game = &s.breakout;
+    let z = 1.02;
+    let a = &art.storybook.breakout_atlas;
+    p.spawn((
+        BreakoutBoard,
+        WorldInputBlocker,
+        Node {
+            overflow: Overflow::clip(),
+            ..storybook::area([382., 195., FIELD_W * z, FIELD_H * z], k)
+        },
+    ))
+    .with_children(|board| {
+        for brick in game.bricks.iter().filter(|b| b.hp > 0) {
+            let y = 228. + (brick.hue % 4) as f32 * 50.;
+            let r = [
+                brick.pos.x * z,
+                brick.pos.y * z,
+                brick.size.x * z,
+                brick.size.y * z,
+            ];
+            storybook::sample(board, a, r, [268., y, 369., y + 43.], k);
+            if brick.flash > 0. {
+                board.spawn((
+                    storybook::area(r, k),
+                    BackgroundColor(Color::srgba(1., 1., 1., 0.6)),
+                ));
+            }
+            if brick.max_hp > 1 {
+                storybook::words(
+                    board,
+                    art,
+                    r,
+                    if brick.boss {
+                        format!("核心 {}", brick.hp)
+                    } else {
+                        brick.hp.to_string()
+                    },
+                    18.,
+                    INK,
+                    k,
+                );
+            }
+        }
+        for ball in &game.balls {
+            for (i, point) in ball.trail.iter().enumerate() {
+                place(
+                    board,
+                    (point.x - 2.) * z,
+                    (point.y - 2.) * z,
+                    4. * z,
+                    4. * z,
+                    k,
+                    Color::srgba(
+                        0.75,
+                        0.58,
+                        0.16,
+                        i as f32 / ball.trail.len().max(1) as f32 * 0.3,
+                    ),
+                    3.,
+                );
+            }
+            storybook::sample(
+                board,
+                a,
+                [
+                    (ball.pos.x - BALL_R) * z,
+                    (ball.pos.y - BALL_R) * z,
+                    BALL_R * 2. * z,
+                    BALL_R * 2. * z,
+                ],
+                [820., 597., 855., 633.],
+                k,
+            );
+        }
+        let pw = game.paddle_width();
+        storybook::sample(
+            board,
+            a,
+            [(game.paddle_x - pw / 2.) * z, PADDLE_Y * z, pw * z, 18. * z],
+            [710., 654., 965., 695.],
+            k,
+        );
+        for drop in &game.drops {
+            board
+                .spawn((
+                    Node {
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..storybook::area(
+                            [
+                                (drop.pos.x - 17.) * z,
+                                (drop.pos.y - 17.) * z,
+                                34. * z,
+                                34. * z,
+                            ],
+                            k,
+                        )
+                    },
+                    BackgroundColor(drop.kind.color()),
+                    BorderRadius::all(Val::Percent(50.)),
+                ))
+                .with_children(|p| label(p, art, drop.kind.label(), 18. * k, INK));
+        }
+        for beam in &game.beams {
+            place(
+                board,
+                (beam.x - 3.) * z,
+                beam.end_y * z,
+                6. * z,
+                (PADDLE_Y - beam.end_y) * z,
+                k,
+                Color::srgba(0.4, 0.8, 0.75, (beam.life / 0.15).clamp(0., 1.)),
+                3.,
+            );
+        }
+        for spark in &game.sparks {
+            place(
+                board,
+                (spark.pos.x - 3.) * z,
+                (spark.pos.y - 3.) * z,
+                6. * z,
+                6. * z,
+                k,
+                spark.color.with_alpha((spark.life / 0.38).clamp(0., 1.)),
+                3.,
+            );
+        }
+    });
+}

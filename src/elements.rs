@@ -1,18 +1,18 @@
 use super::*;
 
 #[derive(Clone, Copy)]
-struct ElementInfo {
-    number: u8,
-    symbol: &'static str,
-    name: &'static str,
-    column: u8,
-    period: u8,
-    family: u8,
+pub(super) struct ElementInfo {
+    pub(super) number: u8,
+    pub(super) symbol: &'static str,
+    pub(super) name: &'static str,
+    pub(super) column: u8,
+    pub(super) period: u8,
+    pub(super) family: u8,
 }
 
 // The first forty elements keep their real groups and periods. Empty positions
 // are intentional: children can see the familiar shape of the periodic table.
-const ELEMENTS: [ElementInfo; 40] = [
+pub(super) const ELEMENTS: [ElementInfo; 40] = [
     ElementInfo {
         number: 1,
         symbol: "H",
@@ -335,20 +335,20 @@ const ELEMENTS: [ElementInfo; 40] = [
     },
 ];
 
-struct Mission {
-    title: &'static str,
-    formula: &'static str,
-    clue: &'static str,
-    result: &'static str,
-    atoms: &'static [u8],
-    color: Color,
+pub(super) struct Mission {
+    pub(super) title: &'static str,
+    pub(super) formula: &'static str,
+    pub(super) clue: &'static str,
+    pub(super) result: &'static str,
+    pub(super) atoms: &'static [u8],
+    pub(super) color: Color,
 }
 
 const MISSIONS: [Mission; 11] = [
     Mission {
-        title: "做一滴水",
+        title: "水",
         formula: "H2O",
-        clue: "找 2 个氢和 1 个氧",
+        clue: "找 2 个氢和 1 个氧，拼出水分子",
         result: "水滴诞生啦！水由氢和氧组成。",
         atoms: &[1, 1, 8],
         color: Color::srgb(0.34, 0.75, 1.),
@@ -436,24 +436,26 @@ const MISSIONS: [Mission; 11] = [
 ];
 
 pub(super) struct ElementGame {
+    pub(super) observing: bool,
     pub(super) stage: usize,
     pub(super) score: u32,
-    picked: Vec<u8>,
-    last_seen: Option<u8>,
-    discovered: [bool; 40],
+    pub(super) picked: Vec<u8>,
+    pub(super) last_seen: Option<u8>,
+    pub(super) discovered: [bool; 40],
     pub(super) complete: bool,
     pub(super) finished: bool,
-    feedback: &'static str,
-    flash: f32,
-    effect_duration: f32,
-    wrong_flash: f32,
-    effect_clock: f32,
+    pub(super) feedback: &'static str,
+    pub(super) flash: f32,
+    pub(super) effect_duration: f32,
+    pub(super) wrong_flash: f32,
+    pub(super) effect_clock: f32,
     redraw: f32,
 }
 
 impl ElementGame {
     pub(super) fn new() -> Self {
         Self {
+            observing: false,
             stage: 0,
             score: 0,
             picked: Vec::new(),
@@ -474,11 +476,11 @@ impl ElementGame {
         *self = Self::new();
     }
 
-    fn mission(&self) -> &'static Mission {
+    pub(super) fn mission(&self) -> &'static Mission {
         &MISSIONS[self.stage]
     }
 
-    fn remaining(&self, number: u8) -> usize {
+    pub(super) fn remaining(&self, number: u8) -> usize {
         let required = self
             .mission()
             .atoms
@@ -648,437 +650,1048 @@ fn family_color(family: u8) -> Color {
     }
 }
 
+fn element_tile_color(element: &ElementInfo) -> Color {
+    match element.number {
+        1 => Color::srgb(0.18, 0.48, 0.89),
+        6 | 7 | 15 | 16 | 34 => Color::srgb(0.08, 0.62, 0.48),
+        8 => Color::srgb(0.22, 0.72, 0.48),
+        _ => family_color(element.family),
+    }
+}
+
+pub(super) fn family_name(family: u8) -> &'static str {
+    match family {
+        1 => "稀有气体",
+        2 => "碱金属",
+        3 => "碱土金属",
+        4 => "类金属",
+        5 => "卤素",
+        6 => "其他金属",
+        7 => "过渡金属",
+        _ => "非金属",
+    }
+}
+
 fn atom_color(number: u8) -> Color {
-    ELEMENTS
-        .get(usize::from(number.saturating_sub(1)))
-        .map(|element| family_color(element.family))
-        .unwrap_or(Color::WHITE)
+    match number {
+        1 => Color::srgb(0.34, 0.72, 1.0),
+        6 => Color::srgb(0.34, 0.39, 0.48),
+        7 => Color::srgb(0.36, 0.53, 0.96),
+        8 => Color::srgb(0.96, 0.29, 0.27),
+        11 | 17 => Color::srgb(0.85, 0.66, 0.31),
+        _ => family_color(ELEMENTS[usize::from(number - 1)].family),
+    }
+}
+
+pub(super) fn atomic_mass(number: u8) -> &'static str {
+    const MASSES: [&str; 40] = [
+        "1.008", "4.003", "6.94", "9.012", "10.81", "12.011", "14.007", "15.999", "18.998",
+        "20.180", "22.990", "24.305", "26.982", "28.085", "30.974", "32.06", "35.45", "39.948",
+        "39.098", "40.078", "44.956", "47.867", "50.942", "51.996", "54.938", "55.845", "58.933",
+        "58.693", "63.546", "65.38", "69.723", "72.630", "74.922", "78.971", "79.904", "83.798",
+        "85.468", "87.62", "88.906", "91.224",
+    ];
+    MASSES[usize::from(number.saturating_sub(1)).min(MASSES.len() - 1)]
+}
+
+pub(super) fn electron_shells(number: u8) -> String {
+    let n = i16::from(number);
+    let shells: Vec<i16> = match number {
+        1..=2 => vec![n],
+        3..=10 => vec![2, n - 2],
+        11..=18 => vec![2, 8, n - 10],
+        19..=20 => vec![2, 8, 8, n - 18],
+        21..=30 => vec![2, 8, n - 12, 2],
+        31..=36 => vec![2, 8, 18, n - 28],
+        37..=38 => vec![2, 8, 18, 8, n - 36],
+        _ => vec![2, 8, 18, n - 30, 2],
+    };
+    shells
+        .iter()
+        .map(ToString::to_string)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+pub(super) fn element_fact(number: u8) -> &'static str {
+    match number {
+        1 => "宇宙中最丰富的\n元素之一",
+        6 => "生命的重要组成\n元素",
+        8 => "空气中约五分之一\n是氧气",
+        11 => "食盐中含有\n钠元素",
+        14 => "沙子和石英中\n常见硅",
+        20 => "贝壳和粉笔中\n常见钙",
+        26 => "铁是常见的\n金属材料",
+        29 => "铜能导电，\n也能导热",
+        40 => "锆常用于\n耐热材料",
+        _ => "点击元素卡片，认识它\n在周期表中的位置",
+    }
 }
 
 pub(super) fn element_ui(commands: &mut Commands, s: &Session, art: &Art, width: f32, height: f32) {
     let game = &s.elements;
     let mission = game.mission();
-    let small = height < 650.;
-    let gap = if small { 3. } else { 4. };
-    let tile = ((width - 38. - 17. * gap) / 18.).min(if small { 52. } else { 62. });
-    let table_w = tile * 18. + gap * 17.;
-    let table_h = tile * 5. + gap * 4.;
-    let discovery_w = (tile + gap) * 9.2;
-    let discovery_h = (tile + gap) * 2.55;
-    let effect_progress = if game.effect_duration > 0. {
-        (1. - game.flash / game.effect_duration).clamp(0., 1.)
-    } else {
-        1.
-    };
+    let compact = width < 1120. || height < 680.;
+    let outer = if compact { 12. } else { 20. };
+    let gap = if compact { 8. } else { 14. };
+    let header_h = if compact { 46. } else { 58. };
+    let mission_h = if compact { 112. } else { 152. };
+    let footer_h = 32.;
+    let right_w = (width * if compact { 0.25 } else { 0.205 }).clamp(
+        if compact { 205. } else { 260. },
+        if compact { 270. } else { 330. },
+    );
+    let table_w = (width - outer * 2. - right_w - gap).max(500.);
+    let main_h = (height - outer * 2. - header_h - mission_h - footer_h - gap * 3.).max(260.);
+    let label_w = if compact { 25. } else { 32. };
+    let cell_gap = if compact { 2. } else { 4. };
+    let tile = ((table_w - label_w - cell_gap * 17.) / 18.).min(if compact { 47. } else { 68. });
+    let tile_gap = cell_gap;
+    let grid_header_h = if compact { 22. } else { 28. };
+    // Match the concept's taller board footprint on 16:10 Mac windows while
+    // keeping each cell close to square on compact layouts.
+    let tile_h = ((main_h - grid_header_h - 36. - tile_gap * 4.) / 5.)
+        .min(tile * if compact { 1.0 } else { 1.28 })
+        .max(tile.min(24.));
+    let cards_h = tile_h * 5. + tile_gap * 4.;
+    let grid_top = ((main_h - cards_h - grid_header_h) * 0.5).max(12.);
+    let selected_number = game.last_seen.unwrap_or(mission.atoms[0]);
+    let selected = &ELEMENTS[usize::from(selected_number - 1)];
     let effect_strength = if game.flash > 0. {
-        (std::f32::consts::PI * effect_progress).sin().max(0.)
+        let progress = if game.effect_duration > 0. {
+            1. - game.flash / game.effect_duration
+        } else {
+            1.
+        };
+        (std::f32::consts::PI * progress).sin().max(0.)
     } else {
         0.
     };
-    let heading = if small { 21. } else { 29. };
-    let body = if small { 13. } else { 17. };
+    let heading = if compact { 20. } else { 28. };
+    let body = if compact { 12. } else { 16. };
+    let panel_edge = Color::srgb(0.12, 0.38, 0.54);
+    let amber = Color::srgb(1., 0.75, 0.25);
+
     commands
         .spawn((
             UiRoot,
             Node {
                 width: Val::Percent(100.),
                 height: Val::Percent(100.),
-                padding: UiRect::all(Val::Px(if small { 9. } else { 18. })),
+                padding: UiRect::all(Val::Px(outer)),
                 flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                row_gap: Val::Px(if small { 8. } else { 14. }),
+                row_gap: Val::Px(gap),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.045, 0.085, 0.15)),
+            BackgroundColor(Color::srgb(0.018, 0.055, 0.105)),
         ))
         .with_children(|root| {
-            root.spawn(Node {
-                width: Val::Px(table_w),
+            root.spawn((
+                ImageNode::new(art.element_backdrop.clone()),
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: Val::Percent(100.),
+                    height: Val::Percent(100.),
+                    ..default()
+                },
+            ));
+            // Header: game identity and progress stay visible above the chemistry task.
+            root.spawn((Node {
+                width: Val::Percent(100.),
+                height: Val::Px(header_h),
                 justify_content: JustifyContent::SpaceBetween,
                 align_items: AlignItems::Center,
                 ..row()
-            })
-            .with_children(|top| {
-                label(top, art, "元素小实验室", heading, Color::WHITE);
-                label(
-                    top,
-                    art,
-                    format!(
-                        "挑战 {}/{}  ·  {} 分  ·  已认识 {} 种",
-                        game.stage + 1,
-                        MISSIONS.len(),
-                        game.score,
-                        game.discovered.iter().filter(|found| **found).count()
-                    ),
-                    body,
-                    Color::srgb(1., 0.82, 0.49),
-                );
-                button(
-                    top,
-                    art,
-                    "游戏库",
-                    Action::Library,
-                    if small { 74. } else { 88. },
-                    38.,
-                    SLATE,
-                    Color::WHITE,
-                );
-            });
-            root.spawn((
-                Node {
-                    width: Val::Px(table_w),
-                    min_height: Val::Px(if small { 98. } else { 132. }),
-                    border: UiRect::all(Val::Px(2.)),
-                    padding: UiRect::all(Val::Px(if small { 11. } else { 17. })),
-                    justify_content: JustifyContent::SpaceBetween,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(12.),
-                    ..row()
-                },
-                BackgroundColor(Color::srgb(0.09, 0.16, 0.27)),
-                BorderColor(if game.wrong_flash > 0. {
-                    Color::srgb(1., 0.48, 0.48)
-                } else {
-                    mission.color
-                }),
-                BorderRadius::all(Val::Px(16.)),
-            ))
-            .with_children(|panel| {
-                panel
-                    .spawn(Node {
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(4.),
-                        ..default()
-                    })
-                    .with_children(|copy| {
-                        label(
-                            copy,
-                            art,
-                            format!("第 {} 关 · {}", game.stage + 1, mission.title),
-                            if small { 18. } else { 25. },
-                            Color::WHITE,
-                        );
-                        label(copy, art, mission.clue, body, Color::srgb(0.67, 0.85, 0.94));
-                        label(
-                            copy,
-                            art,
-                            mission.formula,
-                            if small { 25. } else { 36. },
-                            mission.color,
-                        );
-                    });
-                panel
-                    .spawn(Node {
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::FlexEnd,
-                        row_gap: Val::Px(7.),
-                        ..default()
-                    })
-                    .with_children(|right| {
-                        right
-                            .spawn(Node {
-                                column_gap: Val::Px(5.),
-                                ..row()
-                            })
-                            .with_children(|tray| {
-                                for (index, number) in mission.atoms.iter().enumerate() {
-                                    let filled = game
-                                        .picked
-                                        .iter()
-                                        .filter(|picked| **picked == *number)
-                                        .count()
-                                        > mission.atoms[..=index]
-                                            .iter()
-                                            .filter(|candidate| **candidate == *number)
-                                            .count()
-                                            - 1;
-                                    let element = &ELEMENTS[usize::from(number - 1)];
-                                    tray.spawn((
-                                        Node {
-                                            width: Val::Px(if small { 30. } else { 42. }),
-                                            height: Val::Px(if small { 30. } else { 42. }),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BackgroundColor(if filled {
-                                            atom_color(*number)
-                                        } else {
-                                            Color::srgb(0.18, 0.27, 0.38)
-                                        }),
-                                        BorderRadius::all(Val::Percent(50.)),
-                                    ))
-                                    .with_children(|slot| {
-                                        label(
-                                            slot,
-                                            art,
-                                            if filled { element.symbol } else { "?" },
-                                            if small { 14. } else { 19. },
-                                            Color::WHITE,
-                                        )
-                                    });
-                                }
-                            });
-                        if game.complete {
-                            button(
-                                right,
-                                art,
-                                if game.finished {
-                                    "再玩一次"
-                                } else {
-                                    "下一关 →"
-                                },
-                                if game.finished {
-                                    Action::ElementReset
-                                } else {
-                                    Action::ElementNext
-                                },
-                                if small { 84. } else { 116. },
-                                if small { 31. } else { 38. },
-                                Color::srgb(0.19, 0.62, 0.52),
-                                Color::WHITE,
-                            );
-                        } else {
-                            label(
-                                right,
-                                art,
-                                format!("已找到 {}/{}", game.picked.len(), mission.atoms.len()),
-                                body,
-                                Color::srgb(0.71, 0.82, 0.89),
-                            );
-                        }
-                    });
-            });
-            root.spawn((
-                Node {
-                    width: Val::Px(table_w),
-                    height: Val::Px(table_h),
-                    position_type: PositionType::Relative,
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.065, 0.12, 0.20)),
-                BorderRadius::all(Val::Px(12.)),
-            ))
-            .with_children(|table| {
-                // The table's open center becomes a little discovery window.
-                table
-                    .spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px((tile + gap) * 2.3),
-                            top: Val::Px((tile + gap) * 0.32),
-                            width: Val::Px(discovery_w),
-                            height: Val::Px(discovery_h),
-                            flex_direction: FlexDirection::Column,
+            },))
+                .with_children(|header| {
+                    header
+                        .spawn(Node {
                             align_items: AlignItems::Center,
-                            justify_content: JustifyContent::Center,
-                            row_gap: Val::Px(5.),
-                            ..default()
-                        },
-                        BackgroundColor(if game.complete {
-                            mission.color.with_alpha(0.13 + effect_strength * 0.12)
-                        } else {
-                            Color::srgba(
-                                0.12 + effect_strength * 0.05,
-                                0.23 + effect_strength * 0.07,
-                                0.34 + effect_strength * 0.08,
-                                0.75,
-                            )
-                        }),
-                        BorderRadius::all(Val::Px(14.)),
-                    ))
-                    .with_children(|window| {
-                        label(
-                            window,
-                            art,
-                            if game.complete {
-                                "发现成功！"
-                            } else {
-                                "元素发现窗"
-                            },
-                            if small { 16. } else { 23. },
-                            if game.complete {
-                                mission.color
-                            } else {
-                                Color::srgb(0.56, 0.77, 0.86)
-                            },
-                        );
-                        label(
-                            window,
-                            art,
-                            if game.complete {
-                                mission.formula
-                            } else if let Some(number) = game.last_seen {
-                                let element = &ELEMENTS[usize::from(number - 1)];
-                                element.symbol
-                            } else {
-                                "点亮卡片，收集配方"
-                            },
-                            (if small { 23. } else { 32. })
-                                * (1. + effect_strength * if game.complete { 0.24 } else { 0.12 }),
-                            Color::WHITE,
-                        );
-                        if game.complete {
-                            label(
-                                window,
-                                art,
-                                mission.result,
-                                if small { 11. } else { 14. },
-                                Color::srgb(0.87, 0.94, 1.),
-                            );
-                        } else if let Some(number) = game.last_seen {
-                            let element = &ELEMENTS[usize::from(number - 1)];
-                            label(
-                                window,
-                                art,
-                                format!("{}  ·  第 {} 号元素", element.name, element.number),
-                                if small { 12. } else { 16. },
-                                Color::srgb(0.87, 0.94, 1.),
-                            );
-                        }
-                        if game.flash > 0. {
-                            let scale = if game.complete { 1.35 } else { 1. };
-                            let max_diameter = if small { 34. } else { 48. };
-                            for ring in 0..3 {
-                                let delayed = (effect_progress - ring as f32 * 0.12).max(0.);
-                                let diameter = (10. + delayed * max_diameter) * scale;
-                                let fade =
-                                    ((1. - delayed) * 0.75 * effect_strength).clamp(0., 0.75);
-                                window.spawn((
+                            column_gap: Val::Px(10.),
+                            ..row()
+                        })
+                        .with_children(|brand| {
+                            brand
+                                .spawn((
                                     Node {
-                                        position_type: PositionType::Absolute,
-                                        left: Val::Px((discovery_w - diameter) * 0.5),
-                                        top: Val::Px((discovery_h - diameter) * 0.5),
-                                        width: Val::Px(diameter),
-                                        height: Val::Px(diameter),
-                                        border: UiRect::all(Val::Px(if small { 1.5 } else { 2. })),
+                                        width: Val::Px(header_h * 0.72),
+                                        height: Val::Px(header_h * 0.72),
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::Center,
+                                        position_type: PositionType::Relative,
                                         ..default()
                                     },
-                                    BackgroundColor(Color::NONE),
-                                    BorderColor(mission.color.with_alpha(fade)),
+                                    BackgroundColor(Color::srgb(0.03, 0.20, 0.31)),
+                                    BorderColor(Color::srgb(0.10, 0.72, 0.93)),
+                                    BorderRadius::all(Val::Px(14.)),
+                                ))
+                                .with_children(|icon| {
+                                    icon.spawn((
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            width: Val::Percent(74.),
+                                            height: Val::Percent(42.),
+                                            border: UiRect::all(Val::Px(1.5)),
+                                            ..default()
+                                        },
+                                        BorderColor(Color::srgb(0.18, 0.83, 1.)),
+                                        BorderRadius::all(Val::Percent(50.)),
+                                    ));
+                                    icon.spawn((
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            width: Val::Percent(42.),
+                                            height: Val::Percent(74.),
+                                            border: UiRect::all(Val::Px(1.5)),
+                                            ..default()
+                                        },
+                                        BorderColor(Color::srgb(0.18, 0.83, 1.)),
+                                        BorderRadius::all(Val::Percent(50.)),
+                                    ));
+                                    icon.spawn((
+                                        Node {
+                                            width: Val::Px(10.),
+                                            height: Val::Px(10.),
+                                            ..default()
+                                        },
+                                        BackgroundColor(amber),
+                                        BorderRadius::all(Val::Percent(50.)),
+                                    ));
+                                });
+                            label(brand, art, "元素小", heading, Color::srgb(0.26, 0.83, 1.));
+                            label(brand, art, "实验室", heading, amber);
+                        });
+                    header.spawn(row()).with_children(|stats| {
+                        for text in [
+                            format!("挑战 {}/{}", game.stage + 1, MISSIONS.len()),
+                            format!("★ 得分 {}", game.score),
+                            format!(
+                                "已认识 {} 种",
+                                game.discovered.iter().filter(|found| **found).count()
+                            ),
+                        ] {
+                            stats
+                                .spawn((
+                                    Node {
+                                        height: Val::Px(header_h * 0.72),
+                                        padding: UiRect::horizontal(Val::Px(if compact {
+                                            8.
+                                        } else {
+                                            14.
+                                        })),
+                                        align_items: AlignItems::Center,
+                                        border: UiRect::all(Val::Px(1.)),
+                                        ..row()
+                                    },
+                                    BackgroundColor(Color::srgb(0.04, 0.13, 0.23)),
+                                    BorderColor(panel_edge),
+                                    BorderRadius::all(Val::Px(12.)),
+                                ))
+                                .with_children(|chip| {
+                                    label(
+                                        chip,
+                                        art,
+                                        text.clone(),
+                                        body,
+                                        Color::srgb(0.84, 0.93, 1.),
+                                    );
+                                });
+                        }
+                    });
+                    button(
+                        header,
+                        art,
+                        "游戏库  ›",
+                        Action::Library,
+                        if compact { 76. } else { 106. },
+                        header_h * 0.76,
+                        Color::srgb(0.02, 0.35, 0.53),
+                        Color::WHITE,
+                    );
+                });
+
+            // Mission card: keep the clue, formula and collected atoms together.
+            root.spawn((
+                Node {
+                    width: Val::Percent(100.),
+                    height: Val::Px(mission_h),
+                    padding: UiRect::all(Val::Px(if compact { 12. } else { 20. })),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(18.),
+                    border: UiRect::all(Val::Px(1.5)),
+                    ..row()
+                },
+                BackgroundColor(Color::srgb(0.025, 0.10, 0.18)),
+                BorderColor(if game.wrong_flash > 0. {
+                    Color::srgb(1., 0.35, 0.35)
+                } else {
+                    Color::srgb(0.12, 0.68, 0.92)
+                }),
+                BorderRadius::all(Val::Px(18.)),
+            ))
+            .with_children(|task| {
+                task.spawn(Node {
+                    width: Val::Percent(32.),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(4.),
+                    ..default()
+                })
+                .with_children(|copy| {
+                    label(
+                        copy,
+                        art,
+                        format!("配方挑战：{}", mission.title),
+                        if compact { 18. } else { 25. },
+                        Color::WHITE,
+                    );
+                    label(copy, art, mission.clue, body, Color::srgb(0.73, 0.86, 0.96));
+                    copy.spawn(Node {
+                        align_items: AlignItems::FlexEnd,
+                        column_gap: Val::Px(0.),
+                        ..row()
+                    })
+                    .with_children(|formula| {
+                        for character in mission.formula.chars() {
+                            let subscript = character.is_ascii_digit();
+                            formula
+                                .spawn(Node {
+                                    margin: UiRect::bottom(Val::Px(if subscript {
+                                        if compact { 5. } else { 8. }
+                                    } else {
+                                        0.
+                                    })),
+                                    ..default()
+                                })
+                                .with_children(|piece| {
+                                    label(
+                                        piece,
+                                        art,
+                                        character.to_string(),
+                                        if subscript {
+                                            if compact { 17. } else { 23. }
+                                        } else if compact {
+                                            28.
+                                        } else {
+                                            39.
+                                        },
+                                        mission.color,
+                                    )
+                                });
+                        }
+                    });
+                });
+                task.spawn(Node {
+                    width: Val::Percent(66.),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::FlexStart,
+                    column_gap: Val::Px(if compact { 4. } else { 8. }),
+                    ..row()
+                })
+                .with_children(|atoms| {
+                    for (index, number) in mission.atoms.iter().enumerate() {
+                        if index > 0 {
+                            label(atoms, art, "+", if compact { 16. } else { 23. }, amber);
+                        }
+                        let needed = mission.atoms[..=index]
+                            .iter()
+                            .filter(|candidate| **candidate == *number)
+                            .count();
+                        let filled = game
+                            .picked
+                            .iter()
+                            .filter(|picked| **picked == *number)
+                            .count()
+                            >= needed;
+                        let element = &ELEMENTS[usize::from(*number - 1)];
+                        atoms
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                align_items: AlignItems::Center,
+                                row_gap: Val::Px(3.),
+                                ..default()
+                            })
+                            .with_children(|slot| {
+                                slot.spawn((
+                                    Node {
+                                        width: Val::Px(if compact { 40. } else { 58. }),
+                                        height: Val::Px(if compact { 40. } else { 58. }),
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::Center,
+                                        border: UiRect::all(Val::Px(1.5)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(if filled {
+                                        atom_color(*number)
+                                    } else {
+                                        Color::srgb(0.08, 0.19, 0.29)
+                                    }),
+                                    BorderColor(if filled { amber } else { panel_edge }),
                                     BorderRadius::all(Val::Percent(50.)),
-                                ));
+                                ))
+                                .with_children(|bubble| {
+                                    label(
+                                        bubble,
+                                        art,
+                                        if filled { element.symbol } else { "?" },
+                                        if compact { 17. } else { 23. },
+                                        Color::WHITE,
+                                    );
+                                });
+                                label(
+                                    slot,
+                                    art,
+                                    element.name,
+                                    if compact { 8. } else { 11. },
+                                    Color::srgb(0.78, 0.89, 0.96),
+                                );
+                            });
+                    }
+                    label(
+                        atoms,
+                        art,
+                        "→",
+                        if compact { 18. } else { 26. },
+                        Color::srgb(0.23, 0.78, 0.96),
+                    );
+                    // A compact molecule model echoes the water illustration in the approved concept.
+                    // Its atoms follow the current recipe, so the visual changes with each challenge.
+                    atoms
+                        .spawn((Node {
+                            width: Val::Px(if compact { 58. } else { 78. }),
+                            height: Val::Px(if compact { 54. } else { 72. }),
+                            position_type: PositionType::Relative,
+                            ..default()
+                        },))
+                        .with_children(|model| {
+                            let center_number = mission
+                                .atoms
+                                .iter()
+                                .copied()
+                                .find(|number| *number != 1)
+                                .unwrap_or(mission.atoms[0]);
+                            let center = &ELEMENTS[usize::from(center_number - 1)];
+                            model
+                                .spawn((
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(if compact { 20. } else { 27. }),
+                                        top: Val::Px(if compact { 5. } else { 7. }),
+                                        width: Val::Px(if compact { 27. } else { 36. }),
+                                        height: Val::Px(if compact { 27. } else { 36. }),
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::Center,
+                                        border: UiRect::all(Val::Px(1.5)),
+                                        ..default()
+                                    },
+                                    BackgroundColor(atom_color(center_number)),
+                                    BorderColor(Color::srgba(1., 1., 1., 0.8)),
+                                    BorderRadius::all(Val::Percent(50.)),
+                                ))
+                                .with_children(|atom| {
+                                    label(
+                                        atom,
+                                        art,
+                                        center.symbol,
+                                        if compact { 12. } else { 16. },
+                                        Color::WHITE,
+                                    );
+                                });
+                            let other_atoms: Vec<_> = mission
+                                .atoms
+                                .iter()
+                                .copied()
+                                .filter(|number| *number != center_number)
+                                .take(2)
+                                .collect();
+                            for side in 0..2 {
+                                let number =
+                                    other_atoms.get(side).copied().unwrap_or(center_number);
+                                let element = &ELEMENTS[usize::from(number - 1)];
+                                model
+                                    .spawn((
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            left: Val::Px(if side == 0 {
+                                                1.
+                                            } else if compact {
+                                                39.
+                                            } else {
+                                                55.
+                                            }),
+                                            top: Val::Px(if compact { 29. } else { 38. }),
+                                            width: Val::Px(if compact { 22. } else { 29. }),
+                                            height: Val::Px(if compact { 22. } else { 29. }),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            border: UiRect::all(Val::Px(1.)),
+                                            ..default()
+                                        },
+                                        BackgroundColor(atom_color(number)),
+                                        BorderColor(Color::srgba(1., 1., 1., 0.72)),
+                                        BorderRadius::all(Val::Percent(50.)),
+                                    ))
+                                    .with_children(|atom| {
+                                        label(
+                                            atom,
+                                            art,
+                                            element.symbol,
+                                            if compact { 9. } else { 12. },
+                                            Color::WHITE,
+                                        );
+                                    });
                             }
-                            let spark_count = if game.complete { 16 } else { 10 };
-                            for i in 0..spark_count {
-                                let seed = i as f32 / spark_count as f32;
-                                let angle = seed * std::f32::consts::TAU
-                                    + game.effect_clock * if game.complete { 1.8 } else { 2.8 };
-                                let radius = 0.18 + effect_progress * 0.34;
-                                let x = discovery_w * (0.5 + angle.cos() * radius);
-                                let y = discovery_h * (0.5 + angle.sin() * radius * 0.72);
-                                let twinkle = (game.effect_clock * 12. + seed * 31.).sin().abs();
-                                let diameter = (if small { 3.5 } else { 5. }) + twinkle * 3.;
-                                let color = if i % 3 == 0 {
-                                    Color::WHITE
-                                } else {
-                                    mission.color
-                                };
-                                window.spawn((
+                        });
+                    if game.complete {
+                        button(
+                            atoms,
+                            art,
+                            if game.finished {
+                                "再玩一次"
+                            } else {
+                                "下一关 →"
+                            },
+                            if game.finished {
+                                Action::ElementReset
+                            } else {
+                                Action::ElementNext
+                            },
+                            if compact { 86. } else { 124. },
+                            if compact { 38. } else { 48. },
+                            Color::srgb(0.10, 0.62, 0.49),
+                            Color::WHITE,
+                        );
+                    }
+                });
+                if game.flash > 0. {
+                    task.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            right: Val::Px(20.),
+                            top: Val::Px(16.),
+                            width: Val::Px(12. + effect_strength * 22.),
+                            height: Val::Px(12. + effect_strength * 22.),
+                            ..default()
+                        },
+                        BackgroundColor(mission.color.with_alpha(0.3 + effect_strength * 0.7)),
+                        BorderRadius::all(Val::Percent(50.)),
+                    ));
+                }
+            });
+
+            // Main row: a real periodic-table layout on the left and selected-element dossier on the right.
+            root.spawn((Node {
+                width: Val::Percent(100.),
+                height: Val::Px(main_h),
+                column_gap: Val::Px(gap),
+                align_items: AlignItems::Stretch,
+                ..row()
+            },))
+                .with_children(|main| {
+                    main.spawn((
+                        Node {
+                            width: Val::Px(table_w),
+                            height: Val::Px(main_h),
+                            position_type: PositionType::Relative,
+                            overflow: Overflow::clip(),
+                            border: UiRect::all(Val::Px(1.5)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.018, 0.06, 0.11)),
+                        BorderColor(panel_edge),
+                        BorderRadius::all(Val::Px(16.)),
+                    ))
+                    .with_children(|table| {
+                        table
+                            .spawn(Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(label_w),
+                                top: Val::Px(grid_top - grid_header_h),
+                                width: Val::Px(tile * 18. + tile_gap * 17.),
+                                height: Val::Px(grid_header_h),
+                                ..row()
+                            })
+                            .with_children(|groups| {
+                                for group in 1..=18 {
+                                    groups
+                                        .spawn(Node {
+                                            width: Val::Px(tile),
+                                            margin: UiRect::right(Val::Px(tile_gap)),
+                                            justify_content: JustifyContent::Center,
+                                            align_items: AlignItems::Center,
+                                            ..default()
+                                        })
+                                        .with_children(|cell| {
+                                            label(
+                                                cell,
+                                                art,
+                                                group.to_string(),
+                                                if compact { 9. } else { 12. },
+                                                Color::srgb(0.57, 0.75, 0.86),
+                                            );
+                                        });
+                                }
+                            });
+                        label_at(
+                            table,
+                            art,
+                            "族 →",
+                            Val::Px(4.),
+                            Val::Px(grid_top - grid_header_h),
+                            if compact { 9. } else { 11. },
+                            Color::srgb(0.62, 0.8, 0.91),
+                        );
+                        for period in 0..5 {
+                            let y = grid_top + period as f32 * (tile_h + tile_gap);
+                            table
+                                .spawn(Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(4.),
+                                    top: Val::Px(y + tile_h * 0.28),
+                                    ..default()
+                                })
+                                .with_children(|p| {
+                                    label(
+                                        p,
+                                        art,
+                                        (period + 1).to_string(),
+                                        if compact { 10. } else { 13. },
+                                        Color::srgb(0.66, 0.83, 0.93),
+                                    );
+                                });
+                        }
+                        label_at(
+                            table,
+                            art,
+                            "周期",
+                            Val::Px(2.),
+                            Val::Px(grid_top - grid_header_h + 14.),
+                            if compact { 8. } else { 10. },
+                            Color::srgb(0.62, 0.8, 0.91),
+                        );
+                        // Draw the full 18 × 5 scaffold first so the empty positions read as a periodic table.
+                        for period in 0..5 {
+                            for group in 0..18 {
+                                let x = label_w + group as f32 * (tile + tile_gap);
+                                let y = grid_top + period as f32 * (tile_h + tile_gap);
+                                table.spawn((
                                     Node {
                                         position_type: PositionType::Absolute,
                                         left: Val::Px(x),
                                         top: Val::Px(y),
-                                        width: Val::Px(diameter),
-                                        height: Val::Px(diameter),
+                                        width: Val::Px(tile),
+                                        height: Val::Px(tile_h),
+                                        border: UiRect::all(Val::Px(0.6)),
                                         ..default()
                                     },
-                                    BackgroundColor(
-                                        color.with_alpha(0.35 + effect_strength * 0.65),
-                                    ),
-                                    BorderRadius::all(Val::Percent(50.)),
+                                    BackgroundColor(Color::srgba(0.035, 0.16, 0.24, 0.22)),
+                                    BorderColor(Color::srgba(0.16, 0.58, 0.75, 0.28)),
+                                    BorderRadius::all(Val::Px(if compact { 4. } else { 7. })),
                                 ));
                             }
                         }
+                        for element in ELEMENTS {
+                            let x = label_w + f32::from(element.column) * (tile + tile_gap);
+                            let y = grid_top + f32::from(element.period) * (tile_h + tile_gap);
+                            let wanted = game.remaining(element.number) > 0 && !game.complete;
+                            let selected_card = game.last_seen == Some(element.number);
+                            let tile_color = element_tile_color(&element);
+                            let border_color = if wanted {
+                                amber
+                            } else if selected_card {
+                                Color::WHITE
+                            } else {
+                                Color::srgba(0.7, 0.86, 1., 0.17)
+                            };
+                            table
+                                .spawn((
+                                    Button,
+                                    ButtonTone(tile_color),
+                                    Action::ElementPick(element.number),
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(x),
+                                        top: Val::Px(y),
+                                        width: Val::Px(tile),
+                                        height: Val::Px(tile_h),
+                                        padding: UiRect::all(Val::Px(if compact {
+                                            2.
+                                        } else {
+                                            4.
+                                        })),
+                                        flex_direction: FlexDirection::Column,
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::Center,
+                                        border: UiRect::all(Val::Px(if wanted {
+                                            2.5
+                                        } else if selected_card {
+                                            1.5
+                                        } else {
+                                            0.5
+                                        })),
+                                        ..default()
+                                    },
+                                    BackgroundColor(if selected_card {
+                                        tile_color.with_alpha(0.98)
+                                    } else {
+                                        tile_color
+                                    }),
+                                    BorderColor(border_color.with_alpha(if wanted {
+                                        1.
+                                    } else if selected_card {
+                                        0.9
+                                    } else {
+                                        0.28
+                                    })),
+                                    BorderRadius::all(Val::Px(if compact { 5. } else { 8. })),
+                                ))
+                                .with_children(|card| {
+                                    label(
+                                        card,
+                                        art,
+                                        element.number.to_string(),
+                                        if compact { 8. } else { 10. },
+                                        Color::srgba(1., 1., 1., 0.78),
+                                    );
+                                    label(
+                                        card,
+                                        art,
+                                        element.symbol,
+                                        if compact { 15. } else { 22. },
+                                        Color::WHITE,
+                                    );
+                                    label(
+                                        card,
+                                        art,
+                                        element.name,
+                                        if compact { 8. } else { 10. },
+                                        Color::WHITE,
+                                    );
+                                    if wanted {
+                                        card.spawn((
+                                            Node {
+                                                position_type: PositionType::Absolute,
+                                                right: Val::Px(2.),
+                                                top: Val::Px(2.),
+                                                width: Val::Px(5.),
+                                                height: Val::Px(5.),
+                                                ..default()
+                                            },
+                                            BackgroundColor(amber),
+                                            BorderRadius::all(Val::Percent(50.)),
+                                        ));
+                                    }
+                                });
+                        }
                     });
-                for element in ELEMENTS {
-                    let x = f32::from(element.column) * (tile + gap);
-                    let y = f32::from(element.period) * (tile + gap);
-                    let wanted = game.remaining(element.number) > 0
-                        && (game.stage < 2 || game.wrong_flash > 0.);
-                    let color = family_color(element.family);
-                    table
-                        .spawn((
-                            Button,
-                            ButtonTone(color),
-                            Action::ElementPick(element.number),
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(x),
-                                top: Val::Px(y),
-                                width: Val::Px(tile),
-                                height: Val::Px(tile),
-                                flex_direction: FlexDirection::Column,
+
+                    main.spawn((
+                        Node {
+                            width: Val::Px(right_w),
+                            height: Val::Px(main_h),
+                            padding: UiRect::all(Val::Px(if compact { 12. } else { 18. })),
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(if compact { 4. } else { 6. }),
+                            align_items: AlignItems::Stretch,
+                            border: UiRect::all(Val::Px(1.5)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.025, 0.09, 0.15)),
+                        BorderColor(Color::srgb(0.13, 0.57, 0.75)),
+                        BorderRadius::all(Val::Px(18.)),
+                    ))
+                    .with_children(|detail| {
+                        label(
+                            detail,
+                            art,
+                            "元素档案",
+                            if compact { 16. } else { 21. },
+                            Color::srgb(0.75, 0.91, 1.),
+                        );
+                        detail
+                            .spawn((Node {
+                                height: Val::Px(if compact { 68. } else { 112. }),
+                                justify_content: JustifyContent::SpaceBetween,
                                 align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                border: UiRect::all(Val::Px(if wanted && !game.complete {
-                                    2.
-                                } else {
-                                    0.
-                                })),
+                                ..row()
+                            },))
+                            .with_children(|hero| {
+                                hero.spawn(Node {
+                                    flex_direction: FlexDirection::Column,
+                                    row_gap: Val::Px(2.),
+                                    ..default()
+                                })
+                                .with_children(|names| {
+                                    label(
+                                        names,
+                                        art,
+                                        selected.name,
+                                        if compact { 20. } else { 27. },
+                                        Color::WHITE,
+                                    );
+                                    label(
+                                        names,
+                                        art,
+                                        selected.symbol,
+                                        if compact { 42. } else { 60. },
+                                        atom_color(selected.number),
+                                    );
+                                    names
+                                        .spawn((
+                                            Node {
+                                                width: Val::Px(if compact { 76. } else { 94. }),
+                                                height: Val::Px(if compact { 20. } else { 24. }),
+                                                align_items: AlignItems::Center,
+                                                justify_content: JustifyContent::Center,
+                                                column_gap: Val::Px(0.),
+                                                border: UiRect::all(Val::Px(1.)),
+                                                ..default()
+                                            },
+                                            BackgroundColor(Color::srgb(0.04, 0.24, 0.27)),
+                                            BorderColor(Color::srgb(0.13, 0.72, 0.63)),
+                                            BorderRadius::all(Val::Px(12.)),
+                                        ))
+                                        .with_children(|badge| {
+                                            label(
+                                                badge,
+                                                art,
+                                                family_name(selected.family),
+                                                if compact { 10. } else { 13. },
+                                                Color::srgb(0.40, 0.95, 0.81),
+                                            )
+                                        });
+                                });
+                                hero.spawn((
+                                    Node {
+                                        width: Val::Px(if compact { 48. } else { 64. }),
+                                        height: Val::Px(if compact { 48. } else { 64. }),
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::Center,
+                                        ..default()
+                                    },
+                                    BackgroundColor(family_color(selected.family)),
+                                    BorderRadius::all(Val::Px(12.)),
+                                ))
+                                .with_children(|number| {
+                                    label(
+                                        number,
+                                        art,
+                                        format!("{:02}", selected.number),
+                                        if compact { 19. } else { 25. },
+                                        Color::WHITE,
+                                    );
+                                });
+                            });
+                        detail.spawn((
+                            Node {
+                                width: Val::Percent(100.),
+                                height: Val::Px(1.),
                                 ..default()
                             },
-                            BackgroundColor(color),
-                            BorderColor(Color::WHITE.with_alpha(if wanted && !game.complete {
-                                0.75
-                            } else {
-                                0.
-                            })),
-                            BorderRadius::all(Val::Px(if small { 6. } else { 9. })),
-                        ))
-                        .with_children(|card| {
-                            label(
-                                card,
-                                art,
-                                element.number.to_string(),
-                                if small { 9. } else { 10. },
-                                Color::srgba(1., 1., 1., 0.78),
-                            );
-                            label(
-                                card,
-                                art,
-                                element.symbol,
-                                if small { 17. } else { 23. },
-                                Color::WHITE,
-                            );
-                            label(
-                                card,
-                                art,
-                                element.name,
-                                if small { 9. } else { 11. },
-                                Color::WHITE,
-                            );
+                            BackgroundColor(panel_edge),
+                        ));
+                        for (name, value) in [
+                            ("原子序数", selected.number.to_string()),
+                            ("相对质量", format!("{} u", atomic_mass(selected.number))),
+                            ("电子排布", electron_shells(selected.number)),
+                        ] {
+                            detail
+                                .spawn(Node {
+                                    width: Val::Percent(100.),
+                                    justify_content: JustifyContent::SpaceBetween,
+                                    column_gap: Val::Px(6.),
+                                    ..row()
+                                })
+                                .with_children(|row_node| {
+                                    row_node
+                                        .spawn(Node {
+                                            width: Val::Percent(58.),
+                                            ..default()
+                                        })
+                                        .with_children(|key| {
+                                            label(
+                                                key,
+                                                art,
+                                                name,
+                                                if compact { 10. } else { 12. },
+                                                Color::srgb(0.63, 0.77, 0.87),
+                                            )
+                                        });
+                                    row_node
+                                        .spawn(Node {
+                                            width: Val::Percent(42.),
+                                            justify_content: JustifyContent::FlexEnd,
+                                            ..row()
+                                        })
+                                        .with_children(|value_node| {
+                                            label(
+                                                value_node,
+                                                art,
+                                                value.clone(),
+                                                if compact { 10. } else { 12. },
+                                                Color::WHITE,
+                                            )
+                                        });
+                                });
+                        }
+                        detail
+                            .spawn(Node {
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(5.),
+                                ..default()
+                            })
+                            .with_children(|fact| {
+                                label(
+                                    fact,
+                                    art,
+                                    "你知道吗？",
+                                    if compact { 12. } else { 14. },
+                                    amber,
+                                );
+                                label(
+                                    fact,
+                                    art,
+                                    element_fact(selected.number),
+                                    if compact { 11. } else { 14. },
+                                    Color::srgb(0.84, 0.91, 0.97),
+                                );
+                            });
+                        detail
+                            .spawn((
+                                Node {
+                                    width: Val::Percent(100.),
+                                    height: Val::Px(if compact { 58. } else { 76. }),
+                                    position_type: PositionType::Relative,
+                                    overflow: Overflow::clip(),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.05, 0.23, 0.34)),
+                                BorderColor(Color::srgb(0.13, 0.68, 0.84)),
+                                BorderRadius::all(Val::Px(12.)),
+                            ))
+                            .with_children(|illustration| {
+                                illustration.spawn((
+                                    ImageNode::new(art.element_molecule.clone()),
+                                    Node {
+                                        width: Val::Px(if compact { 68. } else { 90. }),
+                                        height: Val::Px(if compact { 56. } else { 72. }),
+                                        align_self: AlignSelf::Center,
+                                        ..default()
+                                    },
+                                ));
+                            });
+                        label(
+                            detail,
+                            art,
+                            "水分子模型  H2O",
+                            if compact { 9. } else { 12. },
+                            Color::srgb(0.65, 0.84, 0.94),
+                        );
+                        detail.spawn(Node {
+                            flex_grow: 1.,
+                            ..default()
                         });
-                }
-            });
+                        label(
+                            detail,
+                            art,
+                            format!(
+                                "已认识 {}/40",
+                                game.discovered.iter().filter(|found| **found).count()
+                            ),
+                            body,
+                            Color::srgb(0.75, 0.9, 0.98),
+                        );
+                        detail
+                            .spawn((
+                                Node {
+                                    width: Val::Percent(100.),
+                                    height: Val::Px(if compact { 8. } else { 11. }),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.09, 0.2, 0.28)),
+                                BorderRadius::all(Val::Px(8.)),
+                            ))
+                            .with_children(|bar| {
+                                let count = game.discovered.iter().filter(|found| **found).count();
+                                bar.spawn((
+                                    Node {
+                                        width: Val::Percent(count as f32 * 100. / 40.),
+                                        height: Val::Percent(100.),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgb(0.08, 0.84, 0.72)),
+                                    BorderRadius::all(Val::Px(8.)),
+                                ));
+                            });
+                    });
+                });
+
             root.spawn(Node {
-                width: Val::Px(table_w),
-                justify_content: JustifyContent::SpaceBetween,
+                width: Val::Percent(100.),
+                height: Val::Px(footer_h),
+                justify_content: JustifyContent::Center,
                 align_items: AlignItems::Center,
                 ..row()
             })
-            .with_children(|foot| {
-                label(
-                    foot,
-                    art,
-                    game.feedback,
-                    if small { 12. } else { 17. },
-                    if game.wrong_flash > 0. {
-                        Color::srgb(1., 0.57, 0.56)
-                    } else {
-                        Color::srgb(0.80, 0.91, 0.96)
-                    },
-                );
-                label(
-                    foot,
-                    art,
-                    "屏幕拼图 · 不是真实化学实验",
-                    if small { 10. } else { 13. },
-                    Color::srgb(0.53, 0.67, 0.75),
-                );
+            .with_children(|footer| {
+                footer
+                    .spawn((
+                        Node {
+                            height: Val::Px(if compact { 28. } else { 36. }),
+                            padding: UiRect::horizontal(Val::Px(if compact { 14. } else { 24. })),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            column_gap: Val::Px(10.),
+                            border: UiRect::all(Val::Px(1.)),
+                            ..row()
+                        },
+                        BackgroundColor(Color::srgb(0.025, 0.13, 0.21)),
+                        BorderColor(Color::srgb(0.08, 0.55, 0.73)),
+                        BorderRadius::all(Val::Px(24.)),
+                    ))
+                    .with_children(|hint| {
+                        hint.spawn((
+                            Node {
+                                width: Val::Px(10.),
+                                height: Val::Px(10.),
+                                ..default()
+                            },
+                            BackgroundColor(amber),
+                            BorderRadius::all(Val::Percent(50.)),
+                        ));
+                        label(
+                            hint,
+                            art,
+                            game.feedback,
+                            if compact { 10. } else { 14. },
+                            if game.wrong_flash > 0. {
+                                Color::srgb(1., 0.52, 0.48)
+                            } else {
+                                Color::srgb(0.86, 0.94, 1.)
+                            },
+                        );
+                    });
             });
         });
+}
+
+fn label_at(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    text: impl Into<String>,
+    left: Val,
+    top: Val,
+    size: f32,
+    color: Color,
+) {
+    parent
+        .spawn(Node {
+            position_type: PositionType::Absolute,
+            left,
+            top,
+            ..default()
+        })
+        .with_children(|label_node| label(label_node, art, text, size, color));
 }
 
 #[cfg(test)]

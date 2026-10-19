@@ -19,9 +19,15 @@ use fortune::*;
 #[path = "play_ui.rs"]
 mod play_ui;
 use play_ui::*;
+#[path = "storybook.rs"]
+mod storybook;
+use storybook::*;
 #[path = "retro.rs"]
 mod retro;
 use retro::*;
+#[path = "sokoban.rs"]
+mod sokoban;
+use sokoban::*;
 #[path = "breakout.rs"]
 mod breakout;
 use breakout::*;
@@ -37,6 +43,12 @@ use garden_game::*;
 #[path = "garden_ui.rs"]
 mod garden_ui;
 use garden_ui::*;
+#[path = "courier.rs"]
+mod courier;
+use courier::*;
+#[cfg(debug_assertions)]
+#[path = "qa.rs"]
+mod qa;
 
 use crate::game::{self, Instruction, Material, Runner, Save, Work};
 use bevy::{
@@ -64,7 +76,7 @@ const GARDEN_GREEN: Color = Color::srgb(0.37, 0.53, 0.22);
 const GARDEN_WOOD: Color = Color::srgb(0.35, 0.23, 0.12);
 const GARDEN_WOOD_EDGE: Color = Color::srgb(0.78, 0.59, 0.31);
 
-#[derive(Clone, Copy, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GameMode {
     Island,
     CloudBridge,
@@ -101,6 +113,7 @@ enum GameMode {
     ElementLab,
     LightPath,
     GardenDefense,
+    SpaceCourier,
 }
 
 impl GameMode {
@@ -141,6 +154,7 @@ impl GameMode {
             Self::ElementLab => "元素小实验室",
             Self::LightPath => "光路小侦探",
             Self::GardenDefense => "花园守卫",
+            Self::SpaceCourier => "星球快递员",
         }
     }
 
@@ -181,6 +195,7 @@ impl GameMode {
             Self::ElementLab => "点亮元素周期表，拼出生活里的小配方",
             Self::LightPath => "旋转镜片，让光束真正反射到水晶",
             Self::GardenDefense => "收集阳光、种下伙伴，守住五条花园战线",
+            Self::SpaceCourier => "规划航线、送完九件包裹、破解终点谜题",
         }
     }
 
@@ -212,7 +227,7 @@ impl GameMode {
             Self::HoneyHunt => "等抓钩对准蜂蜜后轻点画面。抓到蜂蜜会自动拉回小熊身边。",
             Self::MoonFestival => "摇一摇六颗骰子，收下属于你的中秋福气。",
             Self::Snake => "控制小蛇吃果实，撞墙或撞到自己就结束。",
-            Self::Minesweeper => "点开安全格，长按旗帜键标记你怀疑的地雷。",
+            Self::Minesweeper => "点击安全格查看数字提示；切换标记模式后，点击方块插旗。",
             Self::Classic2048 => "向任意方向滑动，让相同数字合并。",
             Self::Klotski => "先点选棋子，再用方向键移动；让曹操走到最下方出口。",
             Self::Sokoban => "用方向键推箱子，箱子只能推、不能拉。",
@@ -223,6 +238,7 @@ impl GameMode {
             Self::GardenDefense => {
                 "先点植物卡片，再点草地种下。向日葵产生阳光，豌豆和冰花自动射击，坚果挡住怪物，辣椒清理整条战线。点阳光补充能量，准备好后开始进攻。"
             }
+            Self::SpaceCourier => "选择星球和航线，管理燃料，完成九个送货点与终点挑战。",
         }
     }
 }
@@ -1298,7 +1314,7 @@ struct TankBullet {
     friendly: bool,
 }
 
-const TANK_MAP_COUNT: u8 = 8;
+const TANK_MAP_COUNT: u8 = 12;
 
 struct TankGame {
     reserves: usize,
@@ -1359,11 +1375,11 @@ impl TankGame {
     }
 
     fn level_total(&self) -> usize {
-        [10, 12, 14, 14, 16, 16, 18, 20][self.map as usize]
+        [10, 12, 14, 14, 16, 16, 18, 20, 20, 22, 24, 26][self.map as usize]
     }
 
     fn active_limit(&self) -> usize {
-        [2, 3, 3, 3, 4, 4, 4, 4][self.map as usize]
+        [2, 3, 3, 3, 4, 4, 4, 4, 4, 4, 5, 5][self.map as usize]
     }
 
     fn spawn_wave(&mut self) {
@@ -1505,11 +1521,32 @@ impl TankGame {
                 vec![(4, 1), (2, 3), (3, 5)],
                 vec![(0, 2), (1, 2), (5, 4), (6, 4)],
             ),
-            _ => (
+            7 => (
                 vec![(1, 1), (5, 1), (1, 5), (5, 5), (3, 2), (3, 4)],
                 vec![(2, 2), (4, 2), (2, 4), (4, 4)],
                 vec![(2, 3), (3, 3), (4, 3), (0, 3), (6, 3)],
             ),
+            8 => (
+                vec![(1, 1), (5, 1), (2, 2), (4, 2), (2, 4), (4, 4), (1, 5), (5, 5)],
+                vec![(3, 2), (3, 4)],
+                vec![(1, 3), (5, 3)],
+            ),
+            9 => (
+                vec![(2, 1), (4, 1), (2, 2), (4, 2), (2, 4), (4, 4), (2, 5), (4, 5)],
+                vec![(0, 1), (6, 1), (0, 5), (6, 5)],
+                vec![(0, 3), (6, 3)],
+            ),
+            10 => (
+                vec![(1, 1), (2, 1), (4, 1), (5, 1), (1, 5), (5, 5)],
+                vec![(3, 2), (1, 3), (5, 3), (3, 4)],
+                vec![(1, 2), (5, 2), (1, 4), (5, 4)],
+            ),
+            11 => (
+                vec![(1, 1), (5, 1), (1, 5), (5, 5)],
+                vec![(2, 1), (4, 1), (2, 3), (4, 3), (2, 5), (4, 5)],
+                vec![(1, 2), (5, 2), (1, 4), (5, 4)],
+            ),
+            _ => unreachable!("map index is reduced modulo TANK_MAP_COUNT"),
         };
         self.walls = walls;
         self.steel = steel;
@@ -1529,7 +1566,12 @@ impl TankGame {
             4 => "十字街区",
             5 => "环城包抄",
             6 => "曲线走廊",
-            _ => "星形堡垒",
+            7 => "星形堡垒",
+            8 => "风车岔路",
+            9 => "曲径夹击",
+            10 => "双翼包围",
+            11 => "花环堡垒",
+            _ => unreachable!("map index is reduced modulo TANK_MAP_COUNT"),
         }
     }
 
@@ -1851,13 +1893,13 @@ impl SkyGame {
         self.shots.extend([
             SkyShot {
                 x: self.x - 0.025,
-                y: 0.80,
+                y: 0.71,
                 dy: -0.92,
                 friendly: true,
             },
             SkyShot {
                 x: self.x + 0.025,
-                y: 0.80,
+                y: 0.71,
                 dy: -0.92,
                 friendly: true,
             },
@@ -1893,7 +1935,7 @@ impl SkyGame {
         let hp = 14 + self.boss_round as u16 * 4;
         self.boss = Some(SkyBoss {
             x: 0.5,
-            y: -0.16,
+            y: 0.24,
             hp,
             max_hp: hp,
             phase: 0.,
@@ -1941,9 +1983,6 @@ impl SkyGame {
         if let Some(boss) = &mut self.boss {
             boss.phase += dt * (0.95 + self.boss_round as f32 * 0.12);
             boss.x = 0.5 + boss.phase.sin() * 0.29;
-            if boss.y < 0.16 {
-                boss.y = (boss.y + dt * 0.20).min(0.16);
-            }
         }
         for shot in &mut self.shots {
             shot.y += shot.dy * dt;
@@ -2520,6 +2559,20 @@ struct WaterBlast {
     life: f32,
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BomberPickupKind {
+    Range,
+    Capacity,
+    Heart,
+}
+
+#[derive(Clone)]
+struct BomberPickup {
+    x: i8,
+    y: i8,
+    kind: BomberPickupKind,
+}
+
 struct BomberGame {
     visual_player: Vec2,
     invulnerable: f32,
@@ -2531,6 +2584,9 @@ struct BomberGame {
     enemies: Vec<BomberEnemy>,
     bombs: Vec<WaterBomb>,
     blasts: Vec<WaterBlast>,
+    pickups: Vec<BomberPickup>,
+    bomb_capacity: usize,
+    blast_range: i8,
     lives: u8,
     score: u32,
     round: u32,
@@ -2554,6 +2610,9 @@ impl BomberGame {
             enemies: vec![],
             bombs: vec![],
             blasts: vec![],
+            pickups: vec![],
+            bomb_capacity: 2,
+            blast_range: 2,
             lives: 3,
             score: 0,
             round: 1,
@@ -2564,7 +2623,7 @@ impl BomberGame {
             pots: vec![],
             enemy_clock: 1.2,
             redraw: 0.,
-            feedback: "先用方向键走一走；按住可连续移动。水泡 3 秒后爆开。".into(),
+            feedback: "击败小怪闯关！炸开花盆找强化水泡，连锁爆破有额外奖励。".into(),
             failed: false,
         };
         game.load_round();
@@ -2587,28 +2646,49 @@ impl BomberGame {
         self.bricks.clear();
         for y in 0..BOMBER_ROWS {
             for x in 0..BOMBER_COLUMNS {
-        let reserved = (x - 2).abs() + (y - 8).abs() <= 2
+                let reserved = (x - 2).abs() + (y - 8).abs() <= 2
                     || (x - 15).abs() + y <= 2
                     || (x - 14).abs() + (y - 4).abs() <= 1
                     || (x - 16).abs() + (y - 8).abs() <= 1;
                 let density = (2 + ((self.round.saturating_sub(1) / 3) as i16)).min(5);
                 let scattered = (x as i16 * 7 + y as i16 * 11 + (self.round % 9) as i16 * 3)
-                    .rem_euclid(9) < density;
+                    .rem_euclid(9)
+                    < density;
                 if scattered && !reserved && !(x % 2 == 1 && y % 2 == 1) {
                     self.bricks.push((x, y));
                 }
             }
         }
-        self.bushes = [(5, 2), (6, 5), (2, 6), (11, 2), (12, 6), (8, 4), (8, 7), (3, 2), (14, 6), (9, 0)]
-            .into_iter()
-            .take(6 + ((self.round.saturating_sub(1) / 2) as usize).min(4))
-            .filter(|(x, y)| !self.solid(*x, *y) && (*x, *y) != (2, 8))
-            .collect();
-        self.pots = [(3, 4), (6, 7), (10, 4), (13, 5), (4, 1), (9, 5), (15, 6), (7, 2)]
-            .into_iter()
-            .take(4 + ((self.round.saturating_sub(1) / 2) as usize).min(4))
-            .filter(|(x, y)| !self.solid(*x, *y) && (*x, *y) != (2, 8))
-            .collect();
+        self.bushes = [
+            (5, 2),
+            (6, 5),
+            (2, 6),
+            (11, 2),
+            (12, 6),
+            (8, 4),
+            (8, 7),
+            (3, 2),
+            (14, 6),
+            (9, 0),
+        ]
+        .into_iter()
+        .take(6 + ((self.round.saturating_sub(1) / 2) as usize).min(4))
+        .filter(|(x, y)| !self.solid(*x, *y) && (*x, *y) != (2, 8))
+        .collect();
+        self.pots = [
+            (3, 4),
+            (6, 7),
+            (10, 4),
+            (13, 5),
+            (4, 1),
+            (9, 5),
+            (15, 6),
+            (7, 2),
+        ]
+        .into_iter()
+        .take(4 + ((self.round.saturating_sub(1) / 2) as usize).min(4))
+        .filter(|(x, y)| !self.solid(*x, *y) && (*x, *y) != (2, 8))
+        .collect();
         self.player = (2, 8);
         self.visual_player = Vec2::new(2., 8.);
         self.invulnerable = 2.;
@@ -2617,24 +2697,26 @@ impl BomberGame {
         self.paused = false;
         self.bombs.clear();
         self.blasts.clear();
+        self.pickups.clear();
         let mut spawn_points: Vec<_> = (0..BOMBER_ROWS)
             .flat_map(|y| (0..BOMBER_COLUMNS).map(move |x| (x, y)))
             .filter(|(x, y)| {
-                (x - self.player.0).abs() + (y - self.player.1).abs() >= 7
-                    && !self.solid(*x, *y)
+                (x - self.player.0).abs() + (y - self.player.1).abs() >= 7 && !self.solid(*x, *y)
             })
             .collect();
-        spawn_points.sort_by_key(|(x, y)| (x * 13 + y * 7 + self.round as i8 * 11).rem_euclid(31));
+        spawn_points.sort_by_key(|(x, y)| {
+            (i32::from(*x) * 13 + i32::from(*y) * 7 + self.round as i32 * 11).rem_euclid(31)
+        });
         self.enemies = spawn_points
             .into_iter()
-            .take((2 + self.round as usize).min(12))
+            .take((6 + self.round as usize).min(14))
             .enumerate()
             .map(|(step, (x, y))| BomberEnemy {
                 visual: Vec2::new(x as f32, y as f32),
                 x,
                 y,
                 step: step as u8,
-                kind: ((self.round as usize + step) % 4) as u8,
+                kind: (step % 7) as u8,
             })
             .collect();
     }
@@ -2646,11 +2728,42 @@ impl BomberGame {
         let next = (self.player.0 + dx, self.player.1 + dy);
         if !self.solid(next.0, next.1) && !self.bombs.iter().any(|bomb| (bomb.x, bomb.y) == next) {
             self.player = next;
+            self.collect_pickup();
+        }
+    }
+    fn collect_pickup(&mut self) {
+        let Some(index) = self
+            .pickups
+            .iter()
+            .position(|pickup| (pickup.x, pickup.y) == self.player)
+        else {
+            return;
+        };
+        let pickup = self.pickups.remove(index);
+        match pickup.kind {
+            BomberPickupKind::Range if self.blast_range < 4 => {
+                self.blast_range += 1;
+                self.feedback = format!("爆破范围提升到 {} 格！", self.blast_range);
+            }
+            BomberPickupKind::Capacity if self.bomb_capacity < 4 => {
+                self.bomb_capacity += 1;
+                self.feedback = format!("水泡容量提升到 {} 颗！", self.bomb_capacity);
+            }
+            BomberPickupKind::Heart if self.lives < 3 => {
+                self.lives += 1;
+                self.feedback = "捡到爱心水泡，恢复 1 条命！".into();
+            }
+            _ => {
+                self.score += 100;
+                self.feedback = "道具已满，转化为 100 分！".into();
+            }
         }
     }
     fn place_bomb(&mut self) {
-        if self.failed || self.paused || self.won
-            || self.bombs.len() >= 2
+        if self.failed
+            || self.paused
+            || self.won
+            || self.bombs.len() >= self.bomb_capacity
             || self
                 .bombs
                 .iter()
@@ -2662,10 +2775,10 @@ impl BomberGame {
         self.bombs.push(WaterBomb {
             x: self.player.0,
             y: self.player.1,
-            fuse: 3.0,
-            range: (2 + (self.round / 4) as i8).min(4),
+            fuse: 2.2,
+            range: self.blast_range,
         });
-        self.feedback = "水泡倒计时 3 秒，离开黄色格子就安全。".into();
+        self.feedback = "水泡 2 秒后爆开！引爆另一颗水泡可触发连锁爆破。".into();
     }
     fn blast_cells(&self, bomb: &WaterBomb) -> Vec<(i8, i8)> {
         let mut cells = vec![(bomb.x, bomb.y)];
@@ -2679,7 +2792,10 @@ impl BomberGame {
                     break;
                 }
                 cells.push(point);
-                if self.bricks.contains(&point) || self.pots.contains(&point) || self.bushes.contains(&point) {
+                if self.bricks.contains(&point)
+                    || self.pots.contains(&point)
+                    || self.bushes.contains(&point)
+                {
                     break;
                 }
             }
@@ -2688,14 +2804,35 @@ impl BomberGame {
     }
     fn explode(&mut self, bomb: WaterBomb) {
         let cells = self.blast_cells(&bomb);
+        // Blasts can trigger nearby bombs, setting up quick chain reactions.
+        for chained in &mut self.bombs {
+            if cells.contains(&(chained.x, chained.y)) {
+                chained.fuse = 0.;
+            }
+        }
         let destroyed: Vec<_> = cells
             .iter()
             .copied()
             .filter(|cell| self.bricks.contains(cell))
             .collect();
         self.bricks.retain(|brick| !destroyed.contains(brick));
-        let pots_destroyed = cells.iter().filter(|cell| self.pots.contains(cell)).count();
+        let destroyed_pots: Vec<_> = cells
+            .iter()
+            .copied()
+            .filter(|cell| self.pots.contains(cell))
+            .collect();
+        let pots_destroyed = destroyed_pots.len();
         self.pots.retain(|pot| !cells.contains(pot));
+        for (x, y) in destroyed_pots {
+            if (i16::from(x) * 3 + i16::from(y) + self.round as i16).rem_euclid(2) == 0 {
+                let kind = match self.round % 3 {
+                    1 => BomberPickupKind::Range,
+                    2 => BomberPickupKind::Capacity,
+                    _ => BomberPickupKind::Heart,
+                };
+                self.pickups.push(BomberPickup { x, y, kind });
+            }
+        }
         let defeated: Vec<_> = self
             .enemies
             .iter()
@@ -2705,7 +2842,8 @@ impl BomberGame {
         for index in defeated.iter().rev() {
             self.enemies.remove(*index);
         }
-        self.score += destroyed.len() as u32 * 8 + pots_destroyed as u32 * 20 + defeated.len() as u32 * 60;
+        self.score +=
+            destroyed.len() as u32 * 8 + pots_destroyed as u32 * 20 + defeated.len() as u32 * 60;
         self.blasts.extend(
             cells
                 .into_iter()
@@ -2752,16 +2890,18 @@ impl BomberGame {
         for bomb in &mut self.bombs {
             bomb.fuse -= dt;
         }
-        let detonated: Vec<_> = self
-            .bombs
-            .iter()
-            .enumerate()
-            .filter_map(|(i, bomb)| (bomb.fuse <= 0.).then_some(i))
-            .collect();
-        for index in detonated.iter().rev() {
-            let bomb = self.bombs.remove(*index);
+        let mut detonations = 0;
+        while let Some(index) = self.bombs.iter().position(|bomb| bomb.fuse <= 0.) {
+            let bomb = self.bombs.remove(index);
             self.explode(bomb);
+            detonations += 1;
         }
+        if detonations > 1 {
+            let bonus = (detonations as u32 - 1) * 100;
+            self.score += bonus;
+            self.feedback = format!("连锁爆破 ×{}！额外奖励 +{} 分", detonations, bonus);
+        }
+        self.collect_pickup();
         for blast in &mut self.blasts {
             blast.life -= dt;
         }
@@ -2829,7 +2969,7 @@ impl BomberGame {
             self.redraw = 0.;
             true
         } else {
-            !detonated.is_empty()
+            detonations > 0
         }
     }
 }
@@ -2896,7 +3036,7 @@ impl FruitGame {
             stage_target: 8,
             redraw: 0.,
             hit_flash: 0.,
-            feedback: "划过飞起来的水果！不要碰炸弹。".into(),
+            feedback: "划过飞起来的水果！漏切不扣命，注意避开炸弹。".into(),
             failed: false,
         }
     }
@@ -3044,7 +3184,8 @@ impl FruitGame {
                 self.stage += 1;
                 self.stage_progress = 0;
                 self.stage_target = 8 + (self.stage - 1) * 3;
-                self.feedback = format!("挑战完成！额外奖励 +{} 分，进入第 {} 轮", bonus, self.stage);
+                self.feedback =
+                    format!("挑战完成！额外奖励 +{} 分，进入第 {} 轮", bonus, self.stage);
             }
         }
         self.slices.extend(slices);
@@ -3075,17 +3216,8 @@ impl FruitGame {
             fruit.y += fruit.vy * dt;
             fruit.vy += dt * 0.78;
         }
-        let missed = self
-            .fruits
-            .iter()
-            .filter(|fruit| fruit.y > 1.24 && !fruit.bomb)
-            .count();
         self.fruits
             .retain(|fruit| fruit.y <= 1.28 && fruit.x >= -0.10 && fruit.x <= 1.10);
-        if missed > 0 {
-            self.lose_life("水果掉到地上了！");
-            changed = true;
-        }
         self.redraw += dt;
         if self.redraw >= 0.04 {
             self.redraw = 0.;
@@ -3131,6 +3263,7 @@ struct Session {
     elements: ElementGame,
     light_path: LightPathGame,
     garden: GardenGame,
+    courier: CourierGame,
     mission_step: usize,
     mission_done: bool,
     mission_wrong: Option<usize>,
@@ -3138,6 +3271,7 @@ struct Session {
     mission_stars: [usize; 4],
     mission_feedback: String,
     save: Save,
+    cloud_bridge_campaign: CloudBridgeCampaign,
     work: Work,
     runner: Option<Runner>,
     material: Material,
@@ -3156,6 +3290,61 @@ struct Session {
     pitch: f32,
     zoom: f32,
 }
+
+#[derive(Clone, Serialize, Deserialize)]
+struct CloudBridgeCampaign {
+    completed: Vec<usize>,
+    stars: [u8; 6],
+    unlocked: usize,
+}
+
+impl Default for CloudBridgeCampaign {
+    fn default() -> Self {
+        Self {
+            completed: vec![],
+            stars: [0; 6],
+            // The cloud-bridge game opens at the fourth island, as shown in
+            // its approved screen. Earlier islands remain replayable.
+            unlocked: 3,
+        }
+    }
+}
+
+impl CloudBridgeCampaign {
+    fn load() -> Self {
+        fs::read(save_directory().join("cloudbridge-v1.json"))
+            .ok()
+            .and_then(|bytes| serde_json::from_slice::<Self>(&bytes).ok())
+            .filter(|campaign| {
+                campaign.unlocked < 6
+                    && campaign.completed.iter().all(|level| *level < 6)
+                    && campaign.stars.iter().all(|stars| *stars <= 3)
+            })
+            .unwrap_or_default()
+    }
+
+    fn record(&mut self, level: usize, stars: u8) {
+        if level >= 6 {
+            return;
+        }
+        if !self.completed.contains(&level) {
+            self.completed.push(level);
+        }
+        self.stars[level] = self.stars[level].max(stars);
+        self.unlocked = self.unlocked.max((level + 1).min(5));
+        let path = save_directory().join("cloudbridge-v1.json");
+        if let Some(parent) = path.parent() {
+            let _ = fs::create_dir_all(parent);
+        }
+        if let Ok(bytes) = serde_json::to_vec_pretty(self) {
+            let temp = path.with_extension("tmp");
+            if fs::write(&temp, bytes).is_ok() {
+                let _ = fs::rename(temp, path);
+            }
+        }
+    }
+}
+
 impl Session {
     fn new() -> Self {
         let mut save_path = save_directory().join("island-v1.json");
@@ -3208,6 +3397,7 @@ impl Session {
             }
         };
         let work = save.profiles[&save.active].clone();
+        let cloud_bridge_campaign = CloudBridgeCampaign::load();
         let mut session = Self {
             mode: GameMode::Island,
             help_open: false,
@@ -3242,6 +3432,7 @@ impl Session {
             elements: load_elements(),
             light_path: LightPathGame::new(),
             garden: GardenGame::new(),
+            courier: CourierGame::load(),
             mission_step: 0,
             mission_done: false,
             mission_wrong: None,
@@ -3250,6 +3441,7 @@ impl Session {
             mission_feedback: String::new(),
             message: warning.unwrap_or(game::LEVEL_HINTS[work.level]).to_owned(),
             save,
+            cloud_bridge_campaign,
             work,
             runner: None,
             material: Material::Wood,
@@ -3273,9 +3465,20 @@ impl Session {
             Ok("fire") => Some(GameMode::Firefighters),
             Ok("detective") => Some(GameMode::Detective),
             Ok("farm") => Some(GameMode::SpaceFarm),
+            Ok("cloudbridge") => Some(GameMode::CloudBridge),
+            Ok("restaurant") => Some(GameMode::CrystalGarden),
             _ => None,
         } {
             select_game(&mut session, mode);
+        }
+        if session.mode == GameMode::CloudBridge
+            && std::env::var_os("MAGNET_CAPTURE").is_some()
+            && std::env::var_os("MAGNET_CLOUDBRIDGE_DEMO").is_some()
+        {
+            for x in -2..=2 {
+                session.work.world.put([x, 0, 0], Material::Wood);
+            }
+            session.world_dirty = true;
         }
         if std::env::var("MAGNET_START_GAME").as_deref() == Ok("ball") {
             select_game(&mut session, GameMode::Ball2048);
@@ -3384,6 +3587,9 @@ impl Session {
         ) {
             select_game(&mut session, GameMode::HoneyHunt);
         }
+        if std::env::var("MAGNET_START_GAME").as_deref() == Ok("courier") {
+            select_game(&mut session, GameMode::SpaceCourier);
+        }
         if matches!(
             std::env::var("MAGNET_START_GAME").as_deref(),
             Ok("moon") | Ok("bobing")
@@ -3435,9 +3641,15 @@ impl Session {
             && std::env::var_os("MAGNET_PREVIEW_SUCCESS").is_some()
         {
             if mission_index(session.mode).is_some() {
-                session.mission_step = 1;
+                session.mission_step = std::env::var("MAGNET_PREVIEW_SUCCESS")
+                    .ok()
+                    .and_then(|value| value.parse::<usize>().ok())
+                    .unwrap_or(1)
+                    .min(3);
                 session.mission_done = true;
-                session.mission_feedback = mission_question(session.mode, 1).success.into();
+                session.mission_feedback = mission_question(session.mode, session.mission_step)
+                    .success
+                    .into();
             }
             if session.mode == GameMode::Math {
                 let answer = session.math.question().answer;
@@ -3451,6 +3663,15 @@ impl Session {
                 session.literacy.check();
             }
         }
+        if std::env::var_os("MAGNET_CAPTURE").is_some() {
+            if let Ok(step) = std::env::var("MAGNET_PREVIEW_MISSION_STEP") {
+                if mission_index(session.mode).is_some() {
+                    session.mission_step = step.parse::<usize>().unwrap_or(0).min(3);
+                    session.mission_done = false;
+                    session.mission_feedback.clear();
+                }
+            }
+        }
         if std::env::var_os("MAGNET_CAPTURE").is_some()
             && std::env::var_os("MAGNET_PREVIEW_HELP").is_some()
         {
@@ -3459,6 +3680,22 @@ impl Session {
         session
     }
     fn persist(&mut self) {
+        if self.mode == GameMode::CrystalGarden {
+            let path = save_directory().join("restaurant-v1.json");
+            let result = (|| -> Result<(), Box<dyn std::error::Error>> {
+                fs::create_dir_all(save_directory())?;
+                let bytes = serde_json::to_vec_pretty(&self.work)?;
+                let temp = path.with_extension("tmp");
+                fs::write(&temp, bytes)?;
+                fs::rename(temp, path)?;
+                Ok(())
+            })();
+            if let Err(error) = result {
+                self.message = format!("餐厅暂未保存：{error}");
+            }
+            return;
+        }
+
         if !matches!(self.mode, GameMode::Island | GameMode::FreeBuild) {
             return;
         }
@@ -3550,6 +3787,14 @@ impl Session {
         self.reset_run();
         self.ui_dirty = true;
     }
+    fn level_complete(&self) -> bool {
+        if self.mode == GameMode::CloudBridge && self.work.level == 5 {
+            let (blocks, materials) = self.work.creative_progress();
+            blocks >= 10 && materials >= 3
+        } else {
+            self.work.world.won()
+        }
+    }
     fn step(&mut self) {
         if self.work.program.is_empty() {
             self.message = "先添加一张指令卡片吧".into();
@@ -3563,7 +3808,7 @@ impl Session {
         match result {
             Ok(done) => {
                 self.world_dirty = true;
-                if self.work.world.won() {
+                if self.level_complete() {
                     let level = self.work.level;
                     let earned = if level == 5 || planned_steps <= game::LEVEL_STAR_PAR[level] {
                         3
@@ -3582,6 +3827,11 @@ impl Session {
                     );
                     if !self.work.completed.contains(&level) {
                         self.work.completed.push(level);
+                    }
+                    if self.mode == GameMode::CloudBridge {
+                        self.cloud_bridge_campaign.record(level, earned);
+                        self.work.completed = self.cloud_bridge_campaign.completed.clone();
+                        self.work.stars = self.cloud_bridge_campaign.stars;
                     }
                     self.persist();
                 } else if done {
@@ -3620,8 +3870,10 @@ fn island_base_intact(work: &Work) -> bool {
 }
 
 fn free_build_base_intact(work: &Work) -> bool {
-    game::free_build_world().blocks.iter().all(|block|
-        work.world.material(block.pos) == Some(Material::Grass))
+    game::free_build_world()
+        .blocks
+        .iter()
+        .all(|block| work.world.material(block.pos) == Some(Material::Grass))
 }
 
 fn select_game(s: &mut Session, mode: GameMode) {
@@ -3643,7 +3895,11 @@ fn select_game(s: &mut Session, mode: GameMode) {
     s.editor_open = false;
     s.yaw = 0.68;
     s.pitch = 0.762;
-    s.zoom = 16.0;
+    s.zoom = if mode == GameMode::CloudBridge {
+        12.0
+    } else {
+        16.0
+    };
     s.island_3d_view = false;
     if mode == GameMode::Island {
         s.work = s.save.profiles[&s.save.active].clone();
@@ -3654,15 +3910,12 @@ fn select_game(s: &mut Session, mode: GameMode) {
         s.work = match mode {
             GameMode::CloudBridge => {
                 let mut work = Work::default();
-                work.choose_level(3);
+                work.choose_level(s.cloud_bridge_campaign.unlocked.min(5));
+                work.completed = s.cloud_bridge_campaign.completed.clone();
+                work.stars = s.cloud_bridge_campaign.stars;
                 work
             }
-            GameMode::CrystalGarden => {
-                let mut work = Work::default();
-                work.choose_level(5);
-                work.program.clear();
-                work
-            }
+            GameMode::CrystalGarden => load_restaurant_work(),
             GameMode::FreeBuild => Work {
                 world: s
                     .save
@@ -3707,7 +3960,7 @@ fn select_game(s: &mut Session, mode: GameMode) {
             GameMode::Breakout => Work::default(),
             GameMode::ElementLab => Work::default(),
             GameMode::LightPath => Work::default(),
-            GameMode::GardenDefense => Work::default(),
+            GameMode::GardenDefense | GameMode::SpaceCourier => Work::default(),
             GameMode::Island => unreachable!(),
         };
         if mode == GameMode::Ball2048 {
@@ -3744,9 +3997,6 @@ fn select_game(s: &mut Session, mode: GameMode) {
         if mode == GameMode::Fortune {
             s.fortune = FortuneGame::new();
         }
-        if mode == GameMode::LightPath {
-            s.light_path.reset();
-        }
         if mode == GameMode::GardenDefense {
             s.garden.reset();
         }
@@ -3780,8 +4030,16 @@ fn select_game(s: &mut Session, mode: GameMode) {
         if mode == GameMode::Breakout {
             s.breakout.reset();
         }
-        s.build = matches!(mode, GameMode::CrystalGarden | GameMode::FreeBuild);
+        s.build = matches!(mode, GameMode::CrystalGarden | GameMode::FreeBuild)
+            || (mode == GameMode::CloudBridge && s.work.level == 5);
         s.message = mode.intro().into();
+        if mode == GameMode::CloudBridge {
+            s.message = if s.work.level == 5 {
+                "终章挑战：搭建至少 10 块积木，并使用 3 种材料。".into()
+            } else {
+                game::LEVEL_HINTS[s.work.level].into()
+            };
+        }
         if mode == GameMode::FreeBuild {
             s.zoom = 22.0;
         }
@@ -3857,7 +4115,7 @@ struct BallObstacleScene(usize, f32);
 struct BallPlayer(f32);
 #[derive(Component)]
 struct CrystalSparkle(f32);
-#[derive(Component, Clone, Copy)]
+#[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
     Help,
     CloseHelp,
@@ -3905,6 +4163,7 @@ enum Action {
     HoneyReset,
     MoonShake,
     MoonReset,
+    Courier(CourierAction),
     MagnetModes,
     MagnetModesClose,
     #[cfg(target_os = "macos")]
@@ -3917,6 +4176,7 @@ enum Action {
     MathPlace(i32),
     MathCheck,
     MathLevels,
+    MathResume,
     MathLevel(usize),
     MathAnswer(i32),
     MathHint,
@@ -3928,8 +4188,10 @@ enum Action {
     BallStart,
     BallReset,
     BreakoutToggle,
+    BreakoutLaunch,
     BreakoutReset,
     ElementPick(u8),
+    ElementObserve,
     ElementNext,
     ElementReset,
     TetrisLeft,
@@ -3939,6 +4201,8 @@ enum Action {
     TetrisDrop,
     TetrisReset,
     BuilderTest,
+    RestaurantCheck,
+    RestaurantReset,
     SnakeMove(i8, i8),
     SnakeReset,
     SnakeToggle,
@@ -3946,11 +4210,16 @@ enum Action {
     MineToggleFlag,
     MineReset,
     ClassicReset,
+    ClassicMove(i8, i8),
     KlotskiSelect(usize),
     KlotskiMove(i8, i8),
     KlotskiReset,
     SokobanMove(i8, i8),
     SokobanReset,
+    SokobanUndo,
+    SokobanChoose,
+    SokobanLevel(usize),
+    SokobanNext,
     SudokuSelect(usize),
     SudokuDigit(u8),
     SudokuClear,
@@ -3960,6 +4229,7 @@ enum Action {
     SudokuNew,
     LightRotate(usize),
     LightReset,
+    LightNext,
     GardenSelect(usize),
     GardenStart,
     GardenPause,
@@ -3984,6 +4254,7 @@ enum Action {
     Profile(usize),
     Next,
     Previous,
+    CloudLevel(usize),
     Undo,
     ClearFreeBuild,
     Rotate,
@@ -4113,7 +4384,15 @@ struct BubbleHold(bool);
 struct BomberHold {
     direction: Option<(i8, i8)>,
     remaining: f32,
+    touch_id: Option<u64>,
+    mouse_active: bool,
 }
+#[derive(Component)]
+struct BomberJoystick;
+#[derive(Component)]
+struct BomberJoystickKnob;
+#[derive(Component)]
+struct BomberTouchPlace;
 #[derive(Resource, Default)]
 struct TetrisHold {
     active: bool,
@@ -4125,6 +4404,8 @@ struct FruitSlash {
 }
 #[derive(Resource)]
 struct Art {
+    storybook: StorybookArt,
+    restaurant_grass: Handle<StandardMaterial>,
     cube: Handle<Mesh>,
     round: Handle<Mesh>,
     grass: Handle<StandardMaterial>,
@@ -4149,17 +4430,53 @@ struct Art {
     red: Handle<StandardMaterial>,
     water: Handle<StandardMaterial>,
     font: Handle<Font>,
+    lightpath_level_plates: Handle<Image>,
+    lightpath_objects: Handle<Image>,
+    mission_fire_approved: Handle<Image>,
+    mission_fire_steps: [Handle<Image>; 3],
+    mission_detective_approved: Handle<Image>,
+    mission_detective_steps: [Handle<Image>; 3],
+    mission_farm_approved: Handle<Image>,
+    mission_farm_steps: [Handle<Image>; 3],
+    mission_pause_overlays: [Handle<Image>; 3],
+    mission_success_overlays: [Handle<Image>; 3],
     honey_story: Handle<Image>,
     honey_claw: Handle<Image>,
     honey_jar: Handle<Image>,
+    courier_map: Handle<Image>,
+    courier_title: Handle<Image>,
+    courier_chapter_banner: Handle<Image>,
+    courier_route_card: Handle<Image>,
+    courier_station: Handle<Image>,
+    courier_moon_name: Handle<Image>,
+    courier_blueberry_name: Handle<Image>,
+    courier_candy_name: Handle<Image>,
+    courier_progress_title: Handle<Image>,
+    courier_fuel: Handle<Image>,
+    courier_navigation: Handle<Image>,
+    courier_repair: Handle<Image>,
+    courier_candy: Handle<Image>,
+    courier_asteroids: Handle<Image>,
+    courier_parcel: Handle<Image>,
+    courier_parcel_slot: Handle<Image>,
+    courier_empty_slot: Handle<Image>,
+    courier_gift: Handle<Image>,
     bubble_story: Handle<Image>,
+    sky_backdrop: Handle<Image>,
+    sky_player: Handle<Image>,
+    sky_enemy: Handle<Image>,
+    sky_boss: Handle<Image>,
+    sky_asteroid: Handle<Image>,
     fruit_paper: Handle<Image>,
     fruit_sprites: Handle<Image>,
     fruit_extras: Handle<Image>,
     bomber_tiles: Handle<Image>,
     bomber_backdrop: Handle<Image>,
-    bomber_design: Handle<Image>,
     bomber_monsters: Handle<Image>,
+    bomber_extra_monsters: Handle<Image>,
+    bomber_action_bubble: Handle<Image>,
+    element_backdrop: Handle<Image>,
+    element_molecule: Handle<Image>,
     fishing_aquarium: Handle<Image>,
     fishing_fish: Handle<Image>,
     fortune_board: Handle<Image>,
@@ -4170,13 +4487,21 @@ struct Art {
     garden_enemies: Handle<Image>,
     garden_props: Handle<Image>,
     builder_backdrop: Handle<Image>,
+    cloud_bridge_backdrop: Handle<Image>,
     island_landscape: Handle<Image>,
     island_free_build: Handle<Image>,
     island_goal_star: Handle<Image>,
     island_star_empty: Handle<Image>,
     island_materials: Handle<Image>,
+    tank_sprites: Handle<Image>,
+    tank_concept: Handle<Image>,
+    tank_mobile_background_wide: Handle<Image>,
+    tank_mobile_background_regular: Handle<Image>,
     placement_preview: Handle<StandardMaterial>,
     snake_reference: Handle<Image>,
+    minesweeper_plate: Handle<Image>,
+    minesweeper_atlas: Handle<Image>,
+    sokoban_atlas: Handle<Image>,
 }
 
 // Small synthesized WAV clips keep the app completely offline and avoid
@@ -4470,7 +4795,13 @@ pub fn run() {
         std::env::var("MAGNET_START_GAME").as_deref(),
         Ok("sky") | Ok("ball") | Ok("tetris") | Ok("moon") | Ok("bobing") | Ok("snake")
     );
-    App::new()
+    let tank_game = matches!(std::env::var("MAGNET_START_GAME").as_deref(), Ok("tank"));
+    let mission_game = matches!(
+        std::env::var("MAGNET_START_GAME").as_deref(),
+        Ok("fire") | Ok("detective") | Ok("farm")
+    );
+    let mut app = App::new();
+    app
         .insert_resource(ClearColor(Color::srgb(0.79, 0.88, 0.91)))
         .insert_resource(AmbientLight {
             color: Color::WHITE,
@@ -4508,6 +4839,10 @@ pub fn run() {
                             }
                         } else if portrait_game {
                             (560_f32, 900_f32).into()
+                        } else if tank_game {
+                            (1280_f32, 720_f32).into()
+                        } else if mission_game {
+                            (1280_f32, 720_f32).into()
                         } else {
                             (1280_f32, 800_f32).into()
                         },
@@ -4521,7 +4856,7 @@ pub fn run() {
         .add_systems(
             Update,
             (
-                (button_feedback, button_sounds).chain(),
+                (button_feedback, sokoban_feedback, button_sounds).chain(),
                 animate_math,
                 math_island_input,
                 animate_math_island,
@@ -4535,18 +4870,25 @@ pub fn run() {
                     tank_key_input,
                     breakout_key_input,
                     garden_key_input,
+                    courier_key_input,
                 )
                     .chain(),
                 (
                     sky_key_input,
                     bubble_screen_input,
-                    (bomber_key_input, bomber_hold_input, bomber_board_input).chain(),
+                    (
+                        bomber_key_input,
+                        bomber_hold_input,
+                        bomber_joystick_input,
+                        bomber_board_input,
+                    )
+                        .chain(),
                     fruit_screen_input,
                     fishing_screen_input,
                     honey_screen_input,
                 )
                     .chain(),
-        (ball_key_input, ball_screen_input).chain(),
+                (ball_key_input, ball_screen_input).chain(),
                 (
                     mine_board_input,
                     classic_swipe_input,
@@ -4582,7 +4924,15 @@ pub fn run() {
             )
                 .chain(),
         )
-        .run();
+        .add_systems(
+            PreUpdate,
+            storybook::smoke_input
+                .after(bevy::input::InputSystem)
+                .before(bevy::ui::UiSystem::Focus),
+        );
+    #[cfg(debug_assertions)]
+    app.add_plugins(qa::QaPlugin);
+    app.run();
 }
 
 fn move_ball_lane(ball: &mut BallGame, direction: i8) -> bool {
@@ -4643,6 +4993,20 @@ fn garden_key_input(keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
         changed = true;
     }
     if changed {
+        s.ui_dirty = true;
+    }
+}
+
+fn courier_key_input(keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
+    if s.mode != GameMode::SpaceCourier || s.library_open || s.help_open {
+        return;
+    }
+    if keys.just_pressed(KeyCode::Escape) {
+        s.reset_run();
+        s.library_open = true;
+        s.build = false;
+        s.editor_open = false;
+        s.message = "选择一个想玩的小游戏吧".into();
         s.ui_dirty = true;
     }
 }
@@ -4750,6 +5114,20 @@ fn ball_screen_input(
     }
 }
 
+fn image_asset_path(png_path: &str) -> String {
+    #[cfg(target_os = "android")]
+    {
+        png_path
+            .strip_suffix(".png")
+            .map(|stem| format!("{stem}.webp"))
+            .unwrap_or_else(|| png_path.to_owned())
+    }
+    #[cfg(not(target_os = "android"))]
+    {
+        png_path.to_owned()
+    }
+}
+
 fn setup(
     mut commands: Commands,
     assets: Res<AssetServer>,
@@ -4782,21 +5160,32 @@ fn setup(
         ..default()
     });
     let art = Art {
+        storybook: load_storybook(&assets),
+        restaurant_grass: materials.add(StandardMaterial {
+            base_color_texture: Some(assets.load_with_settings(
+                image_asset_path("storybook/restaurant-grass.png"),
+                |s: &mut bevy::image::ImageLoaderSettings| {
+                    s.sampler = bevy::image::ImageSampler::linear()
+                },
+            )),
+            perceptual_roughness: 0.95,
+            ..default()
+        }),
         cube: meshes.add(Cuboid::new(1., 1., 1.)),
         round: meshes.add(Sphere::new(1.).mesh().uv(16, 12)),
         grass,
         island_grass: materials.add(StandardMaterial {
-            base_color_texture: Some(assets.load("builders/island-grass-v2.png")),
+            base_color_texture: Some(assets.load(image_asset_path("builders/island-grass-v2.png"))),
             perceptual_roughness: 0.9,
             ..default()
         }),
         island_cliff: materials.add(StandardMaterial {
-            base_color_texture: Some(assets.load("builders/island-cliff-v2.png")),
+            base_color_texture: Some(assets.load(image_asset_path("builders/island-cliff-v2.png"))),
             perceptual_roughness: 0.9,
             ..default()
         }),
         island_wood: materials.add(StandardMaterial {
-            base_color_texture: Some(assets.load("builders/island-wood-v3.png")),
+            base_color_texture: Some(assets.load(image_asset_path("builders/island-wood-v3.png"))),
             perceptual_roughness: 0.83,
             ..default()
         }),
@@ -4838,57 +5227,152 @@ fn setup(
             ..default()
         }),
         font: assets.load("fonts/NotoSansCJKsc-Medium.otf"),
-        honey_story: assets.load("honey/honey-hunt-felt-empty-v3.png"),
-        honey_claw: assets.load("honey/crane-claw-v1.png"),
-        honey_jar: assets.load("honey/honey-jar-v1.png"),
-        bubble_story: assets.load("bubble/storybook-sky-v1.png"),
-        fruit_paper: assets.load("fruit/washi-paper-v1.png"),
-        fruit_sprites: assets.load("fruit/fruit-sprites-v1.png"),
-        fruit_extras: assets.load("fruit/fruit-extras-v1.png"),
-        bomber_tiles: assets.load("bomber/maze-atlas-v1.png"),
-        bomber_backdrop: assets.load("bomber/arena-backdrop-v1.png"),
-        bomber_design: assets.load("bomber/bomber-design-reference-v1.png"),
-        bomber_monsters: assets.load("bomber/monster-atlas-v1.png"),
-        fishing_aquarium: assets.load("fishing/aquarium-v1.png"),
-        fishing_fish: assets.load("fishing/fish-atlas-v1.png"),
-        fortune_board: assets.load("fortune/board-loop-v4.png"),
-        assault_forest: assets.load("assault/toy-forest-v1.png"),
-        assault_hero: assets.load("assault/explorer-hero-v1.png"),
+        mission_fire_approved: assets.load(image_asset_path("learning/fire-approved-v2.png")),
+        mission_fire_steps: [
+            assets.load(image_asset_path("learning/fire-step2-v2.png")),
+            assets.load(image_asset_path("learning/fire-step3-v2.png")),
+            assets.load(image_asset_path("learning/fire-step4-v2.png")),
+        ],
+        mission_detective_approved: assets
+            .load(image_asset_path("learning/detective-approved-v2.png")),
+        mission_detective_steps: [
+            assets.load(image_asset_path("learning/detective-step2-v2.png")),
+            assets.load(image_asset_path("learning/detective-step3-v2.png")),
+            assets.load(image_asset_path("learning/detective-step4-v2.png")),
+        ],
+        mission_farm_approved: assets.load(image_asset_path("learning/farm-approved-v2.png")),
+        mission_farm_steps: [
+            assets.load(image_asset_path("learning/farm-step2-v2.png")),
+            assets.load(image_asset_path("learning/farm-step3-v2.png")),
+            assets.load(image_asset_path("learning/farm-step4-v2.png")),
+        ],
+        mission_pause_overlays: [
+            assets.load(image_asset_path("learning/fire-pause-overlay-v2.png")),
+            assets.load(image_asset_path("learning/detective-pause-overlay-v2.png")),
+            assets.load(image_asset_path("learning/farm-pause-overlay-v2.png")),
+        ],
+        mission_success_overlays: [
+            assets.load(image_asset_path("learning/fire-success-overlay-v2.png")),
+            assets.load(image_asset_path(
+                "learning/detective-success-overlay-v2.png",
+            )),
+            assets.load(image_asset_path("learning/farm-success-overlay-v2.png")),
+        ],
+        honey_story: assets.load(image_asset_path("honey/honey-hunt-felt-empty-v3.png")),
+        honey_claw: assets.load(image_asset_path("honey/crane-claw-v1.png")),
+        honey_jar: assets.load(image_asset_path("honey/honey-jar-v1.png")),
+        courier_map: assets.load(image_asset_path("courier/space-map-v1.png")),
+        courier_title: assets.load(image_asset_path("courier/title-logo-v1.png")),
+        courier_chapter_banner: assets.load(image_asset_path("courier/chapter-banner-v1.png")),
+        courier_route_card: assets.load(image_asset_path("courier/route-card-v1.png")),
+        courier_station: assets.load(image_asset_path("courier/station-button-v1.png")),
+        courier_moon_name: assets.load(image_asset_path("courier/moon-name-v1.png")),
+        courier_blueberry_name: assets.load(image_asset_path("courier/blueberry-name-v1.png")),
+        courier_candy_name: assets.load(image_asset_path("courier/candy-name-v1.png")),
+        courier_progress_title: assets.load(image_asset_path("courier/progress-title-v1.png")),
+        courier_fuel: assets.load(image_asset_path("courier/fuel-icon-v1.png")),
+        courier_navigation: assets.load(image_asset_path("courier/navigation-icon-v1.png")),
+        courier_repair: assets.load(image_asset_path("courier/repair-icon-v1.png")),
+        courier_candy: assets.load(image_asset_path("courier/candy-icon-v1.png")),
+        courier_asteroids: assets.load(image_asset_path("courier/asteroid-card-v1.png")),
+        courier_parcel: assets.load(image_asset_path("courier/parcel-icon-v1.png")),
+        courier_parcel_slot: assets.load(image_asset_path("courier/parcel-slot-v1.png")),
+        courier_empty_slot: assets.load(image_asset_path("courier/empty-slot-v1.png")),
+        courier_gift: assets.load(image_asset_path("courier/gift-v1.png")),
+        lightpath_level_plates: assets.load_with_settings(
+            image_asset_path("lightpath/level-screen-plates-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        lightpath_objects: assets.load_with_settings(
+            image_asset_path("lightpath/optical-objects-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        bubble_story: assets.load(image_asset_path("bubble/storybook-sky-v1.png")),
+        sky_backdrop: assets.load(image_asset_path("sky/nebula-field-v1.png")),
+        sky_player: assets.load(image_asset_path("sky/player-fighter-v1.png")),
+        sky_enemy: assets.load(image_asset_path("sky/enemy-fighter-v1.png")),
+        sky_boss: assets.load(image_asset_path("sky/boss-mothership-v1.png")),
+        sky_asteroid: assets.load(image_asset_path("sky/asteroid-v1.png")),
+        fruit_paper: assets.load(image_asset_path("fruit/washi-paper-v1.png")),
+        fruit_sprites: assets.load(image_asset_path("fruit/fruit-sprites-v1.png")),
+        fruit_extras: assets.load(image_asset_path("fruit/fruit-extras-v1.png")),
+        bomber_tiles: assets.load(image_asset_path("bomber/maze-atlas-v1.png")),
+        bomber_backdrop: assets.load(image_asset_path("bomber/arena-backdrop-v1.png")),
+        bomber_monsters: assets.load(image_asset_path("bomber/monster-atlas-v1.png")),
+        bomber_extra_monsters: assets
+            .load(image_asset_path("bomber/monster-atlas-v2-additions.png")),
+        bomber_action_bubble: assets.load(image_asset_path("bomber/action-bubble-v2.png")),
+        element_backdrop: assets.load(image_asset_path("elements/chemistry-lab-backdrop-v1.png")),
+        element_molecule: assets.load(image_asset_path("elements/water-molecule-v1.png")),
+        fishing_aquarium: assets.load(image_asset_path("fishing/aquarium-v1.png")),
+        fishing_fish: assets.load(image_asset_path("fishing/fish-atlas-v1.png")),
+        fortune_board: assets.load(image_asset_path("fortune/board-loop-v4.png")),
+        assault_forest: assets.load(image_asset_path("assault/toy-forest-v1.png")),
+        assault_hero: assets.load(image_asset_path("assault/explorer-hero-v1.png")),
         garden_backdrop: assets.load_with_settings(
-            "garden/backdrop-v1.png",
+            image_asset_path("garden/backdrop-v1.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
                 settings.sampler = bevy::image::ImageSampler::linear();
             },
         ),
         garden_plants: assets.load_with_settings(
-            "garden/plants-v1.png",
+            image_asset_path("garden/plants-v1.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
                 settings.sampler = bevy::image::ImageSampler::linear();
             },
         ),
         garden_enemies: assets.load_with_settings(
-            "garden/enemies-v1.png",
+            image_asset_path("garden/enemies-v1.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
                 settings.sampler = bevy::image::ImageSampler::linear();
             },
         ),
         garden_props: assets.load_with_settings(
-            "garden/props-v1.png",
+            image_asset_path("garden/props-v1.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
                 settings.sampler = bevy::image::ImageSampler::linear();
             },
         ),
         builder_backdrop: assets.load_with_settings(
-            "builders/island-sky-v4.png",
+            image_asset_path("builders/island-sky-v4.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
                 settings.sampler = bevy::image::ImageSampler::linear();
             },
         ),
-        island_landscape: assets.load("builders/island-landscape-v4.png"),
-        island_free_build: assets.load("builders/island-free-build-v1.png"),
-        island_goal_star: assets.load("builders/island-goal-star-v1.png"),
-        island_star_empty: assets.load("builders/island-star-empty-v1.png"),
-        island_materials: assets.load("builders/island-materials-v2.png"),
+        cloud_bridge_backdrop: assets.load_with_settings(
+            image_asset_path("builders/cloud-bridge-sky-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        island_landscape: assets.load(image_asset_path("builders/island-landscape-v4.png")),
+        island_free_build: assets.load(image_asset_path("builders/island-free-build-v1.png")),
+        island_goal_star: assets.load(image_asset_path("builders/island-goal-star-v1.png")),
+        island_star_empty: assets.load(image_asset_path("builders/island-star-empty-v1.png")),
+        island_materials: assets.load(image_asset_path("builders/island-materials-v2.png")),
+        tank_sprites: assets.load(image_asset_path("tank/tank-sprites-v4.png")),
+        tank_concept: assets.load_with_settings(
+            image_asset_path("tank/concept-reference.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        tank_mobile_background_wide: assets.load_with_settings(
+            image_asset_path("tank/mobile-forest-20x9-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        tank_mobile_background_regular: assets.load_with_settings(
+            image_asset_path("tank/mobile-forest-16x9-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
         placement_preview: materials.add(StandardMaterial {
             base_color: Color::srgba(1.0, 0.83, 0.25, 0.46),
             emissive: LinearRgba::new(0.45, 0.28, 0.02, 1.0),
@@ -4896,7 +5380,25 @@ fn setup(
             unlit: true,
             ..default()
         }),
-        snake_reference: assets.load("snake/snake-reference-v1.png"),
+        snake_reference: assets.load(image_asset_path("snake/snake-reference-v1.png")),
+        minesweeper_plate: assets.load_with_settings(
+            image_asset_path("minesweeper/approved-plate-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        minesweeper_atlas: assets.load_with_settings(
+            image_asset_path("minesweeper/approved-atlas-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        sokoban_atlas: assets.load_with_settings(
+            image_asset_path("sokoban/approved-atlas.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
     };
     commands.spawn((
         Camera3d::default(),
@@ -4955,8 +5457,10 @@ fn setup(
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
-            left: Val::Px(125.), top: Val::Px(215.),
-            width: Val::Px(760.), height: Val::Px(475.),
+            left: Val::Px(125.),
+            top: Val::Px(215.),
+            width: Val::Px(760.),
+            height: Val::Px(475.),
             ..default()
         },
         island_plate,
@@ -4968,8 +5472,11 @@ fn setup(
     commands.spawn((
         Node {
             position_type: PositionType::Absolute,
-            left: Val::Px(640.), top: Val::Px(420.),
-            width: Val::Px(95.), height: Val::Px(95.), display: Display::None,
+            left: Val::Px(640.),
+            top: Val::Px(420.),
+            width: Val::Px(95.),
+            height: Val::Px(95.),
+            display: Display::None,
             ..default()
         },
         ImageNode::new(art.island_goal_star.clone()),
@@ -4993,7 +5500,11 @@ fn setup(
         Transform::from_xyz(-4., 12., 8.).looking_at(Vec3::ZERO, Vec3::Y),
     ));
     commands
-        .spawn((Transform::from_scale(Vec3::splat(1.28)), Visibility::default(), Robot))
+        .spawn((
+            Transform::from_scale(Vec3::splat(1.28)),
+            Visibility::default(),
+            Robot,
+        ))
         .with_children(|p| {
             let parts = [
                 (
@@ -5064,7 +5575,7 @@ fn setup(
         IslandRobotBillboard,
         Mesh3d(meshes.add(Rectangle::new(1., 1.))),
         MeshMaterial3d(materials.add(StandardMaterial {
-            base_color_texture: Some(assets.load("builders/island-robot-v1.png")),
+            base_color_texture: Some(assets.load(image_asset_path("builders/island-robot-v1.png"))),
             alpha_mode: AlphaMode::Blend,
             unlit: true,
             ..default()
@@ -5113,12 +5624,13 @@ fn layout_camera(
     windows: Query<&Window, With<PrimaryWindow>>,
     mut cameras: Query<(&mut Camera, &mut Transform, &mut Projection), With<GameCamera>>,
     mut backdrop_camera: Query<&mut Camera, (With<BuilderBackdropCamera>, Without<GameCamera>)>,
-    mut backdrop_visibility: Query<&mut Visibility, With<BuilderBackdrop>>,
+    mut backdrop_visibility: Query<(&mut Visibility, &mut ImageNode), With<BuilderBackdrop>>,
     mut island_plate: Query<&mut Node, (With<IslandPlate>, Without<IslandGoalSprite>)>,
     mut island_goal_sprite: Query<&mut Node, (With<IslandGoalSprite>, Without<IslandPlate>)>,
     mut ui_scale: ResMut<UiScale>,
     mut layout: ResMut<Layout>,
     s: Res<Session>,
+    art: Res<Art>,
     mut last_physical_size: Local<Option<UVec2>>,
     mut resize_cooldown: Local<u8>,
 ) {
@@ -5136,15 +5648,23 @@ fn layout_camera(
         // this camera briefly so those attachments are never mixed in a pass.
         *resize_cooldown = 3;
     }
-    let show_builder_backdrop = matches!(s.mode, GameMode::Island | GameMode::FreeBuild);
+    let show_builder_backdrop = matches!(
+        s.mode,
+        GameMode::Island | GameMode::CloudBridge | GameMode::FreeBuild | GameMode::CrystalGarden
+    );
     if let Ok(mut camera) = backdrop_camera.single_mut() {
         camera.is_active = show_builder_backdrop;
     }
-    if let Ok(mut visibility) = backdrop_visibility.single_mut() {
+    if let Ok((mut visibility, mut image)) = backdrop_visibility.single_mut() {
         *visibility = if show_builder_backdrop {
             Visibility::Visible
         } else {
             Visibility::Hidden
+        };
+        image.image = if s.mode == GameMode::CloudBridge {
+            art.cloud_bridge_backdrop.clone()
+        } else {
+            art.builder_backdrop.clone()
         };
     }
     // Portrait phones are tall, so height alone cannot identify their compact
@@ -5178,7 +5698,11 @@ fn layout_camera(
             && !s.island_3d_view
             && island_base_intact(&s.work)
             && s.work.level == 3;
-        goal.display = if illustrated_goal { Display::Flex } else { Display::None };
+        goal.display = if illustrated_goal {
+            Display::Flex
+        } else {
+            Display::None
+        };
         if compact {
             goal.left = Val::Px(457.);
             goal.top = Val::Px(228.);
@@ -5215,6 +5739,33 @@ fn layout_camera(
     };
     camera.is_active = *resize_cooldown == 0;
     *resize_cooldown = resize_cooldown.saturating_sub(1);
+    if s.mode == GameMode::CrystalGarden {
+        let k = (window.width() / 1672.).min(window.height() / 941.);
+        let offset =
+            (Vec2::new(window.width(), window.height()) - Vec2::new(1672., 941.) * k) * 0.5;
+        let dpi = window.scale_factor();
+        camera.viewport = Some(Viewport {
+            physical_position: ((offset + Vec2::new(355., 125.) * k) * dpi).as_uvec2(),
+            physical_size: (Vec2::new(962., 655.) * k * dpi).as_uvec2(),
+            ..default()
+        });
+        camera.clear_color = ClearColorConfig::None;
+        let mut p = OrthographicProjection::default_3d();
+        p.scaling_mode = ScalingMode::AutoMin {
+            min_width: s.zoom * 1.1,
+            min_height: s.zoom * 0.85,
+        };
+        *projection = Projection::Orthographic(p);
+        let radius = 30.4;
+        let horizontal = radius * s.pitch.cos();
+        *transform = Transform::from_xyz(
+            s.yaw.sin() * horizontal,
+            radius * s.pitch.sin(),
+            s.yaw.cos() * horizontal,
+        )
+        .looking_at(Vec3::ZERO, Vec3::Y);
+        return;
+    }
     if s.mode == GameMode::Literacy {
         camera.viewport = None;
         camera.clear_color = ClearColorConfig::Custom(Color::srgb(0.89, 0.96, 0.97));
@@ -5354,7 +5905,10 @@ fn layout_camera(
     let dpi = window.scale_factor();
     let island_desktop = s.mode == GameMode::Island && !compact;
     let island_compact = s.mode == GameMode::Island && compact;
-    let origin = if island_desktop {
+    let cloud_bridge = s.mode == GameMode::CloudBridge;
+    let origin = if cloud_bridge && !compact {
+        Vec2::new(18., 94.) * scale
+    } else if island_desktop {
         Vec2::new(18., 166.) * scale
     } else if island_compact {
         Vec2::new(8., 85.) * scale
@@ -5369,7 +5923,9 @@ fn layout_camera(
     };
     let size = Vec2::new(
         (window.width()
-            - if island_desktop {
+            - if cloud_bridge && !compact {
+                186. * scale
+            } else if island_desktop {
                 340. * scale
             } else if island_compact {
                 226. * scale
@@ -5380,7 +5936,9 @@ fn layout_camera(
             } * scale)
             .max(100.),
         (window.height()
-            - if island_desktop {
+            - if cloud_bridge && !compact {
+                224. * scale
+            } else if island_desktop {
                 266. * scale
             } else if island_compact {
                 204. * scale
@@ -5412,7 +5970,14 @@ fn layout_camera(
     .looking_at(Vec3::ZERO, Vec3::Y);
     if let Projection::Orthographic(p) = &mut *projection {
         p.scaling_mode = ScalingMode::AutoMin {
-            min_width: s.zoom * if island_desktop { 0.90 } else if island_compact { 1.18 } else { 1.25 },
+            min_width: s.zoom
+                * if island_desktop {
+                    0.90
+                } else if island_compact {
+                    1.18
+                } else {
+                    1.25
+                },
             min_height: s.zoom * 0.85,
         };
     }
@@ -5437,17 +6002,35 @@ fn island_bridge_guide(commands: &mut Commands, art: &Art, x: f32) {
     let thin = 0.025;
     for y in [-edge, edge] {
         for z in [-edge, edge] {
-            cube(commands, art, Vec3::new(x, y, z), Vec3::new(edge * 2., thin, thin), art.island_ghost.clone());
+            cube(
+                commands,
+                art,
+                Vec3::new(x, y, z),
+                Vec3::new(edge * 2., thin, thin),
+                art.island_ghost.clone(),
+            );
         }
     }
     for x_offset in [-edge, edge] {
         for z in [-edge, edge] {
-            cube(commands, art, Vec3::new(x + x_offset, 0., z), Vec3::new(thin, edge * 2., thin), art.island_ghost.clone());
+            cube(
+                commands,
+                art,
+                Vec3::new(x + x_offset, 0., z),
+                Vec3::new(thin, edge * 2., thin),
+                art.island_ghost.clone(),
+            );
         }
     }
     for x_offset in [-edge, edge] {
         for y in [-edge, edge] {
-            cube(commands, art, Vec3::new(x + x_offset, y, 0.), Vec3::new(thin, thin, edge * 2.), art.island_ghost.clone());
+            cube(
+                commands,
+                art,
+                Vec3::new(x + x_offset, y, 0.),
+                Vec3::new(thin, thin, edge * 2.),
+                art.island_ghost.clone(),
+            );
         }
     }
 }
@@ -5465,46 +6048,59 @@ fn rebuild_world(
         return;
     }
     s.world_dirty = false;
-    let illustrated_island = s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
+    let illustrated_island =
+        s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
     if let Ok((mut visibility, mut image)) = island_plate.single_mut() {
-        *visibility = if illustrated_island || (s.mode == GameMode::FreeBuild && !s.island_3d_view) { Visibility::Visible } else { Visibility::Hidden };
-        image.image = if s.mode == GameMode::FreeBuild { art.island_free_build.clone() } else { art.island_landscape.clone() };
+        *visibility = if illustrated_island || (s.mode == GameMode::FreeBuild && !s.island_3d_view)
+        {
+            Visibility::Visible
+        } else {
+            Visibility::Hidden
+        };
+        image.image = if s.mode == GameMode::FreeBuild {
+            art.island_free_build.clone()
+        } else {
+            art.island_landscape.clone()
+        };
     }
     for e in &entities {
         commands.entity(e).despawn();
     }
     for mut visibility in &mut robots {
-        *visibility = if illustrated_island || matches!(
-            s.mode,
-            GameMode::Ball2048
-                | GameMode::Tetris
-                | GameMode::Math
-                | GameMode::Literacy
-                | GameMode::PixelAssault
-                | GameMode::MushroomRun
-                | GameMode::TankBattle
-                | GameMode::Breakout
-                | GameMode::ElementLab
-                | GameMode::LightPath
-                | GameMode::GardenDefense
-                | GameMode::SkyRaid
-                | GameMode::BubbleIsland
-                | GameMode::BubbleBomber
-                | GameMode::FruitNinja
-                | GameMode::Fortune
-                | GameMode::Slots
-                | GameMode::FruitArcade
-                | GameMode::Fishing
-                | GameMode::HoneyHunt
-                | GameMode::MoonFestival
-                | GameMode::Snake
-                | GameMode::Minesweeper
-                | GameMode::Classic2048
-                | GameMode::Klotski
-                | GameMode::Sokoban
-                | GameMode::Sudoku
-                | GameMode::FreeBuild
-        ) {
+        *visibility = if illustrated_island
+            || (s.mode == GameMode::CloudBridge && s.work.level == 5)
+            || matches!(
+                s.mode,
+                GameMode::Ball2048
+                    | GameMode::Tetris
+                    | GameMode::Math
+                    | GameMode::Literacy
+                    | GameMode::PixelAssault
+                    | GameMode::MushroomRun
+                    | GameMode::TankBattle
+                    | GameMode::Breakout
+                    | GameMode::ElementLab
+                    | GameMode::LightPath
+                    | GameMode::GardenDefense
+                    | GameMode::SkyRaid
+                    | GameMode::BubbleIsland
+                    | GameMode::BubbleBomber
+                    | GameMode::FruitNinja
+                    | GameMode::Fortune
+                    | GameMode::Slots
+                    | GameMode::FruitArcade
+                    | GameMode::Fishing
+                    | GameMode::HoneyHunt
+                    | GameMode::MoonFestival
+                    | GameMode::Snake
+                    | GameMode::Minesweeper
+                    | GameMode::Classic2048
+                    | GameMode::Klotski
+                    | GameMode::Sokoban
+                    | GameMode::Sudoku
+                    | GameMode::FreeBuild
+                    | GameMode::CrystalGarden
+            ) {
             Visibility::Hidden
         } else {
             Visibility::Visible
@@ -5569,7 +6165,10 @@ fn rebuild_world(
     if s.mode == GameMode::FruitNinja {
         return;
     }
-    if !matches!(s.mode, GameMode::Island | GameMode::FreeBuild) {
+    if !matches!(
+        s.mode,
+        GameMode::Island | GameMode::CloudBridge | GameMode::FreeBuild | GameMode::CrystalGarden
+    ) {
         cube(
             &mut commands,
             &art,
@@ -5580,7 +6179,10 @@ fn rebuild_world(
     }
     for b in &s.work.world.blocks {
         let [x, y, z] = b.pos;
-        if (illustrated_island || (s.mode == GameMode::FreeBuild && !s.island_3d_view)) && y == 0 && b.material == Material::Grass {
+        if (illustrated_island || (s.mode == GameMode::FreeBuild && !s.island_3d_view))
+            && y == 0
+            && b.material == Material::Grass
+        {
             continue;
         }
         if b.material == Material::Grass {
@@ -5589,14 +6191,38 @@ fn rebuild_world(
                 &art,
                 Vec3::new(x as f32, y as f32 - 0.05, z as f32),
                 Vec3::new(0.995, 0.84, 0.995),
-                if s.mode == GameMode::Island { art.island_cliff.clone() } else { art.soil.clone() },
+                if matches!(
+                    s.mode,
+                    GameMode::Island | GameMode::CloudBridge | GameMode::CrystalGarden
+                ) {
+                    art.island_cliff.clone()
+                } else {
+                    art.soil.clone()
+                },
             );
+            if s.mode == GameMode::CloudBridge && y == 0 {
+                cube(
+                    &mut commands,
+                    &art,
+                    Vec3::new(x as f32, y as f32 - 0.78, z as f32),
+                    Vec3::new(0.98, 0.62, 0.98),
+                    art.island_cliff.clone(),
+                );
+            }
             cube(
                 &mut commands,
                 &art,
                 Vec3::new(x as f32, y as f32 + 0.40, z as f32),
                 Vec3::new(1.0, 0.18, 1.0),
-                if s.mode == GameMode::Island { art.island_grass.clone() } else { art.grass.clone() },
+                if s.mode == GameMode::CrystalGarden {
+                    art.restaurant_grass.clone()
+                } else if s.mode == GameMode::Island {
+                    art.island_grass.clone()
+                } else if s.mode == GameMode::CloudBridge {
+                    art.grass.clone()
+                } else {
+                    art.grass.clone()
+                },
             );
         } else {
             cube(
@@ -5604,7 +6230,11 @@ fn rebuild_world(
                 &art,
                 Vec3::new(x as f32, y as f32, z as f32),
                 Vec3::splat(0.94),
-                if s.mode == GameMode::Island && b.material == Material::Wood {
+                if matches!(
+                    s.mode,
+                    GameMode::Island | GameMode::CloudBridge | GameMode::CrystalGarden
+                ) && b.material == Material::Wood
+                {
                     art.island_wood.clone()
                 } else {
                     art.material(b.material)
@@ -5626,21 +6256,61 @@ fn rebuild_world(
             WorldPiece,
             CrystalSparkle(index as f32 * 1.7),
             Mesh3d(art.cube.clone()),
-            MeshMaterial3d(if s.mode == GameMode::Island { art.island_crystal.clone() } else { art.crystal.clone() }),
+            MeshMaterial3d(if s.mode == GameMode::Island {
+                art.island_crystal.clone()
+            } else {
+                art.crystal.clone()
+            }),
             Transform::from_xyz(x as f32, 1.18, z as f32)
                 .with_rotation(Quat::from_rotation_z(0.55))
                 .with_scale(Vec3::new(0.42, 0.70, 0.42)),
         ));
     }
-    if s.mode != GameMode::FreeBuild {
-        if s.mode != GameMode::Island {
+    if !matches!(s.mode, GameMode::FreeBuild | GameMode::CrystalGarden)
+        && !(s.mode == GameMode::CloudBridge && s.work.level == 5)
+    {
+        if !matches!(
+            s.mode,
+            GameMode::Island | GameMode::CloudBridge | GameMode::CrystalGarden
+        ) {
             spawn_island_people(&mut commands, &art, &mut meshes, &mut materials);
         }
         let [gx, gz] = s.work.world.goal;
         if s.mode == GameMode::Island {
             if !(illustrated_island && s.work.level == 3) {
-            // Five gold rays make the live 3D destination read as the star in
-            // the design, from the playable isometric camera.
+                // Five gold rays make the live 3D destination read as the star in
+                // the design, from the playable isometric camera.
+                for ray in 0..5 {
+                    let angle = ray as f32 * std::f32::consts::TAU / 5.;
+                    commands.spawn((
+                        WorldPiece,
+                        Mesh3d(art.cube.clone()),
+                        MeshMaterial3d(art.lamp.clone()),
+                        Transform::from_xyz(
+                            gx as f32 + angle.sin() * 0.28,
+                            1.38 + angle.cos() * 0.28,
+                            gz as f32,
+                        )
+                        .with_rotation(Quat::from_rotation_z(-angle))
+                        .with_scale(Vec3::new(0.18, 0.52, 0.16)),
+                    ));
+                }
+                commands.spawn((
+                    WorldPiece,
+                    CrystalSparkle(2.4),
+                    Mesh3d(art.cube.clone()),
+                    MeshMaterial3d(art.lamp.clone()),
+                    Transform::from_xyz(gx as f32, 1.38, gz as f32)
+                        .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_4))
+                        .with_scale(Vec3::new(0.42, 0.42, 0.18)),
+                ));
+            }
+            // Keep the destination clear during bridge challenges; the cottage
+            // belongs only in the final free-building home level.
+            if s.work.level == 5 {
+                spawn_island_cottage(&mut commands, &art);
+            }
+        } else if s.mode == GameMode::CloudBridge {
             for ray in 0..5 {
                 let angle = ray as f32 * std::f32::consts::TAU / 5.;
                 commands.spawn((
@@ -5648,12 +6318,12 @@ fn rebuild_world(
                     Mesh3d(art.cube.clone()),
                     MeshMaterial3d(art.lamp.clone()),
                     Transform::from_xyz(
-                        gx as f32 + angle.sin() * 0.28,
-                        1.38 + angle.cos() * 0.28,
+                        gx as f32 + angle.sin() * 0.27,
+                        1.40 + angle.cos() * 0.27,
                         gz as f32,
                     )
                     .with_rotation(Quat::from_rotation_z(-angle))
-                    .with_scale(Vec3::new(0.18, 0.52, 0.16)),
+                    .with_scale(Vec3::new(0.16, 0.48, 0.15)),
                 ));
             }
             commands.spawn((
@@ -5661,16 +6331,10 @@ fn rebuild_world(
                 CrystalSparkle(2.4),
                 Mesh3d(art.cube.clone()),
                 MeshMaterial3d(art.lamp.clone()),
-                Transform::from_xyz(gx as f32, 1.38, gz as f32)
+                Transform::from_xyz(gx as f32, 1.40, gz as f32)
                     .with_rotation(Quat::from_rotation_z(std::f32::consts::FRAC_PI_4))
                     .with_scale(Vec3::new(0.42, 0.42, 0.18)),
             ));
-            }
-            // Keep the destination clear during bridge challenges; the cottage
-            // belongs only in the final free-building home level.
-            if s.work.level == 5 {
-                spawn_island_cottage(&mut commands, &art);
-            }
         } else {
             cube(
                 &mut commands,
@@ -5688,7 +6352,11 @@ fn rebuild_world(
             );
         }
         for (x, z) in if s.mode == GameMode::Island {
-            if s.island_3d_view { vec![(-5., -2.), (5., -2.)] } else { vec![] }
+            if s.island_3d_view {
+                vec![(-5., -2.), (5., -2.)]
+            } else {
+                vec![]
+            }
         } else {
             vec![(5., -2.), (-5., -2.)]
         } {
@@ -5710,15 +6378,28 @@ fn rebuild_world(
                         WorldPiece,
                         Mesh3d(art.round.clone()),
                         MeshMaterial3d(art.leaf.clone()),
-                        Transform::from_xyz(x + dx, dy, z + dz)
-                            .with_scale(Vec3::new(size, size * 0.8, size)),
+                        Transform::from_xyz(x + dx, dy, z + dz).with_scale(Vec3::new(
+                            size,
+                            size * 0.8,
+                            size,
+                        )),
                     ));
                 }
             } else {
-                cube(&mut commands, &art, Vec3::new(x, 1.55, z),
-                    Vec3::new(1.15, 0.65, 1.10), art.leaf.clone());
-                cube(&mut commands, &art, Vec3::new(x, 2., z),
-                    Vec3::new(0.70, 0.40, 0.70), art.grass.clone());
+                cube(
+                    &mut commands,
+                    &art,
+                    Vec3::new(x, 1.55, z),
+                    Vec3::new(1.15, 0.65, 1.10),
+                    art.leaf.clone(),
+                );
+                cube(
+                    &mut commands,
+                    &art,
+                    Vec3::new(x, 2., z),
+                    Vec3::new(0.70, 0.40, 0.70),
+                    art.grass.clone(),
+                );
             }
         }
     }
@@ -6200,11 +6881,22 @@ fn sync_island_robot_billboard(
     cameras: Query<&Transform, (With<GameCamera>, Without<IslandRobotBillboard>)>,
     mut billboards: Query<(&mut Transform, &mut Visibility), With<IslandRobotBillboard>>,
 ) {
-    let Ok((mut billboard, mut visibility)) = billboards.single_mut() else { return; };
-    let illustrated = s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
-    *visibility = if illustrated { Visibility::Visible } else { Visibility::Hidden };
-    if !illustrated { return; }
-    let (Ok(robot), Ok(camera)) = (robots.single(), cameras.single()) else { return; };
+    let Ok((mut billboard, mut visibility)) = billboards.single_mut() else {
+        return;
+    };
+    let illustrated =
+        s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
+    *visibility = if illustrated {
+        Visibility::Visible
+    } else {
+        Visibility::Hidden
+    };
+    if !illustrated {
+        return;
+    }
+    let (Ok(robot), Ok(camera)) = (robots.single(), cameras.single()) else {
+        return;
+    };
     billboard.translation = robot.translation + Vec3::new(0., 0.62, 0.);
     billboard.rotation = camera.rotation;
     billboard.scale = Vec3::new(2.8, 2.8, 1.);
@@ -6951,10 +7643,20 @@ fn bomber_hold_input(
     windows: Query<&Window, With<PrimaryWindow>>,
     controls: Query<(&Action, &ComputedNode, &GlobalTransform), With<Button>>,
     mut hold: ResMut<BomberHold>,
+    pads: Query<(), With<BomberJoystick>>,
     mut s: ResMut<Session>,
 ) {
-    if s.help_open || s.library_open || s.mode != GameMode::BubbleBomber || s.bomber.failed || s.bomber.paused || s.bomber.won {
+    if s.help_open
+        || s.library_open
+        || s.mode != GameMode::BubbleBomber
+        || s.bomber.failed
+        || s.bomber.paused
+        || s.bomber.won
+    {
         *hold = BomberHold::default();
+        return;
+    }
+    if !pads.is_empty() {
         return;
     }
     let mut direction = [
@@ -6998,6 +7700,118 @@ fn bomber_hold_input(
     }
 }
 
+fn bomber_joystick_input(
+    time: Res<Time>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    touches: Res<Touches>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    pads: Query<(&ComputedNode, &GlobalTransform), With<BomberJoystick>>,
+    actions: Query<(&ComputedNode, &GlobalTransform), With<BomberTouchPlace>>,
+    mut knobs: Query<&mut Node, With<BomberJoystickKnob>>,
+    mut hold: ResMut<BomberHold>,
+    mut s: ResMut<Session>,
+) {
+    if s.mode != GameMode::BubbleBomber
+        || s.library_open
+        || s.help_open
+        || s.bomber.failed
+        || s.bomber.paused
+        || s.bomber.won
+    {
+        *hold = BomberHold::default();
+        for mut knob in &mut knobs {
+            knob.left = Val::Percent(27.);
+            knob.top = Val::Percent(27.);
+        }
+        return;
+    }
+    let (Ok(window), Ok((node, transform))) = (windows.single(), pads.single()) else {
+        return;
+    };
+    let factor = window.scale_factor();
+    let center = transform.translation().truncate();
+    let radius = node.size().x * 0.5;
+    if hold
+        .touch_id
+        .is_some_and(|id| touches.get_pressed(id).is_none())
+    {
+        hold.touch_id = None;
+    }
+    if hold.touch_id.is_none() {
+        hold.touch_id = touches
+            .iter_just_pressed()
+            .find(|t| (t.position() * factor - center).length() <= radius)
+            .map(|t| t.id());
+    }
+    if mouse.just_pressed(MouseButton::Left) && touches.iter().next().is_none() {
+        hold.mouse_active = window
+            .cursor_position()
+            .is_some_and(|p| (p * factor - center).length() <= radius);
+    }
+    if !mouse.pressed(MouseButton::Left) {
+        hold.mouse_active = false;
+    }
+    let point = hold
+        .touch_id
+        .and_then(|id| touches.get_pressed(id))
+        .map(|t| t.position())
+        .or_else(|| {
+            if hold.mouse_active {
+                window.cursor_position()
+            } else {
+                None
+            }
+        });
+    let offset = point.map(|p| p * factor - center).unwrap_or(Vec2::ZERO);
+    let visual = offset.clamp_length_max(radius * 0.54) / radius.max(1.) * 50.;
+    for mut knob in &mut knobs {
+        knob.left = Val::Percent(27. + visual.x);
+        knob.top = Val::Percent(27. + visual.y);
+    }
+    let direction = bomber_joystick_direction(offset, radius).or_else(|| {
+        [
+            (KeyCode::ArrowUp, KeyCode::KeyW, (0, -1)),
+            (KeyCode::ArrowDown, KeyCode::KeyS, (0, 1)),
+            (KeyCode::ArrowLeft, KeyCode::KeyA, (-1, 0)),
+            (KeyCode::ArrowRight, KeyCode::KeyD, (1, 0)),
+        ]
+        .into_iter()
+        .find_map(|(a, b, d)| (keys.pressed(a) || keys.pressed(b)).then_some(d))
+    });
+    if direction != hold.direction {
+        hold.direction = direction;
+        hold.remaining = 0.;
+    }
+    if let Some((dx, dy)) = direction {
+        hold.remaining -= time.delta_secs();
+        if hold.remaining <= 0. {
+            // Keyboard's initial step is handled by bomber_key_input.
+            let keyboard_initial = point.is_none() && keys.get_just_pressed().next().is_some();
+            if !keyboard_initial {
+                s.bomber.move_player(dx, dy);
+                s.ui_dirty = true;
+            }
+            hold.remaining = 0.16;
+        }
+    }
+    for (node, transform) in &actions {
+        let rect = Rect::from_center_size(transform.translation().truncate(), node.size());
+        let touch_press = touches
+            .iter_just_pressed()
+            .any(|t| Some(t.id()) != hold.touch_id && rect.contains(t.position() * factor));
+        let mouse_press = touches.iter().next().is_none()
+            && mouse.just_pressed(MouseButton::Left)
+            && window
+                .cursor_position()
+                .is_some_and(|p| rect.contains(p * factor));
+        if touch_press || mouse_press {
+            s.bomber.place_bomb();
+            s.ui_dirty = true;
+        }
+    }
+}
+
 fn bomber_board_input(
     windows: Query<&Window, With<PrimaryWindow>>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -7006,7 +7820,13 @@ fn bomber_board_input(
     controls: Query<(&ComputedNode, &GlobalTransform), With<Button>>,
     mut s: ResMut<Session>,
 ) {
-    if s.mode != GameMode::BubbleBomber || s.library_open || s.help_open || s.bomber.failed || s.bomber.paused || s.bomber.won {
+    if s.mode != GameMode::BubbleBomber
+        || s.library_open
+        || s.help_open
+        || s.bomber.failed
+        || s.bomber.paused
+        || s.bomber.won
+    {
         return;
     }
     let Ok(window) = windows.single() else {
@@ -7030,7 +7850,9 @@ fn bomber_board_input(
     };
     let rect = Rect::from_center_size(transform.translation().truncate(), node.size());
     let point = point * window.scale_factor();
-    if controls.iter().any(|(node, transform)| Rect::from_center_size(transform.translation().truncate(), node.size()).contains(point)) {
+    if controls.iter().any(|(node, transform)| {
+        Rect::from_center_size(transform.translation().truncate(), node.size()).contains(point)
+    }) {
         return;
     }
     if !rect.contains(point) {
@@ -7376,6 +8198,12 @@ fn buttons(
                     s.moon.reset();
                 }
             }
+            Action::Courier(courier_action) => {
+                if s.mode == GameMode::SpaceCourier {
+                    s.courier.act(courier_action);
+                    s.courier.persist();
+                }
+            }
             #[cfg(target_os = "macos")]
             Action::LiteracySpeak => {
                 let word = s.literacy.word();
@@ -7436,6 +8264,7 @@ fn buttons(
                 s.world_dirty = true;
             }
             Action::MathLevels => s.math.choosing_level = true,
+            Action::MathResume => s.math.choosing_level = false,
             Action::MathLevel(level) => {
                 s.math.choose_level(level);
                 s.world_dirty = true;
@@ -7478,6 +8307,17 @@ fn buttons(
             Action::LibraryReturn => {
                 s.library_open = false;
                 s.magnet_modes_open = false;
+                // Opening the library stops the runner and clears build mode.
+                // Returning to a building game must restore editable input.
+                if matches!(
+                    s.mode,
+                    GameMode::Island
+                        | GameMode::CloudBridge
+                        | GameMode::FreeBuild
+                        | GameMode::CrystalGarden
+                ) {
+                    s.build = true;
+                }
             }
             Action::SelectGame(mode) => select_game(&mut s, mode),
             Action::BallLeft => {
@@ -7509,6 +8349,11 @@ fn buttons(
                     s.message = "新的 2 球已经准备好。".into();
                 }
             }
+            Action::BreakoutLaunch => {
+                if s.mode == GameMode::Breakout {
+                    s.breakout.launch();
+                }
+            }
             Action::BreakoutToggle => {
                 if s.mode == GameMode::Breakout {
                     if s.breakout.ready {
@@ -7521,6 +8366,11 @@ fn buttons(
             Action::BreakoutReset => {
                 if s.mode == GameMode::Breakout {
                     s.breakout.reset();
+                }
+            }
+            Action::ElementObserve => {
+                if s.mode == GameMode::ElementLab {
+                    s.elements.observing = !s.elements.observing;
                 }
             }
             Action::ElementPick(number) => {
@@ -7598,6 +8448,11 @@ fn buttons(
                     s.minesweeper.reset();
                 }
             }
+            Action::ClassicMove(dx, dy) => {
+                if s.mode == GameMode::Classic2048 {
+                    s.classic_2048.move_board(dx, dy);
+                }
+            }
             Action::ClassicReset => {
                 if s.mode == GameMode::Classic2048 {
                     s.classic_2048.reset();
@@ -7626,6 +8481,26 @@ fn buttons(
             Action::SokobanReset => {
                 if s.mode == GameMode::Sokoban {
                     s.sokoban.reset();
+                }
+            }
+            Action::SokobanUndo => {
+                if s.mode == GameMode::Sokoban {
+                    s.sokoban.undo();
+                }
+            }
+            Action::SokobanChoose => {
+                if s.mode == GameMode::Sokoban {
+                    s.sokoban.choosing = !s.sokoban.choosing;
+                }
+            }
+            Action::SokobanLevel(level) => {
+                if s.mode == GameMode::Sokoban {
+                    s.sokoban.select_level(level);
+                }
+            }
+            Action::SokobanNext => {
+                if s.mode == GameMode::Sokoban {
+                    s.sokoban.next();
                 }
             }
             Action::SudokuSelect(index) => {
@@ -7671,6 +8546,11 @@ fn buttons(
             Action::LightReset => {
                 if s.mode == GameMode::LightPath {
                     s.light_path.reset();
+                }
+            }
+            Action::LightNext => {
+                if s.mode == GameMode::LightPath {
+                    s.light_path.next_level();
                 }
             }
             Action::GardenSelect(index) => {
@@ -7734,6 +8614,29 @@ fn buttons(
                 s.build = true;
                 s.erase = false;
                 s.message = "点击放方块，上下拖动俯仰，左右拖动旋转，双指缩放。".into();
+            }
+            Action::RestaurantCheck => {
+                if s.mode == GameMode::CrystalGarden {
+                    let (blocks, kinds) = s.work.creative_progress();
+                    s.message = if blocks >= 10 && kinds >= 3 {
+                        "布置完成！餐厅已经自动保存在这台设备。".into()
+                    } else {
+                        format!(
+                            "餐厅布置：已搭 {blocks}/10 块，使用 {kinds}/3 种材料。继续装饰吧！"
+                        )
+                    };
+                }
+            }
+            Action::RestaurantReset => {
+                if s.mode == GameMode::CrystalGarden {
+                    let before = s.work.world.clone();
+                    s.undo.push(before);
+                    s.work = restaurant_starter();
+                    s.world_dirty = true;
+                    s.build = true;
+                    s.erase = false;
+                    s.message = "餐厅已重置，可以点撤销恢复。".into();
+                }
             }
             Action::BuilderTest => {
                 s.reset_run();
@@ -7806,7 +8709,7 @@ fn buttons(
                 } else if s
                     .runner
                     .as_ref()
-                    .is_some_and(|r| r.faulted || r.pc >= r.ops.len() || s.work.world.won())
+                    .is_some_and(|r| r.faulted || r.pc >= r.ops.len() || s.level_complete())
                 {
                     s.message = "这次运行已结束。点「复位」后再试一次。".into();
                 } else {
@@ -7926,13 +8829,41 @@ fn buttons(
                     s.ui_dirty = true;
                     break;
                 }
+                if s.mode == GameMode::CloudBridge {
+                    if matches!(action, Action::Next)
+                        && s.work.level < 5
+                        && !s.cloud_bridge_campaign.completed.contains(&s.work.level)
+                    {
+                        s.message = "先完成本关目标，下一座岛就会解锁。".into();
+                        s.ui_dirty = true;
+                        break;
+                    }
+                    if s.work.level == 5
+                        && matches!(action, Action::Next)
+                        && !s.cloud_bridge_campaign.completed.contains(&5)
+                    {
+                        s.message = "先完成自由搭建挑战，再从第一座岛重新冒险。".into();
+                        s.ui_dirty = true;
+                        break;
+                    }
+                }
                 s.reset_run();
                 let index = if matches!(action, Action::Next) {
                     (s.work.level + 1) % 6
                 } else {
                     (s.work.level + 5) % 6
                 };
+                if s.mode == GameMode::CloudBridge && index > s.cloud_bridge_campaign.unlocked {
+                    s.message = "这座岛还没解锁，先完成前一关吧。".into();
+                    s.ui_dirty = true;
+                    break;
+                }
                 s.work.choose_level(index);
+                if s.mode == GameMode::CloudBridge {
+                    s.work.completed = s.cloud_bridge_campaign.completed.clone();
+                    s.work.stars = s.cloud_bridge_campaign.stars;
+                    s.build = index == 5;
+                }
                 if s.mode == GameMode::Island {
                     s.island_3d_view = false;
                     s.yaw = 0.68;
@@ -7943,6 +8874,26 @@ fn buttons(
                 s.undo.clear();
                 s.world_dirty = true;
                 s.message = game::LEVEL_HINTS[index].into();
+            }
+            Action::CloudLevel(index) => {
+                if s.mode == GameMode::CloudBridge {
+                    if index > 5 || index > s.cloud_bridge_campaign.unlocked {
+                        s.message = "这座岛还没解锁，先完成当前目标吧。".into();
+                    } else {
+                        s.reset_run();
+                        s.work.choose_level(index);
+                        s.work.completed = s.cloud_bridge_campaign.completed.clone();
+                        s.work.stars = s.cloud_bridge_campaign.stars;
+                        s.build = index == 5;
+                        s.undo.clear();
+                        s.message = if index == 5 {
+                            "终章挑战：搭建至少 10 块积木，并使用 3 种材料。".into()
+                        } else {
+                            game::LEVEL_HINTS[index].into()
+                        };
+                        s.world_dirty = true;
+                    }
+                }
             }
             Action::Undo => {
                 s.reset_run();
@@ -7958,7 +8909,9 @@ fn buttons(
                 if s.mode == GameMode::FreeBuild {
                     let empty = game::free_build_world();
                     if s.work.world != empty {
-                        if s.undo.len() >= 40 { s.undo.remove(0); }
+                        if s.undo.len() >= 40 {
+                            s.undo.remove(0);
+                        }
                         let previous = s.work.world.clone();
                         s.undo.push(previous);
                         s.work.world = empty;
@@ -7992,7 +8945,11 @@ fn buttons(
                     s.island_3d_view = !s.island_3d_view;
                     s.yaw = 0.68;
                     s.pitch = 0.762;
-                    s.zoom = if s.mode == GameMode::FreeBuild { 22. } else { 16. };
+                    s.zoom = if s.mode == GameMode::FreeBuild {
+                        22.
+                    } else {
+                        16.
+                    };
                     s.world_dirty = true;
                     s.message = if s.island_3d_view {
                         "已切换到可旋转的立体搭建视角。".into()
@@ -8083,10 +9040,12 @@ fn world_input(
             g.world = in_world(ts[0].start_position()) && in_world(ts[1].start_position());
         }
         let distance = ts[0].position().distance(ts[1].position());
-        if let Some(old) = g
-            .pinch
-            .filter(|_| (s.mode != GameMode::Island || s.island_3d_view) && g.world && !blocked(ts[0].position()) && !blocked(ts[1].position()))
-        {
+        if let Some(old) = g.pinch.filter(|_| {
+            (s.mode != GameMode::Island || s.island_3d_view)
+                && g.world
+                && !blocked(ts[0].position())
+                && !blocked(ts[1].position())
+        }) {
             s.zoom = (s.zoom * old / distance.max(1.)).clamp(8., 30.);
         }
         g.pinch = Some(distance);
@@ -8199,16 +9158,27 @@ fn world_input(
             s.undo.push(before);
             s.world_dirty = true;
             let (built, kinds) = s.work.creative_progress();
-            let creative_complete =
-                s.mode == GameMode::Island && s.work.level == 5 && built >= 10 && kinds >= 3;
+            let creative_complete = matches!(s.mode, GameMode::Island | GameMode::CloudBridge)
+                && s.work.level == 5
+                && built >= 10
+                && kinds >= 3;
             if creative_complete {
                 s.work.stars[5] = 3;
                 if !s.work.completed.contains(&5) {
                     s.work.completed.push(5);
                 }
+                if s.mode == GameMode::CloudBridge {
+                    s.cloud_bridge_campaign.record(5, 3);
+                    s.work.completed = s.cloud_bridge_campaign.completed.clone();
+                    s.work.stars = s.cloud_bridge_campaign.stars;
+                }
             }
             s.message = if creative_complete {
-                "建造大师徽章解锁！这座作品使用了 3 种材料和至少 10 块积木。".into()
+                if s.mode == GameMode::CloudBridge {
+                    "六座岛全部点亮！自由搭建挑战完成，可以重新冒险或继续创作。".into()
+                } else {
+                    "建造大师徽章解锁！这座作品使用了 3 种材料和至少 10 块积木。".into()
+                }
             } else if erase {
                 "拿走了一块。随时可以撤销。".into()
             } else if s.mode == GameMode::Island && s.work.level == 3 {
@@ -8370,13 +9340,123 @@ fn update_builder_preview(
 fn capture_preview(
     mut commands: Commands,
     mut frame: Local<u32>,
+    mut lightpath_solved_frame: Local<Option<u32>>,
     mut exit: EventWriter<bevy::app::AppExit>,
     mut session: ResMut<Session>,
 ) {
+    #[cfg(debug_assertions)]
+    if qa::enabled() {
+        return;
+    }
     let Ok(path) = std::env::var("MAGNET_CAPTURE") else {
         return;
     };
     *frame += 1;
+    if *frame == 5 {
+        if let Ok(state) = std::env::var("MAGNET_BOOK_STATE") {
+            match state.as_str() {
+                "literacy-intro" => session.literacy.start(0),
+                "literacy-correct" => {
+                    session.literacy.start(0);
+                    session.literacy.next();
+                    let i = session.literacy.word_index();
+                    session.literacy.select(i);
+                }
+                "literacy-finished" => {
+                    session.literacy.start(0);
+                    session.literacy.finished = true;
+                    session.literacy.progress.completed[0] = true;
+                    session.literacy.progress.xp = 48;
+                }
+                "math-map" => session.math.choosing_level = true,
+                "math-tools" => {
+                    session.math_tools = true;
+                    session.math.placed = 5;
+                }
+                "sudoku-four" => session.sudoku.set_size(4),
+                "restaurant-demo" => {
+                    for x in -3..=0 {
+                        for z in -2..=1 {
+                            session.work.world.put([x, 1, z], Material::Wood);
+                        }
+                    }
+                    for x in -3..=0 {
+                        for y in 2..=3 {
+                            session.work.world.put(
+                                [x, y, -2],
+                                if y == 3 {
+                                    Material::Glass
+                                } else {
+                                    Material::Stone
+                                },
+                            );
+                        }
+                    }
+                    for z in -1..=1 {
+                        for y in 2..=3 {
+                            session.work.world.put(
+                                [-3, y, z],
+                                if y == 3 {
+                                    Material::Glass
+                                } else {
+                                    Material::Wood
+                                },
+                            );
+                        }
+                    }
+                    for x in -3..=0 {
+                        for z in -2..=1 {
+                            if x == -3 || z == -2 {
+                                session.work.world.put([x, 4, z], Material::Wood);
+                            }
+                        }
+                    }
+                    session.work.world.put([2, 1, 0], Material::Wood);
+                    session.work.world.put([2, 2, 0], Material::Wood);
+                    session.work.world.put([2, 1, 2], Material::Stone);
+                    session.work.world.put([3, 1, 0], Material::Stone);
+                }
+                _ => {}
+            }
+            session.ui_dirty = true;
+            session.world_dirty = true;
+        }
+    }
+    if *frame == 5 && session.mode == GameMode::Minesweeper {
+        if let Ok(state) = std::env::var("MAGNET_CAPTURE_MINES_STATE") {
+            let g = &mut session.minesweeper;
+            match state.as_str() {
+                "playing" | "flag" => {
+                    for cell in [19, 20, 26, 28, 34, 36, 42, 43, 44] {
+                        g.reveal(cell);
+                    }
+                    g.toggle_flag(27);
+                    g.flag_mode = state == "flag";
+                }
+                "win" => {
+                    for cell in 0..64 {
+                        if !g.mines[cell] {
+                            g.reveal(cell);
+                        }
+                    }
+                }
+                "lost" => {
+                    g.reveal(19);
+                    g.reveal(27);
+                }
+                _ => {}
+            }
+            session.ui_dirty = true;
+        }
+    }
+
+    #[cfg(debug_assertions)]
+    if *frame == 2 && session.mode == GameMode::Sokoban {
+        if let Ok(state) = std::env::var("MAGNET_CAPTURE_SOKOBAN_STATE") {
+            session.sokoban.capture_demo(&state);
+            session.ui_dirty = true;
+        }
+    }
     if *frame == 2
         && session.mode == GameMode::GardenDefense
         && std::env::var_os("MAGNET_CAPTURE_GARDEN_DEMO").is_some()
@@ -8405,18 +9485,15 @@ fn capture_preview(
     }
     if std::env::var_os("MAGNET_CAPTURE_LIGHTPATH_DEMO").is_some() {
         if *frame == 30 {
-            session.light_path.rotate(0);
+            let level = std::env::var("MAGNET_CAPTURE_LIGHTPATH_LEVEL")
+                .ok()
+                .and_then(|value| value.parse::<usize>().ok())
+                .unwrap_or(1);
+            session.light_path.capture_demo(level.saturating_sub(1));
             session.ui_dirty = true;
         }
-        if *frame == 34 {
-            session.light_path.rotate(1);
-            session.ui_dirty = true;
-        }
-        if *frame == 38 {
-            session.light_path.rotate(3);
-            session.ui_dirty = true;
-        }
-        if *frame == 140 {
+        if lightpath_solved_frame.is_none() && session.light_path.is_solved() {
+            *lightpath_solved_frame = Some(*frame);
             commands
                 .spawn(bevy::render::view::screenshot::Screenshot::primary_window())
                 .observe(bevy::render::view::screenshot::save_to_disk(format!(
@@ -8450,6 +9527,13 @@ fn capture_preview(
             .spawn(bevy::render::view::screenshot::Screenshot::primary_window())
             .observe(bevy::render::view::screenshot::save_to_disk(path.clone()));
     }
+    if *frame == 130 && std::env::var_os("MAGNET_STORYBOOK_SMOKE").is_some() {
+        commands
+            .spawn(bevy::render::view::screenshot::Screenshot::primary_window())
+            .observe(bevy::render::view::screenshot::save_to_disk(format!(
+                "{path}.verified.png"
+            )));
+    }
     if *frame == 135 && std::env::var_os("MAGNET_CAPTURE_SWITCH_BACK").is_some() {
         commands
             .spawn(bevy::render::view::screenshot::Screenshot::primary_window())
@@ -8475,6 +9559,13 @@ fn capture_preview(
                     *frame
                 )));
         }
+    }
+    if std::env::var_os("MAGNET_CAPTURE_LIGHTPATH_DEMO").is_some() && sequence.is_none() {
+        // Wait for the real animation to finish, regardless of rendering frame rate.
+        if lightpath_solved_frame.is_some_and(|solved| *frame >= solved + 15) || *frame > 1800 {
+            exit.write(bevy::app::AppExit::Success);
+        }
+        return;
     }
     if *frame
         == if sequence.is_some() {
@@ -8677,7 +9768,26 @@ fn rebuild_ui(
         return;
     }
     if s.help_open {
-        help_panel(&mut commands, &s, &art);
+        if mission_index(s.mode).is_some() {
+            mission_pause_panel(
+                &mut commands,
+                &s,
+                &art,
+                layout.width / ui_scale.0,
+                layout.height / ui_scale.0,
+            );
+        } else {
+            help_panel(&mut commands, &s, &art);
+        }
+    }
+    if storybook_ui(
+        &mut commands,
+        &s,
+        &art,
+        layout.width / ui_scale.0,
+        layout.height / ui_scale.0,
+    ) {
+        return;
     }
     if s.mode == GameMode::FruitArcade {
         arcade_ui(
@@ -8737,12 +9847,24 @@ fn rebuild_ui(
         return;
     }
     if s.mode == GameMode::TankBattle {
-        tank_ui(&mut commands, &s, &art, layout.compact);
+        tank_ui(
+            &mut commands,
+            &s,
+            &art,
+            layout.compact,
+            layout.width / ui_scale.0,
+            layout.height / ui_scale.0,
+        );
         return;
     }
     if s.mode == GameMode::SkyRaid {
-        sky_ui(&mut commands, &s, &art, layout.compact);
-        game_library_shortcut(&mut commands, &art, layout.compact);
+        sky_ui(
+            &mut commands,
+            &s,
+            &art,
+            layout.compact,
+            layout.width / ui_scale.0,
+        );
         return;
     }
     if s.mode == GameMode::BubbleIsland {
@@ -8783,12 +9905,36 @@ fn rebuild_ui(
         moon_festival_ui(&mut commands, &s, &art, layout.compact);
         return;
     }
+    if s.mode == GameMode::SpaceCourier {
+        courier_ui(
+            &mut commands,
+            &s,
+            &art,
+            layout.compact,
+            layout.width / ui_scale.0,
+            layout.height / ui_scale.0,
+        );
+        return;
+    }
     if s.mode == GameMode::Snake {
-        snake_ui(&mut commands, &s, &art, layout.compact, layout.width, layout.height);
+        snake_ui(
+            &mut commands,
+            &s,
+            &art,
+            layout.compact,
+            layout.width,
+            layout.height,
+        );
         return;
     }
     if s.mode == GameMode::Minesweeper {
-        minesweeper_ui(&mut commands, &s, &art, layout.compact);
+        minesweeper_ui(
+            &mut commands,
+            &s,
+            &art,
+            layout.width / ui_scale.0,
+            layout.height / ui_scale.0,
+        );
         return;
     }
     if s.mode == GameMode::Classic2048 {
@@ -8806,7 +9952,13 @@ fn rebuild_ui(
         return;
     }
     if s.mode == GameMode::Sokoban {
-        sokoban_ui(&mut commands, &s, &art, layout.compact);
+        sokoban_ui(
+            &mut commands,
+            &s,
+            &art,
+            layout.width / ui_scale.0,
+            layout.height / ui_scale.0,
+        );
         return;
     }
     if s.mode == GameMode::Sudoku {
@@ -8814,7 +9966,13 @@ fn rebuild_ui(
         return;
     }
     if s.mode == GameMode::LightPath {
-        light_path_ui(&mut commands, &s, &art);
+        light_path_ui(
+            &mut commands,
+            &s,
+            &art,
+            layout.width / ui_scale.0,
+            layout.height / ui_scale.0,
+        );
         return;
     }
     if s.mode == GameMode::GardenDefense {
@@ -8828,8 +9986,13 @@ fn rebuild_ui(
         return;
     }
     if mission_index(s.mode).is_some() {
-        mission_ui(&mut commands, &s, &art);
-        game_library_shortcut(&mut commands, &art, layout.compact);
+        mission_ui(
+            &mut commands,
+            &s,
+            &art,
+            layout.width / ui_scale.0,
+            layout.height / ui_scale.0,
+        );
         return;
     }
     if s.mode == GameMode::Math {
@@ -8868,11 +10031,507 @@ fn rebuild_ui(
         island_compact_ui(&mut commands, &s, &art);
         return;
     }
+    if s.mode == GameMode::CloudBridge {
+        cloud_bridge_ui(&mut commands, &s, &art, layout.compact);
+        return;
+    }
     if layout.compact {
         mobile_ui(&mut commands, &s, &art);
         return;
     }
     magnet_ui(&mut commands, &s, &art);
+}
+
+fn cloud_bridge_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
+    let ink = Color::srgb(0.18, 0.25, 0.31);
+    let muted = Color::srgb(0.38, 0.49, 0.58);
+    let paper = Color::srgba(1.0, 0.98, 0.91, 0.97);
+    let soft = Color::srgb(0.88, 0.94, 0.98);
+    let blue = Color::srgb(0.20, 0.54, 0.91);
+    let green = Color::srgb(0.09, 0.73, 0.31);
+    let running = s.runner.as_ref().is_some_and(|runner| runner.running);
+    let rail_width = if compact { 104. } else { 126. };
+    let card_width = if compact { 84. } else { 102. };
+    let card_height = if compact { 82. } else { 94. };
+    let dock_height = if compact { 172. } else { 176. };
+    let right_gap = if compact { 12. } else { 18. };
+    commands
+        .spawn((
+            UiRoot,
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                ..default()
+            },
+        ))
+        .with_children(|root| {
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(16.),
+                    right: Val::Px(16.),
+                    top: Val::Px(12.),
+                    height: Val::Px(58.),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    ..row()
+                },
+            ))
+            .with_children(|header| {
+                header.spawn(row()).with_children(|left| {
+                    button(left, art, "←", Action::Library, 52., 52., paper, ink);
+                    left.spawn((
+                        Node {
+                            height: Val::Px(52.),
+                            padding: UiRect::horizontal(Val::Px(14.)),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(8.),
+                            ..row()
+                        },
+                        BackgroundColor(paper),
+                        BorderRadius::all(Val::Px(18.)),
+                    ))
+                    .with_children(|brand| {
+                        let mut icon = ImageNode::new(art.island_materials.clone());
+                        icon.rect = Some(Rect::new(0., 0., 627., 627.));
+                        brand.spawn((
+                            Node {
+                                width: Val::Px(34.),
+                                height: Val::Px(34.),
+                                ..default()
+                            },
+                            icon,
+                        ));
+                        label(brand, art, "云桥工程师", 24., ink);
+                    });
+                });
+                header.spawn(row()).with_children(|right| {
+                    button(right, art, "‹", Action::Previous, 42., 48., paper, ink);
+                    right
+                        .spawn((
+                            Node {
+                                height: Val::Px(48.),
+                                padding: UiRect::horizontal(Val::Px(18.)),
+                                align_items: AlignItems::Center,
+                                ..row()
+                            },
+                            BackgroundColor(paper),
+                            BorderRadius::all(Val::Px(18.)),
+                        ))
+                        .with_children(|level| {
+                            let name =
+                                ["新手村", "森林边", "风车岛", "云桥谷", "矿车站", "家园挑战"]
+                                    [s.work.level.min(5)];
+                            label(
+                                level,
+                                art,
+                                format!("第 {} 关 · {name}", s.work.level + 1),
+                                20.,
+                                ink,
+                            );
+                        });
+                    button(right, art, "›", Action::Next, 42., 48., paper, ink);
+                    button(right, art, "?  怎么玩", Action::Help, 128., 48., paper, ink);
+                });
+            });
+
+            let stage_title = format!("冒险进度 {}/6 · 过关继续下一岛", s.work.level + 1);
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Percent(if compact { 25. } else { 31. }),
+                    right: Val::Percent(if compact { 25. } else { 31. }),
+                    top: Val::Px(if compact { 64. } else { 8. }),
+                    height: Val::Px(if compact { 94. } else { 96. }),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    row_gap: Val::Px(5.),
+                    ..default()
+                },
+            ))
+            .with_children(|progress| {
+                label(
+                    progress,
+                    art,
+                    stage_title,
+                    if compact { 14. } else { 17. },
+                    Color::WHITE,
+                );
+                progress
+                    .spawn(Node {
+                        width: Val::Percent(100.),
+                        height: Val::Px(42.),
+                        align_items: AlignItems::Center,
+                        ..row()
+                    })
+                    .with_children(|track| {
+                        for stage in 0..6 {
+                            if stage > 0 {
+                                track.spawn((
+                                    Node {
+                                        flex_grow: 1.,
+                                        height: Val::Px(4.),
+                                        ..default()
+                                    },
+                                    BackgroundColor(if stage <= s.work.level {
+                                        Color::srgb(0.31, 0.82, 0.44)
+                                    } else {
+                                        Color::srgba(0.88, 0.96, 1.0, 0.72)
+                                    }),
+                                ));
+                            }
+                            let is_current = stage == s.work.level;
+                            let is_open = stage <= s.cloud_bridge_campaign.unlocked;
+                            let fill = if is_current {
+                                Color::srgb(0.13, 0.75, 0.36)
+                            } else if stage < s.work.level {
+                                Color::srgb(0.12, 0.73, 0.36)
+                            } else if is_open {
+                                Color::srgb(0.23, 0.61, 0.88)
+                            } else {
+                                Color::srgba(0.44, 0.62, 0.75, 0.88)
+                            };
+                            let edge = if is_current {
+                                Color::srgb(1.0, 0.86, 0.22)
+                            } else {
+                                Color::WHITE
+                            };
+                            track
+                                .spawn((
+                                    Button,
+                                    ButtonTone(fill),
+                                    Action::CloudLevel(stage),
+                                    Node {
+                                        width: Val::Px(if compact { 30. } else { 36. }),
+                                        height: Val::Px(if compact { 30. } else { 36. }),
+                                        min_width: Val::Px(if compact { 30. } else { 36. }),
+                                        align_items: AlignItems::Center,
+                                        justify_content: JustifyContent::Center,
+                                        border: UiRect::all(Val::Px(if is_current {
+                                            3.
+                                        } else {
+                                            2.
+                                        })),
+                                        flex_shrink: 0.,
+                                        ..default()
+                                    },
+                                    BackgroundColor(fill),
+                                    BorderColor(edge),
+                                    BorderRadius::all(Val::Percent(50.)),
+                                ))
+                                .with_children(|node| {
+                                    label(
+                                        node,
+                                        art,
+                                        if stage == 5 {
+                                            "家".to_owned()
+                                        } else {
+                                            (stage + 1).to_string()
+                                        },
+                                        if compact { 13. } else { 15. },
+                                        Color::WHITE,
+                                    );
+                                });
+                        }
+                    });
+            });
+
+            let objective = if s.work.level == 5 {
+                let (built, kinds) = s.work.creative_progress();
+                format!("终章挑战：搭建 {built}/10 块积木 · 使用 {kinds}/3 种材料")
+            } else {
+                let total = game::LEVEL_CRYSTALS[s.work.level];
+                let collected = total.saturating_sub(s.work.world.crystals.len());
+                format!("本关目标：收集星晶 {collected}/{total} → 抵达星星")
+            };
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(if compact { 156. } else { 108. }),
+                    left: Val::Percent(50.),
+                    margin: UiRect::left(Val::Px(if compact { -175. } else { -235. })),
+                    width: Val::Px(if compact { 350. } else { 470. }),
+                    max_width: Val::Percent(68.),
+                    height: Val::Px(if compact { 48. } else { 62. }),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    column_gap: Val::Px(10.),
+                    ..default()
+                },
+                BackgroundColor(paper),
+                BorderRadius::all(Val::Px(18.)),
+            ))
+            .with_children(|mission| {
+                let star = ImageNode::new(art.island_goal_star.clone());
+                mission.spawn((
+                    Node {
+                        width: Val::Px(34.),
+                        height: Val::Px(34.),
+                        ..default()
+                    },
+                    star,
+                ));
+                label(
+                    mission,
+                    art,
+                    objective,
+                    if compact { 14. } else { 18. },
+                    ink,
+                );
+            });
+
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(right_gap),
+                    top: Val::Px(88.),
+                    bottom: Val::Px(dock_height + 24.),
+                    width: Val::Px(rail_width),
+                    padding: UiRect::all(Val::Px(if compact { 7. } else { 10. })),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    row_gap: Val::Px(8.),
+                    ..default()
+                },
+                BackgroundColor(paper),
+                BorderRadius::all(Val::Px(22.)),
+            ))
+            .with_children(|rail| {
+                label(rail, art, "材料", if compact { 15. } else { 18. }, ink);
+                for material in [Material::Wood, Material::Grass, Material::Stone] {
+                    island_material_card(
+                        rail,
+                        art,
+                        material,
+                        s.material == material && !s.erase,
+                        card_width,
+                        card_height,
+                    );
+                }
+                rail.spawn(Node {
+                    flex_grow: 1.,
+                    ..default()
+                });
+                button(
+                    rail,
+                    art,
+                    if s.build { "编程" } else { "搭建" },
+                    if s.build { Action::Code } else { Action::Build },
+                    card_width,
+                    38.,
+                    soft,
+                    ink,
+                );
+            });
+
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(16.),
+                    right: Val::Px(rail_width + right_gap + 12.),
+                    bottom: Val::Px(12.),
+                    height: Val::Px(dock_height),
+                    padding: UiRect::all(Val::Px(if compact { 9. } else { 13. })),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(8.),
+                    ..default()
+                },
+                BackgroundColor(paper),
+                BorderRadius::all(Val::Px(24.)),
+            ))
+            .with_children(|dock| {
+                dock.spawn(Node {
+                    width: Val::Percent(100.),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceBetween,
+                    ..row()
+                })
+                .with_children(|heading| {
+                    label(
+                        heading,
+                        art,
+                        if s.build {
+                            "搭建云桥"
+                        } else {
+                            "编排机器人的行动"
+                        },
+                        if compact { 17. } else { 20. },
+                        ink,
+                    );
+                    label(
+                        heading,
+                        art,
+                        if s.build {
+                            "选材料后点空位搭桥"
+                        } else if s.work.program.is_empty() {
+                            "选择行动卡片，规划过桥路线"
+                        } else {
+                            "点已放入的卡片可移除"
+                        },
+                        if compact { 12. } else { 14. },
+                        muted,
+                    );
+                    if s.build {
+                        button(heading, art, "拆除", Action::Erase, 70., 36., soft, ink);
+                        button(heading, art, "撤销", Action::Undo, 70., 36., soft, ink);
+                    } else {
+                        button(heading, art, "清空", Action::Clear, 70., 36., soft, ink);
+                    }
+                });
+                dock.spawn(Node {
+                    width: Val::Percent(100.),
+                    flex_grow: 1.,
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(7.),
+                    overflow: Overflow::clip_x(),
+                    ..row()
+                })
+                .with_children(|controls| {
+                    if s.build {
+                        button(
+                            controls,
+                            art,
+                            "切换编程模式",
+                            Action::Code,
+                            170.,
+                            if compact { 58. } else { 70. },
+                            soft,
+                            ink,
+                        );
+                        label(controls, art, &s.message, 14., muted);
+                    } else {
+                        for (index, instruction) in s.work.program.iter().copied().enumerate() {
+                            let (icon, title, color, accent) = match instruction {
+                                Instruction::Place => (
+                                    "+",
+                                    "放木块",
+                                    Color::srgb(1.0, 0.92, 0.75),
+                                    Color::srgb(0.76, 0.42, 0.12),
+                                ),
+                                Instruction::Forward => {
+                                    ("↑", "前进", Color::srgb(0.82, 0.92, 1.0), blue)
+                                }
+                                Instruction::Left => {
+                                    ("↶", "左转", Color::srgb(0.83, 0.96, 0.86), green)
+                                }
+                                Instruction::Right => (
+                                    "↷",
+                                    "右转",
+                                    Color::srgb(1.0, 0.86, 0.86),
+                                    Color::srgb(0.84, 0.22, 0.25),
+                                ),
+                                Instruction::Back => (
+                                    "↓",
+                                    "后退",
+                                    Color::srgb(0.90, 0.88, 1.0),
+                                    Color::srgb(0.42, 0.38, 0.78),
+                                ),
+                                Instruction::Jump => (
+                                    "↟",
+                                    "跳跃",
+                                    Color::srgb(1.0, 0.88, 0.63),
+                                    Color::srgb(0.82, 0.51, 0.10),
+                                ),
+                                Instruction::Wait => {
+                                    ("Ⅱ", "停留", Color::srgb(0.90, 0.93, 0.95), muted)
+                                }
+                            };
+                            button(
+                                controls,
+                                art,
+                                format!("{icon} {title} ×"),
+                                Action::Remove(index),
+                                if compact { 88. } else { 106. },
+                                if compact { 56. } else { 68. },
+                                color,
+                                accent,
+                            );
+                        }
+                        if s.work.program.is_empty() {
+                            for _ in 0..3 {
+                                controls
+                                    .spawn((
+                                        Node {
+                                            width: Val::Px(if compact { 70. } else { 92. }),
+                                            height: Val::Px(if compact { 56. } else { 68. }),
+                                            border: UiRect::all(Val::Px(1.)),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BorderColor(Color::srgb(0.86, 0.87, 0.84)),
+                                        BorderRadius::all(Val::Px(14.)),
+                                        BackgroundColor(Color::srgb(0.98, 0.96, 0.90)),
+                                    ))
+                                    .with_children(|slot| label(slot, art, "+", 27., muted));
+                            }
+                        }
+                        for (instruction, icon, title, color) in [
+                            (
+                                Instruction::Place,
+                                "+",
+                                "放木块",
+                                Color::srgb(1.0, 0.92, 0.75),
+                            ),
+                            (
+                                Instruction::Forward,
+                                "↑",
+                                "前进",
+                                Color::srgb(0.82, 0.92, 1.0),
+                            ),
+                            (
+                                Instruction::Left,
+                                "↶",
+                                "左转",
+                                Color::srgb(0.83, 0.96, 0.86),
+                            ),
+                            (
+                                Instruction::Right,
+                                "↷",
+                                "右转",
+                                Color::srgb(1.0, 0.86, 0.86),
+                            ),
+                            (Instruction::Back, "↓", "后退", Color::srgb(0.90, 0.88, 1.0)),
+                            (Instruction::Jump, "↟", "跳跃", Color::srgb(1.0, 0.88, 0.63)),
+                            (
+                                Instruction::Wait,
+                                "Ⅱ",
+                                "停留",
+                                Color::srgb(0.90, 0.93, 0.95),
+                            ),
+                        ] {
+                            button(
+                                controls,
+                                art,
+                                format!("{icon} {title}"),
+                                Action::Add(instruction),
+                                if compact { 72. } else { 82. },
+                                if compact { 56. } else { 68. },
+                                color,
+                                ink,
+                            );
+                        }
+                        controls.spawn(Node {
+                            flex_grow: 1.,
+                            ..default()
+                        });
+                        island_run_button(
+                            controls,
+                            art,
+                            running,
+                            if compact { 120. } else { 154. },
+                            if compact { 58. } else { 70. },
+                        );
+                    }
+                });
+            });
+        });
 }
 
 fn magnet_ui(commands: &mut Commands, s: &Session, art: &Art) {
@@ -9650,8 +11309,16 @@ fn magnet_ui(commands: &mut Commands, s: &Session, art: &Art) {
 fn island_score_stars(parent: &mut ChildSpawnerCommands, art: &Art, earned: u8, size: f32) {
     for index in 0..3 {
         parent.spawn((
-            Node { width: Val::Px(size), height: Val::Px(size), ..default() },
-            ImageNode::new(if index < earned { art.island_goal_star.clone() } else { art.island_star_empty.clone() }),
+            Node {
+                width: Val::Px(size),
+                height: Val::Px(size),
+                ..default()
+            },
+            ImageNode::new(if index < earned {
+                art.island_goal_star.clone()
+            } else {
+                art.island_star_empty.clone()
+            }),
         ));
     }
 }
@@ -9665,8 +11332,10 @@ fn island_material_card(
     height: f32,
 ) {
     let index = match material {
-        Material::Grass => 0, Material::Wood => 1,
-        Material::Stone => 2, Material::Crystal => 3,
+        Material::Grass => 0,
+        Material::Wood => 1,
+        Material::Stone => 2,
+        Material::Crystal => 3,
         _ => return,
     };
     let x = (index % 2) as f32 * 627.;
@@ -9674,28 +11343,53 @@ fn island_material_card(
     let mut icon = ImageNode::new(art.island_materials.clone());
     icon.rect = Some(Rect::new(x, y, x + 627., y + 627.));
     icon.image_mode = NodeImageMode::Stretch;
-    let tone = if selected { Color::srgb(0.76, 0.89, 1.) } else { Color::WHITE };
-    parent.spawn((
-        Button,
-        ButtonTone(tone),
-        Action::Material(material),
-        Node {
-            width: Val::Px(width), height: Val::Px(height),
-            min_height: Val::Px(height), flex_shrink: 0.,
-            border: UiRect::all(Val::Px(if selected { 3. } else { 1. })),
-            padding: UiRect::all(Val::Px(3.)),
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center,
-            ..default()
-        },
-        BackgroundColor(tone),
-        BorderColor(if selected { Color::srgb(0.11, 0.51, 0.98) } else { Color::srgb(0.87, 0.90, 0.91) }),
-        BorderRadius::all(Val::Px(15.)),
-    )).with_children(|card| {
-        card.spawn((Node { width: Val::Px(height - 28.), height: Val::Px(height - 28.), ..default() }, icon));
-        label(card, art, material.label(), if height < 70. { 12. } else { 16. }, Color::srgb(0.05, 0.20, 0.30));
-    });
+    let tone = if selected {
+        Color::srgb(0.76, 0.89, 1.)
+    } else {
+        Color::WHITE
+    };
+    parent
+        .spawn((
+            Button,
+            ButtonTone(tone),
+            Action::Material(material),
+            Node {
+                width: Val::Px(width),
+                height: Val::Px(height),
+                min_height: Val::Px(height),
+                flex_shrink: 0.,
+                border: UiRect::all(Val::Px(if selected { 3. } else { 1. })),
+                padding: UiRect::all(Val::Px(3.)),
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(tone),
+            BorderColor(if selected {
+                Color::srgb(0.11, 0.51, 0.98)
+            } else {
+                Color::srgb(0.87, 0.90, 0.91)
+            }),
+            BorderRadius::all(Val::Px(15.)),
+        ))
+        .with_children(|card| {
+            card.spawn((
+                Node {
+                    width: Val::Px(height - 28.),
+                    height: Val::Px(height - 28.),
+                    ..default()
+                },
+                icon,
+            ));
+            label(
+                card,
+                art,
+                material.label(),
+                if height < 70. { 12. } else { 16. },
+                Color::srgb(0.05, 0.20, 0.30),
+            );
+        });
 }
 
 fn island_command_card(
@@ -9709,49 +11403,98 @@ fn island_command_card(
     background: Color,
     accent: Color,
 ) {
-    parent.spawn((
-        Button,
-        ButtonTone(background),
-        Action::Add(instruction),
-        Node {
-            width: Val::Px(width), height: Val::Px(height), min_height: Val::Px(height),
-            flex_shrink: 0., flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center, justify_content: JustifyContent::Center,
-            row_gap: Val::Px(2.), border: UiRect::all(Val::Px(1.)), ..default()
-        },
-        BackgroundColor(background),
-        BorderColor(accent),
-        BorderRadius::all(Val::Px(17.)),
-    )).with_children(|card| {
-        if instruction == Instruction::Place {
-            let mut image = ImageNode::new(art.island_materials.clone());
-            image.rect = Some(Rect::new(627., 0., 1254., 627.));
-            image.image_mode = NodeImageMode::Stretch;
-            let size = if height < 70. { 27. } else { 36. };
-            card.spawn((Node { width: Val::Px(size), height: Val::Px(size), ..default() }, image));
-        } else {
-            label(card, art, icon, if height < 70. { 28. } else { 36. }, accent);
-        }
-        label(card, art, title, if height < 70. { 13. } else { 16. }, Color::srgb(0.06, 0.20, 0.28));
-    });
+    parent
+        .spawn((
+            Button,
+            ButtonTone(background),
+            Action::Add(instruction),
+            Node {
+                width: Val::Px(width),
+                height: Val::Px(height),
+                min_height: Val::Px(height),
+                flex_shrink: 0.,
+                flex_direction: FlexDirection::Column,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                row_gap: Val::Px(2.),
+                border: UiRect::all(Val::Px(1.)),
+                ..default()
+            },
+            BackgroundColor(background),
+            BorderColor(accent),
+            BorderRadius::all(Val::Px(17.)),
+        ))
+        .with_children(|card| {
+            if instruction == Instruction::Place {
+                let mut image = ImageNode::new(art.island_materials.clone());
+                image.rect = Some(Rect::new(627., 0., 1254., 627.));
+                image.image_mode = NodeImageMode::Stretch;
+                let size = if height < 70. { 27. } else { 36. };
+                card.spawn((
+                    Node {
+                        width: Val::Px(size),
+                        height: Val::Px(size),
+                        ..default()
+                    },
+                    image,
+                ));
+            } else {
+                label(
+                    card,
+                    art,
+                    icon,
+                    if height < 70. { 28. } else { 36. },
+                    accent,
+                );
+            }
+            label(
+                card,
+                art,
+                title,
+                if height < 70. { 13. } else { 16. },
+                Color::srgb(0.06, 0.20, 0.28),
+            );
+        });
 }
 
-fn island_run_button(parent: &mut ChildSpawnerCommands, art: &Art, running: bool, width: f32, height: f32) {
+fn island_run_button(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    running: bool,
+    width: f32,
+    height: f32,
+) {
     let green = Color::srgb(0.03, 0.72, 0.41);
-    parent.spawn((
-        Button,
-        ButtonTone(green),
-        Action::Run,
-        Node {
-            width: Val::Px(width), height: Val::Px(height), min_height: Val::Px(height),
-            flex_shrink: 0., align_items: AlignItems::Center,
-            justify_content: JustifyContent::Center, ..default()
-        },
-        BackgroundColor(green),
-        BorderRadius::all(Val::Px(height * 0.42)),
-    )).with_children(|button| {
-        label(button, art, if running { "Ⅱ  暂停" } else { "▶  运行" }, if height < 70. { 19. } else { 24. }, Color::WHITE);
-    });
+    parent
+        .spawn((
+            Button,
+            ButtonTone(green),
+            Action::Run,
+            Node {
+                width: Val::Px(width),
+                height: Val::Px(height),
+                min_height: Val::Px(height),
+                flex_shrink: 0.,
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(green),
+            BorderRadius::all(Val::Px(height * 0.42)),
+        ))
+        .with_children(|button| {
+            label(
+                button,
+                art,
+                if running {
+                    "Ⅱ  暂停"
+                } else {
+                    "▶  运行"
+                },
+                if height < 70. { 19. } else { 24. },
+                Color::WHITE,
+            );
+        });
 }
 
 fn free_build_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
@@ -9762,62 +11505,202 @@ fn free_build_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool)
     let card_width = if compact { 86. } else { 126. };
     let card_height = if compact { 70. } else { 120. };
     let dock_height = if compact { 68. } else { 112. };
-    commands.spawn((UiRoot, Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() }))
+    commands
+        .spawn((
+            UiRoot,
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                ..default()
+            },
+        ))
         .with_children(|root| {
-            root.spawn((WorldInputBlocker, Node {
-                position_type: PositionType::Absolute, left: Val::Px(18.), top: Val::Px(14.),
-                height: Val::Px(if compact { 44. } else { 54. }), align_items: AlignItems::Center,
-                ..row()
-            })).with_children(|header| {
-                button(header, art, "←", Action::Library, if compact { 44. } else { 54. }, if compact { 44. } else { 54. }, panel, ink);
-                header.spawn((Node { height: Val::Px(if compact { 44. } else { 54. }),
-                    padding: UiRect::horizontal(Val::Px(12.)), align_items: AlignItems::Center,
-                    column_gap: Val::Px(9.), ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(18.))))
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(18.),
+                    top: Val::Px(14.),
+                    height: Val::Px(if compact { 44. } else { 54. }),
+                    align_items: AlignItems::Center,
+                    ..row()
+                },
+            ))
+            .with_children(|header| {
+                button(
+                    header,
+                    art,
+                    "←",
+                    Action::Library,
+                    if compact { 44. } else { 54. },
+                    if compact { 44. } else { 54. },
+                    panel,
+                    ink,
+                );
+                header
+                    .spawn((
+                        Node {
+                            height: Val::Px(if compact { 44. } else { 54. }),
+                            padding: UiRect::horizontal(Val::Px(12.)),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(9.),
+                            ..row()
+                        },
+                        BackgroundColor(panel),
+                        BorderRadius::all(Val::Px(18.)),
+                    ))
                     .with_children(|brand| {
                         let mut icon = ImageNode::new(art.island_materials.clone());
                         icon.rect = Some(Rect::new(0., 0., 627., 627.));
-                        brand.spawn((Node { width: Val::Px(if compact { 27. } else { 36. }), height: Val::Px(if compact { 27. } else { 36. }), ..default() }, icon));
-                        label(brand, art, "磁力小岛  自由搭建", if compact { 18. } else { 24. }, ink);
+                        brand.spawn((
+                            Node {
+                                width: Val::Px(if compact { 27. } else { 36. }),
+                                height: Val::Px(if compact { 27. } else { 36. }),
+                                ..default()
+                            },
+                            icon,
+                        ));
+                        label(
+                            brand,
+                            art,
+                            "磁力小岛  自由搭建",
+                            if compact { 18. } else { 24. },
+                            ink,
+                        );
                     });
                 if s.island_3d_view {
-                    button(header, art, "插画视角", Action::ToggleIslandView,
-                        if compact { 92. } else { 120. }, if compact { 44. } else { 54. }, panel, ink);
+                    button(
+                        header,
+                        art,
+                        "插画视角",
+                        Action::ToggleIslandView,
+                        if compact { 92. } else { 120. },
+                        if compact { 44. } else { 54. },
+                        panel,
+                        ink,
+                    );
                 }
             });
-            root.spawn((WorldInputBlocker, Node { position_type: PositionType::Absolute,
-                right: Val::Px(18.), top: Val::Px(if compact { 68. } else { 105. }),
-                width: Val::Px(tray_width), height: Val::Px(if compact { 229. } else { 326. }),
-                padding: UiRect::all(Val::Px(if compact { 8. } else { 14. })),
-                flex_direction: FlexDirection::Column, row_gap: Val::Px(7.), ..default()
-            }, BackgroundColor(panel), BorderRadius::all(Val::Px(24.))))
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(18.),
+                    top: Val::Px(if compact { 68. } else { 105. }),
+                    width: Val::Px(tray_width),
+                    height: Val::Px(if compact { 229. } else { 326. }),
+                    padding: UiRect::all(Val::Px(if compact { 8. } else { 14. })),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(7.),
+                    ..default()
+                },
+                BackgroundColor(panel),
+                BorderRadius::all(Val::Px(24.)),
+            ))
             .with_children(|tray| {
                 label(tray, art, "选择材料", if compact { 15. } else { 19. }, ink);
                 for pair in build_materials()[..4].chunks(2) {
                     tray.spawn(row()).with_children(|cards| {
                         for &(material, _) in pair {
-                            island_material_card(cards, art, material, s.material == material && !s.erase, card_width, card_height);
+                            island_material_card(
+                                cards,
+                                art,
+                                material,
+                                s.material == material && !s.erase,
+                                card_width,
+                                card_height,
+                            );
                         }
                     });
                 }
             });
-            root.spawn((WorldInputBlocker, Node { position_type: PositionType::Absolute,
-                left: Val::Px(18.), right: Val::Px(18.), bottom: Val::Px(10.),
-                height: Val::Px(dock_height), padding: UiRect::all(Val::Px(if compact { 7. } else { 14. })),
-                flex_direction: FlexDirection::Column, row_gap: Val::Px(6.), ..default()
-            }, BackgroundColor(panel), BorderRadius::all(Val::Px(24.))))
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(18.),
+                    right: Val::Px(18.),
+                    bottom: Val::Px(10.),
+                    height: Val::Px(dock_height),
+                    padding: UiRect::all(Val::Px(if compact { 7. } else { 14. })),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(6.),
+                    ..default()
+                },
+                BackgroundColor(panel),
+                BorderRadius::all(Val::Px(24.)),
+            ))
             .with_children(|dock| {
-                if !compact { label(dock, art, "自由搭建 · 作品自动保存", 17., ink); }
-                dock.spawn(Node { width: Val::Percent(100.), justify_content: JustifyContent::SpaceBetween,
-                    align_items: AlignItems::Center, ..row() }).with_children(|tools| {
+                if !compact {
+                    label(dock, art, "自由搭建 · 作品自动保存", 17., ink);
+                }
+                dock.spawn(Node {
+                    width: Val::Percent(100.),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    ..row()
+                })
+                .with_children(|tools| {
                     let w = if compact { 163. } else { 225. };
                     let h = if compact { 45. } else { 66. };
-                    button(tools, art, "搭建", Action::Build, w, h,
-                        if !s.erase { Color::srgb(1., 0.92, 0.75) } else { soft }, ink);
-                    button(tools, art, "拆除", Action::Erase, w, h,
-                        if s.erase { Color::srgb(1., 0.82, 0.82) } else { soft }, ink);
-                    button(tools, art, "撤销", Action::Undo, w, h, Color::srgb(0.82, 0.92, 1.), ink);
-                    button(tools, art, "旋转", Action::Rotate, w, h, Color::srgb(0.83, 0.96, 0.86), ink);
-                    button(tools, art, "清空作品", Action::ClearFreeBuild, w, h, Color::srgb(0.91, 0.85, 1.), ink);
+                    button(
+                        tools,
+                        art,
+                        "搭建",
+                        Action::Build,
+                        w,
+                        h,
+                        if !s.erase {
+                            Color::srgb(1., 0.92, 0.75)
+                        } else {
+                            soft
+                        },
+                        ink,
+                    );
+                    button(
+                        tools,
+                        art,
+                        "拆除",
+                        Action::Erase,
+                        w,
+                        h,
+                        if s.erase {
+                            Color::srgb(1., 0.82, 0.82)
+                        } else {
+                            soft
+                        },
+                        ink,
+                    );
+                    button(
+                        tools,
+                        art,
+                        "撤销",
+                        Action::Undo,
+                        w,
+                        h,
+                        Color::srgb(0.82, 0.92, 1.),
+                        ink,
+                    );
+                    button(
+                        tools,
+                        art,
+                        "旋转",
+                        Action::Rotate,
+                        w,
+                        h,
+                        Color::srgb(0.83, 0.96, 0.86),
+                        ink,
+                    );
+                    button(
+                        tools,
+                        art,
+                        "清空作品",
+                        Action::ClearFreeBuild,
+                        w,
+                        h,
+                        Color::srgb(0.91, 0.85, 1.),
+                        ink,
+                    );
                 });
             });
         });
@@ -9833,7 +11716,11 @@ fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
     commands
         .spawn((
             UiRoot,
-            Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() },
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                ..default()
+            },
         ))
         .with_children(|root| {
             // The approved design uses separate title and star plaques above the scene.
@@ -9841,7 +11728,9 @@ fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
                 WorldInputBlocker,
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(18.), right: Val::Px(18.), top: Val::Px(14.),
+                    left: Val::Px(18.),
+                    right: Val::Px(18.),
+                    top: Val::Px(14.),
                     height: Val::Px(58.),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::SpaceBetween,
@@ -9851,33 +11740,107 @@ fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
             .with_children(|header| {
                 header.spawn(row()).with_children(|left| {
                     button(left, art, "←", Action::Library, 54., 54., panel, ink);
-                    left.spawn((Node { height: Val::Px(54.), padding: UiRect::horizontal(Val::Px(12.)), align_items: AlignItems::Center, column_gap: Val::Px(10.), ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(18.))))
-                        .with_children(|brand| {
-                            let mut icon = ImageNode::new(art.island_materials.clone());
-                            icon.rect = Some(Rect::new(0., 0., 627., 627.));
-                            brand.spawn((Node { width: Val::Px(40.), height: Val::Px(40.), ..default() }, icon));
-                            label(brand, art, "磁力小岛", 25., ink);
-                            label(brand, art, format!("  {}  {}/6", game::LEVEL_NAMES[s.work.level].split('·').next().unwrap_or("关卡").trim(), s.work.level + 1), 16., muted);
-                        });
+                    left.spawn((
+                        Node {
+                            height: Val::Px(54.),
+                            padding: UiRect::horizontal(Val::Px(12.)),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(10.),
+                            ..row()
+                        },
+                        BackgroundColor(panel),
+                        BorderRadius::all(Val::Px(18.)),
+                    ))
+                    .with_children(|brand| {
+                        let mut icon = ImageNode::new(art.island_materials.clone());
+                        icon.rect = Some(Rect::new(0., 0., 627., 627.));
+                        brand.spawn((
+                            Node {
+                                width: Val::Px(40.),
+                                height: Val::Px(40.),
+                                ..default()
+                            },
+                            icon,
+                        ));
+                        label(brand, art, "磁力小岛", 25., ink);
+                        label(
+                            brand,
+                            art,
+                            format!(
+                                "  {}  {}/6",
+                                game::LEVEL_NAMES[s.work.level]
+                                    .split('·')
+                                    .next()
+                                    .unwrap_or("关卡")
+                                    .trim(),
+                                s.work.level + 1
+                            ),
+                            16.,
+                            muted,
+                        );
+                    });
                 });
                 header.spawn(row()).with_children(|right| {
-                    right.spawn((Node { height: Val::Px(54.), padding: UiRect::horizontal(Val::Px(18.)), align_items: AlignItems::Center, ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(18.))))
+                    right
+                        .spawn((
+                            Node {
+                                height: Val::Px(54.),
+                                padding: UiRect::horizontal(Val::Px(18.)),
+                                align_items: AlignItems::Center,
+                                ..row()
+                            },
+                            BackgroundColor(panel),
+                            BorderRadius::all(Val::Px(18.)),
+                        ))
                         .with_children(|score| {
                             island_score_stars(score, art, s.work.stars[s.work.level], 36.);
                         });
-                    button(right, art, "...", Action::ToggleIslandMenu, 66., 54., panel, ink);
+                    button(
+                        right,
+                        art,
+                        "...",
+                        Action::ToggleIslandMenu,
+                        66.,
+                        54.,
+                        panel,
+                        ink,
+                    );
                 });
             });
             if s.island_menu_open {
-                root.spawn((WorldInputBlocker, GlobalZIndex(30), Node {
-                    position_type: PositionType::Absolute, right: Val::Px(18.), top: Val::Px(78.),
-                    width: Val::Px(180.), padding: UiRect::all(Val::Px(10.)),
-                    flex_direction: FlexDirection::Column, row_gap: Val::Px(7.), ..default()
-                }, BackgroundColor(panel), BorderRadius::all(Val::Px(18.))))
+                root.spawn((
+                    WorldInputBlocker,
+                    GlobalZIndex(30),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: Val::Px(18.),
+                        top: Val::Px(78.),
+                        width: Val::Px(180.),
+                        padding: UiRect::all(Val::Px(10.)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(7.),
+                        ..default()
+                    },
+                    BackgroundColor(panel),
+                    BorderRadius::all(Val::Px(18.)),
+                ))
                 .with_children(|menu| {
                     button(menu, art, "下一关", Action::Next, 160., 40., soft, ink);
                     button(menu, art, "保存进度", Action::Save, 160., 40., soft, ink);
-                    button(menu, art, if s.island_3d_view { "插画视角" } else { "立体视角" }, Action::ToggleIslandView, 160., 40., soft, ink);
+                    button(
+                        menu,
+                        art,
+                        if s.island_3d_view {
+                            "插画视角"
+                        } else {
+                            "立体视角"
+                        },
+                        Action::ToggleIslandView,
+                        160.,
+                        40.,
+                        soft,
+                        ink,
+                    );
                 });
             }
 
@@ -9886,10 +11849,13 @@ fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
                 WorldInputBlocker,
                 Node {
                     position_type: PositionType::Absolute,
-                    right: Val::Px(18.), top: Val::Px(104.),
-                    width: Val::Px(294.), height: Val::Px(if s.island_3d_view { 522. } else { 326. }),
+                    right: Val::Px(18.),
+                    top: Val::Px(104.),
+                    width: Val::Px(294.),
+                    height: Val::Px(if s.island_3d_view { 522. } else { 326. }),
                     padding: UiRect::all(Val::Px(14.)),
-                    flex_direction: FlexDirection::Column, row_gap: Val::Px(8.),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(8.),
                     ..default()
                 },
                 BackgroundColor(panel),
@@ -9901,7 +11867,14 @@ fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
                     tray.spawn(row()).with_children(|cards| {
                         for &(material, _) in pair {
                             let selected = s.material == material && !s.erase;
-                            island_material_card(cards, art, material, selected, 126., if s.island_3d_view { 92. } else { 120. });
+                            island_material_card(
+                                cards,
+                                art,
+                                material,
+                                selected,
+                                126.,
+                                if s.island_3d_view { 92. } else { 120. },
+                            );
                         }
                     });
                 }
@@ -9911,20 +11884,48 @@ fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
                         tray.spawn(row()).with_children(|cards| {
                             for &(material, color) in pair {
                                 let selected = s.material == material && !s.erase;
-                                button(cards, art, material.label(), Action::Material(material),
-                                    80., 34., if selected { soft } else { color }, ink);
+                                button(
+                                    cards,
+                                    art,
+                                    material.label(),
+                                    Action::Material(material),
+                                    80.,
+                                    34.,
+                                    if selected { soft } else { color },
+                                    ink,
+                                );
                             }
                         });
                     }
-                    tray.spawn(Node { flex_grow: 1., ..default() });
+                    tray.spawn(Node {
+                        flex_grow: 1.,
+                        ..default()
+                    });
                     tray.spawn(row()).with_children(|actions| {
-                        button(actions, art, if s.erase { "✓ 拆除" } else { "拆除" },
-                            Action::Erase, 126., 42., soft, ink);
+                        button(
+                            actions,
+                            art,
+                            if s.erase { "✓ 拆除" } else { "拆除" },
+                            Action::Erase,
+                            126.,
+                            42.,
+                            soft,
+                            ink,
+                        );
                         button(actions, art, "缩放 +", Action::ZoomIn, 64., 42., soft, ink);
                         button(actions, art, "−", Action::ZoomOut, 48., 42., soft, ink);
                     });
                     tray.spawn(row()).with_children(|tools| {
-                        button(tools, art, format!("重复 {}", s.work.repeat), Action::Repeat, 80., 30., soft, ink);
+                        button(
+                            tools,
+                            art,
+                            format!("重复 {}", s.work.repeat),
+                            Action::Repeat,
+                            80.,
+                            30.,
+                            soft,
+                            ink,
+                        );
                         button(tools, art, "单步", Action::Step, 56., 30., soft, ink);
                         button(tools, art, "复位", Action::Reset, 56., 30., soft, ink);
                     });
@@ -9939,9 +11940,13 @@ fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
                 WorldInputBlocker,
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(18.), right: Val::Px(18.), bottom: Val::Px(12.),
-                    height: Val::Px(139.), padding: UiRect::all(Val::Px(14.)),
-                    flex_direction: FlexDirection::Column, row_gap: Val::Px(8.),
+                    left: Val::Px(18.),
+                    right: Val::Px(18.),
+                    bottom: Val::Px(12.),
+                    height: Val::Px(139.),
+                    padding: UiRect::all(Val::Px(14.)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(8.),
                     ..default()
                 },
                 BackgroundColor(panel),
@@ -9951,21 +11956,64 @@ fn island_builder_ui(commands: &mut Commands, s: &Session, art: &Art) {
                 dock.spawn(row()).with_children(|heading| {
                     label(heading, art, "编写行动 · 让机器人到达星星", 19., ink);
                     if !s.work.program.is_empty() {
-                        label(heading, art, format!("  ·  已编排 {} 步  ·  {}", s.work.program.len(), s.message), 13., muted);
+                        label(
+                            heading,
+                            art,
+                            format!("  ·  已编排 {} 步  ·  {}", s.work.program.len(), s.message),
+                            13.,
+                            muted,
+                        );
                     }
                 });
                 dock.spawn(row()).with_children(|controls| {
                     for (op, icon, title, color, accent) in [
-                        (Instruction::Place, "+", "放木块", Color::srgb(1.0, 0.92, 0.75), Color::srgb(0.76, 0.42, 0.12)),
-                        (Instruction::Forward, "↑", "前进", Color::srgb(0.82, 0.92, 1.0), Color::srgb(0.12, 0.49, 0.88)),
-                        (Instruction::Left, "←", "左转", Color::srgb(0.83, 0.96, 0.86), Color::srgb(0.09, 0.58, 0.31)),
-                        (Instruction::Right, "→", "右转", Color::srgb(1.0, 0.86, 0.86), Color::srgb(0.84, 0.22, 0.25)),
+                        (
+                            Instruction::Place,
+                            "+",
+                            "放木块",
+                            Color::srgb(1.0, 0.92, 0.75),
+                            Color::srgb(0.76, 0.42, 0.12),
+                        ),
+                        (
+                            Instruction::Forward,
+                            "↑",
+                            "前进",
+                            Color::srgb(0.82, 0.92, 1.0),
+                            Color::srgb(0.12, 0.49, 0.88),
+                        ),
+                        (
+                            Instruction::Left,
+                            "←",
+                            "左转",
+                            Color::srgb(0.83, 0.96, 0.86),
+                            Color::srgb(0.09, 0.58, 0.31),
+                        ),
+                        (
+                            Instruction::Right,
+                            "→",
+                            "右转",
+                            Color::srgb(1.0, 0.86, 0.86),
+                            Color::srgb(0.84, 0.22, 0.25),
+                        ),
                     ] {
-                        island_command_card(controls, art, op, icon, title, 185., 76., color, accent);
+                        island_command_card(
+                            controls, art, op, icon, title, 185., 76., color, accent,
+                        );
                     }
-                    controls.spawn((Node { width: Val::Px(20.), height: Val::Px(54.), border: UiRect::left(Val::Px(1.)), ..default() }, BorderColor(Color::srgb(0.75, 0.82, 0.85))));
+                    controls.spawn((
+                        Node {
+                            width: Val::Px(20.),
+                            height: Val::Px(54.),
+                            border: UiRect::left(Val::Px(1.)),
+                            ..default()
+                        },
+                        BorderColor(Color::srgb(0.75, 0.82, 0.85)),
+                    ));
                     button(controls, art, "↶  撤销", Action::Undo, 108., 76., soft, ink);
-                    controls.spawn(Node { flex_grow: 1., ..default() });
+                    controls.spawn(Node {
+                        flex_grow: 1.,
+                        ..default()
+                    });
                     island_run_button(controls, art, running, 190., 76.);
                 });
             });
@@ -9977,58 +12025,150 @@ fn island_compact_ui(commands: &mut Commands, s: &Session, art: &Art) {
     let panel = Color::srgba(1.0, 0.985, 0.945, 0.96);
     let soft = Color::srgb(0.96, 0.91, 0.82);
     let running = s.runner.as_ref().is_some_and(|runner| runner.running);
-    commands.spawn((UiRoot, Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() }))
+    commands
+        .spawn((
+            UiRoot,
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                ..default()
+            },
+        ))
         .with_children(|root| {
-            root.spawn((WorldInputBlocker, Node {
-                position_type: PositionType::Absolute, left: Val::Px(8.), right: Val::Px(8.),
-                top: Val::Px(6.), height: Val::Px(52.),
-                justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..row()
-            }))
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(8.),
+                    right: Val::Px(8.),
+                    top: Val::Px(6.),
+                    height: Val::Px(52.),
+                    justify_content: JustifyContent::SpaceBetween,
+                    align_items: AlignItems::Center,
+                    ..row()
+                },
+            ))
             .with_children(|bar| {
                 bar.spawn(row()).with_children(|p| {
                     button(p, art, "←", Action::Library, 44., 48., panel, ink);
-                    p.spawn((Node { height: Val::Px(48.), padding: UiRect::horizontal(Val::Px(9.)), align_items: AlignItems::Center, column_gap: Val::Px(7.), ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(16.))))
-                        .with_children(|brand| {
-                            let mut icon = ImageNode::new(art.island_materials.clone());
-                            icon.rect = Some(Rect::new(0., 0., 627., 627.));
-                            brand.spawn((Node { width: Val::Px(30.), height: Val::Px(30.), ..default() }, icon));
-                            label(brand, art, "磁力小岛", 20., ink);
-                            label(brand, art, format!("{}/6", s.work.level + 1), 14., ink);
-                        });
+                    p.spawn((
+                        Node {
+                            height: Val::Px(48.),
+                            padding: UiRect::horizontal(Val::Px(9.)),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(7.),
+                            ..row()
+                        },
+                        BackgroundColor(panel),
+                        BorderRadius::all(Val::Px(16.)),
+                    ))
+                    .with_children(|brand| {
+                        let mut icon = ImageNode::new(art.island_materials.clone());
+                        icon.rect = Some(Rect::new(0., 0., 627., 627.));
+                        brand.spawn((
+                            Node {
+                                width: Val::Px(30.),
+                                height: Val::Px(30.),
+                                ..default()
+                            },
+                            icon,
+                        ));
+                        label(brand, art, "磁力小岛", 20., ink);
+                        label(brand, art, format!("{}/6", s.work.level + 1), 14., ink);
+                    });
                 });
                 bar.spawn(row()).with_children(|p| {
-                    p.spawn((Node { height: Val::Px(48.), padding: UiRect::horizontal(Val::Px(10.)), align_items: AlignItems::Center, ..row() }, BackgroundColor(panel), BorderRadius::all(Val::Px(16.))))
-                        .with_children(|score| {
-                            island_score_stars(score, art, s.work.stars[s.work.level], 28.);
-                        });
-                    button(p, art, "...", Action::ToggleIslandMenu, 58., 48., panel, ink);
+                    p.spawn((
+                        Node {
+                            height: Val::Px(48.),
+                            padding: UiRect::horizontal(Val::Px(10.)),
+                            align_items: AlignItems::Center,
+                            ..row()
+                        },
+                        BackgroundColor(panel),
+                        BorderRadius::all(Val::Px(16.)),
+                    ))
+                    .with_children(|score| {
+                        island_score_stars(score, art, s.work.stars[s.work.level], 28.);
+                    });
+                    button(
+                        p,
+                        art,
+                        "...",
+                        Action::ToggleIslandMenu,
+                        58.,
+                        48.,
+                        panel,
+                        ink,
+                    );
                 });
             });
             if s.island_menu_open {
-                root.spawn((WorldInputBlocker, GlobalZIndex(30), Node {
-                    position_type: PositionType::Absolute, right: Val::Px(8.), top: Val::Px(64.),
-                    width: Val::Px(146.), padding: UiRect::all(Val::Px(8.)),
-                    flex_direction: FlexDirection::Column, row_gap: Val::Px(5.), ..default()
-                }, BackgroundColor(panel), BorderRadius::all(Val::Px(16.))))
+                root.spawn((
+                    WorldInputBlocker,
+                    GlobalZIndex(30),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        right: Val::Px(8.),
+                        top: Val::Px(64.),
+                        width: Val::Px(146.),
+                        padding: UiRect::all(Val::Px(8.)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(5.),
+                        ..default()
+                    },
+                    BackgroundColor(panel),
+                    BorderRadius::all(Val::Px(16.)),
+                ))
                 .with_children(|menu| {
                     button(menu, art, "下一关", Action::Next, 130., 34., soft, ink);
                     button(menu, art, "保存进度", Action::Save, 130., 34., soft, ink);
-                    button(menu, art, if s.island_3d_view { "插画视角" } else { "立体视角" }, Action::ToggleIslandView, 130., 34., soft, ink);
+                    button(
+                        menu,
+                        art,
+                        if s.island_3d_view {
+                            "插画视角"
+                        } else {
+                            "立体视角"
+                        },
+                        Action::ToggleIslandView,
+                        130.,
+                        34.,
+                        soft,
+                        ink,
+                    );
                 });
             }
-            root.spawn((WorldInputBlocker, Node {
-                position_type: PositionType::Absolute, right: Val::Px(8.), top: Val::Px(72.),
-                width: Val::Px(206.), height: Val::Px(if s.island_3d_view { 448. } else { 255. }),
-                padding: UiRect::all(Val::Px(8.)),
-                flex_direction: FlexDirection::Column, row_gap: Val::Px(5.), ..default()
-            }, BackgroundColor(panel), BorderRadius::all(Val::Px(17.))))
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(8.),
+                    top: Val::Px(72.),
+                    width: Val::Px(206.),
+                    height: Val::Px(if s.island_3d_view { 448. } else { 255. }),
+                    padding: UiRect::all(Val::Px(8.)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(5.),
+                    ..default()
+                },
+                BackgroundColor(panel),
+                BorderRadius::all(Val::Px(17.)),
+            ))
             .with_children(|tray| {
                 label(tray, art, "搭建磁力桥", 16., ink);
                 for pair in build_materials()[..4].chunks(2) {
                     tray.spawn(row()).with_children(|cards| {
                         for &(material, _) in pair {
                             let selected = s.material == material && !s.erase;
-                            island_material_card(cards, art, material, selected, 90., if s.island_3d_view { 56. } else { 91. });
+                            island_material_card(
+                                cards,
+                                art,
+                                material,
+                                selected,
+                                90.,
+                                if s.island_3d_view { 56. } else { 91. },
+                            );
                         }
                     });
                 }
@@ -10037,18 +12177,47 @@ fn island_compact_ui(commands: &mut Commands, s: &Session, art: &Art) {
                         tray.spawn(row()).with_children(|cards| {
                             for &(material, color) in pair {
                                 let selected = s.material == material && !s.erase;
-                                button(cards, art, material.label(), Action::Material(material), 58., 30.,
-                                    if selected { soft } else { color }, ink);
+                                button(
+                                    cards,
+                                    art,
+                                    material.label(),
+                                    Action::Material(material),
+                                    58.,
+                                    30.,
+                                    if selected { soft } else { color },
+                                    ink,
+                                );
                             }
                         });
                     }
-                    tray.spawn(Node { flex_grow: 1., ..default() });
+                    tray.spawn(Node {
+                        flex_grow: 1.,
+                        ..default()
+                    });
                     tray.spawn(row()).with_children(|p| {
-                        button(p, art, if s.erase { "✓ 拆除" } else { "拆除" }, Action::Erase, 90., 36., soft, ink);
+                        button(
+                            p,
+                            art,
+                            if s.erase { "✓ 拆除" } else { "拆除" },
+                            Action::Erase,
+                            90.,
+                            36.,
+                            soft,
+                            ink,
+                        );
                         button(p, art, "缩放 +", Action::ZoomIn, 90., 36., soft, ink);
                     });
                     tray.spawn(row()).with_children(|p| {
-                        button(p, art, format!("重复 {}", s.work.repeat), Action::Repeat, 62., 29., soft, ink);
+                        button(
+                            p,
+                            art,
+                            format!("重复 {}", s.work.repeat),
+                            Action::Repeat,
+                            62.,
+                            29.,
+                            soft,
+                            ink,
+                        );
                         button(p, art, "单步", Action::Step, 55., 29., soft, ink);
                         button(p, art, "复位", Action::Reset, 55., 29., soft, ink);
                     });
@@ -10058,23 +12227,74 @@ fn island_compact_ui(commands: &mut Commands, s: &Session, art: &Art) {
                     });
                 }
             });
-            root.spawn((WorldInputBlocker, Node {
-                position_type: PositionType::Absolute, left: Val::Px(8.), right: Val::Px(8.),
-                bottom: Val::Px(6.), height: Val::Px(112.), padding: UiRect::all(Val::Px(8.)),
-                flex_direction: FlexDirection::Column, row_gap: Val::Px(5.), ..default()
-            }, BackgroundColor(panel), BorderRadius::all(Val::Px(17.))))
+            root.spawn((
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(8.),
+                    right: Val::Px(8.),
+                    bottom: Val::Px(6.),
+                    height: Val::Px(112.),
+                    padding: UiRect::all(Val::Px(8.)),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(5.),
+                    ..default()
+                },
+                BackgroundColor(panel),
+                BorderRadius::all(Val::Px(17.)),
+            ))
             .with_children(|dock| {
-                label(dock, art, format!("编写行动 · 让机器人到达星星{}", if s.work.program.is_empty() { String::new() } else { format!("  ·  已编排 {} 步", s.work.program.len()) }), 16., ink);
+                label(
+                    dock,
+                    art,
+                    format!(
+                        "编写行动 · 让机器人到达星星{}",
+                        if s.work.program.is_empty() {
+                            String::new()
+                        } else {
+                            format!("  ·  已编排 {} 步", s.work.program.len())
+                        }
+                    ),
+                    16.,
+                    ink,
+                );
                 dock.spawn(row()).with_children(|p| {
                     for (op, icon, title, color, accent) in [
-                        (Instruction::Place, "+", "放木块", Color::srgb(1., 0.92, 0.75), Color::srgb(0.76, 0.42, 0.12)),
-                        (Instruction::Forward, "↑", "前进", Color::srgb(0.82, 0.92, 1.), Color::srgb(0.12, 0.49, 0.88)),
-                        (Instruction::Left, "←", "左转", Color::srgb(0.83, 0.96, 0.86), Color::srgb(0.09, 0.58, 0.31)),
-                        (Instruction::Right, "→", "右转", Color::srgb(1., 0.86, 0.86), Color::srgb(0.84, 0.22, 0.25)),
+                        (
+                            Instruction::Place,
+                            "+",
+                            "放木块",
+                            Color::srgb(1., 0.92, 0.75),
+                            Color::srgb(0.76, 0.42, 0.12),
+                        ),
+                        (
+                            Instruction::Forward,
+                            "↑",
+                            "前进",
+                            Color::srgb(0.82, 0.92, 1.),
+                            Color::srgb(0.12, 0.49, 0.88),
+                        ),
+                        (
+                            Instruction::Left,
+                            "←",
+                            "左转",
+                            Color::srgb(0.83, 0.96, 0.86),
+                            Color::srgb(0.09, 0.58, 0.31),
+                        ),
+                        (
+                            Instruction::Right,
+                            "→",
+                            "右转",
+                            Color::srgb(1., 0.86, 0.86),
+                            Color::srgb(0.84, 0.22, 0.25),
+                        ),
                     ] {
                         island_command_card(p, art, op, icon, title, 105., 62., color, accent);
                     }
-                    p.spawn(Node { flex_grow: 1., ..default() });
+                    p.spawn(Node {
+                        flex_grow: 1.,
+                        ..default()
+                    });
                     button(p, art, "撤销", Action::Undo, 68., 62., soft, ink);
                     island_run_button(p, art, running, 112., 62.);
                 });
@@ -10444,15 +12664,15 @@ mod tests {
     }
 
     #[test]
-    fn tank_progression_visits_all_eight_maps_and_retry_keeps_level() {
+    fn tank_progression_visits_all_twelve_maps_and_retry_keeps_level() {
         let mut tank = TankGame::new();
-        for wave in 2..=9 {
+        for wave in 2..=13 {
             tank.lives = 2;
             tank.enemies.clear();
             tank.reserves = 0;
             tank.advance(0.01);
             assert_eq!(tank.wave, wave);
-            assert_eq!(tank.map, ((wave - 1) % 8) as u8);
+            assert_eq!(tank.map, ((wave - 1) % u32::from(TANK_MAP_COUNT)) as u8);
             assert_eq!(tank.lives, 3);
             assert!(!tank.enemies.is_empty());
             assert!(tank.bullets.is_empty());
@@ -10468,6 +12688,52 @@ mod tests {
         );
         assert!(!tank.failed);
         assert_eq!(tank.enemies.len(), 4);
+
+        tank.wave = 12;
+        tank.score = 1200;
+        tank.failed = true;
+        tank.lives = 0;
+        tank.retry_level();
+        assert_eq!((tank.wave, tank.map, tank.score, tank.lives), (12, 11, 1200, 3));
+        assert_eq!((tank.enemies.len(), tank.reserves), (5, 21));
+        assert!(!tank.failed);
+    }
+
+    #[test]
+    fn new_tank_maps_match_the_approved_grids_and_enemy_counts() {
+        let layouts = [
+            [".......", ".#...#.", "..#S#..", ".B...B.", "..#S#..", ".#...#.", "......."],
+            [".......", "S.#.#.S", "..#.#..", "B.....B", "..#.#..", "S.#.#.S", "......."],
+            [".......", ".##.##.", ".B.S.B.", ".S...S.", ".B.S.B.", ".#...#.", "......."],
+            [".......", ".#S.S#.", ".B...B.", "..S.S..", ".B...B.", ".#S.S#.", "......."],
+        ];
+        let names = ["风车岔路", "曲径夹击", "双翼包围", "花环堡垒"];
+        let totals = [20, 22, 24, 26];
+        let active = [4, 4, 5, 5];
+        for (index, rows) in layouts.iter().enumerate() {
+            let mut tank = TankGame::new();
+            tank.load_map((index + 8) as u8);
+            tank.spawn_wave();
+            assert_eq!(tank.map_name(), names[index]);
+            assert_eq!(tank.level_total(), totals[index]);
+            assert_eq!(tank.active_limit(), active[index]);
+            assert_eq!(tank.enemies.len(), active[index]);
+            for (y, row) in rows.iter().enumerate() {
+                for (x, tile) in row.bytes().enumerate() {
+                    let cell = (x as i8, y as i8);
+                    let actual = if tank.walls.contains(&cell) {
+                        b'#'
+                    } else if tank.steel.contains(&cell) {
+                        b'S'
+                    } else if tank.bushes.contains(&cell) {
+                        b'B'
+                    } else {
+                        b'.'
+                    };
+                    assert_eq!(actual, tile, "map {} at {cell:?}", index + 9);
+                }
+            }
+        }
     }
 
     #[test]
@@ -10716,8 +12982,20 @@ mod tests {
         g.advance(0.02);
         assert_eq!(g.player, (3, 8));
         assert!(g.visual_player.x > 2. && g.visual_player.x < 3.);
+        g.blasts.clear();
+        g.enemy_clock = 10.;
         g.place_bomb();
-        assert_eq!(g.bombs[0].fuse, 3.);
+        assert_eq!(g.bombs[0].fuse, 2.2);
+        for _ in 0..40 {
+            g.advance(0.05);
+        }
+        assert_eq!(g.bombs.len(), 1, "the water bubble must not burst early");
+        assert!(g.blasts.is_empty());
+        for _ in 0..5 {
+            g.advance(0.05);
+        }
+        assert!(g.bombs.is_empty());
+        assert!(g.blasts.iter().any(|blast| (blast.x, blast.y) == (3, 8)));
     }
 
     #[test]
@@ -12797,19 +15075,61 @@ fn tetris_stat(parent: &mut ChildSpawnerCommands, art: &Art, title: &str, value:
         .spawn((
             Node {
                 width: Val::Percent(100.),
-                padding: UiRect::axes(Val::Px(12.), Val::Px(10.)),
+                padding: UiRect::axes(Val::Px(10.), Val::Px(9.)),
                 justify_content: JustifyContent::SpaceBetween,
                 align_items: AlignItems::Center,
                 border: UiRect::all(Val::Px(1.)),
                 ..row()
             },
-            BackgroundColor(Color::srgb(0.035, 0.045, 0.055)),
-            BorderColor(Color::srgb(0.68, 0.49, 0.25)),
-            BorderRadius::all(Val::Px(8.)),
+            BackgroundColor(Color::srgb(0.035, 0.065, 0.14)),
+            BorderColor(Color::srgb(0.17, 0.37, 0.72)),
+            BorderRadius::all(Val::Px(12.)),
         ))
         .with_children(|card| {
-            label(card, art, title, 14., Color::srgb(0.88, 0.77, 0.57));
-            label(card, art, value, 22., Color::srgb(1., 0.69, 0.24));
+            label(card, art, title, 14., Color::srgb(0.64, 0.78, 0.98));
+            label(card, art, value, 22., Color::srgb(0.42, 0.85, 1.));
+        });
+}
+
+fn tetris_control_button(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    icon: &str,
+    caption: &str,
+    action: Action,
+    button_size: f32,
+    background: Color,
+    edge: Color,
+) {
+    parent
+        .spawn(Node {
+            width: Val::Percent(20.),
+            flex_direction: FlexDirection::Column,
+            align_items: AlignItems::Center,
+            row_gap: Val::Px(4.),
+            ..default()
+        })
+        .with_children(|control| {
+            control
+                .spawn((
+                    Button,
+                    ButtonTone(background),
+                    action,
+                    Node {
+                        width: Val::Px(button_size),
+                        height: Val::Px(button_size),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        border: UiRect::all(Val::Px(2.)),
+                        flex_shrink: 0.,
+                        ..default()
+                    },
+                    BackgroundColor(background),
+                    BorderColor(edge),
+                    BorderRadius::all(Val::Percent(50.)),
+                ))
+                .with_children(|button| label(button, art, icon, 27., Color::WHITE));
+            label(control, art, caption, 13., Color::srgb(0.83, 0.90, 1.));
         });
 }
 
@@ -12825,22 +15145,35 @@ fn tetris_ui(
     // Desktop is a view-only game surface: let the well consume almost the
     // entire available height instead of keeping phone-sized 32px cells in a
     // large fullscreen window.
+    let content_width = if compact {
+        (width - 20.).max(320.)
+    } else {
+        980.
+    };
     let cell = if compact {
-        // Portrait phones have enough height for a 680px well. The previous
-        // 26px cells made the main play area unnecessarily small and hard to
-        // read during fast drops.
-        ((height - 260.) / TETRIS_HEIGHT as f32)
+        // The portrait preview has a compact control row; use that saved space
+        // to make the playfield substantially larger.
+        (((height - 190.) / TETRIS_HEIGHT as f32).min((content_width - 160.) / TETRIS_WIDTH as f32))
             .floor()
-            .clamp(25., 32.)
+            .clamp(22., 36.)
     } else {
         ((height - 160.) / TETRIS_HEIGHT as f32)
             .min((width - 250.) / TETRIS_WIDTH as f32)
             .floor()
             .clamp(32., 64.)
     };
-    let content_width = if compact { 510. } else { 980. };
     let board_width = cell * TETRIS_WIDTH as f32;
     let board_height = cell * TETRIS_HEIGHT as f32;
+    let side_width = if compact {
+        (content_width - board_width - 12.).clamp(100., 140.)
+    } else {
+        188.
+    };
+    let preview_cell = if compact {
+        cell.min((side_width - 8.) / 4.)
+    } else {
+        cell
+    };
     let mut ghost_y = g.y;
     while !g.failed && g.valid(g.x, ghost_y + 1, g.rotation) {
         ghost_y += 1;
@@ -12852,18 +15185,69 @@ fn tetris_ui(
             Node {
                 width: Val::Percent(100.),
                 height: Val::Percent(100.),
-                padding: UiRect::all(Val::Px(if compact { 10. } else { 22. })),
+                padding: UiRect::all(Val::Px(if compact { 8. } else { 22. })),
                 border: UiRect::all(Val::Px(if compact { 2. } else { 5. })),
                 flex_direction: FlexDirection::Column,
                 align_items: AlignItems::Center,
-                row_gap: Val::Px(10.),
+                row_gap: Val::Px(if compact { 8. } else { 10. }),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.045, 0.050, 0.060)),
-            BorderColor(Color::srgb(0.72, 0.54, 0.30)),
-            BorderRadius::all(Val::Px(12.)),
+            BackgroundColor(Color::srgb(0.025, 0.035, 0.12)),
+            BorderColor(Color::srgb(0.12, 0.39, 0.87)),
+            BorderRadius::all(Val::Px(18.)),
         ))
         .with_children(|root| {
+            if compact {
+                let mut backdrop = ImageNode::new(art.sky_backdrop.clone());
+                backdrop.image_mode = NodeImageMode::Stretch;
+                root.spawn((
+                    backdrop,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.),
+                        height: Val::Percent(100.),
+                        ..default()
+                    },
+                ));
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.),
+                        height: Val::Percent(100.),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.008, 0.018, 0.06, 0.70)),
+                ));
+            }
+            if compact {
+                for (x, y, symbol, color) in [
+                    (16., 148., "✦", Color::srgb(0.30, 0.71, 1.)),
+                    (content_width - 28., 320., "✧", Color::srgb(0.55, 0.39, 1.)),
+                    (20., height - 190., "·", Color::srgb(0.24, 0.79, 0.94)),
+                    (
+                        content_width - 26.,
+                        height - 230.,
+                        "✦",
+                        Color::srgb(1., 0.69, 0.25),
+                    ),
+                ] {
+                    root.spawn((
+                        Text::new(symbol),
+                        TextFont {
+                            font: art.font.clone(),
+                            font_size: 18.,
+                            ..default()
+                        },
+                        TextColor(color),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(x),
+                            top: Val::Px(y),
+                            ..default()
+                        },
+                    ));
+                }
+            }
             root.spawn(Node {
                 width: Val::Percent(100.),
                 max_width: Val::Px(content_width),
@@ -12877,23 +15261,25 @@ fn tetris_ui(
                     ..default()
                 })
                 .with_children(|p| {
-                    label(p, art, "方块消消乐", 27., Color::srgb(0.98, 0.75, 0.31));
-                    label(
-                        p,
-                        art,
-                        "CLASSIC BLOCKS  ·  拼满一行消除",
-                        14.,
-                        Color::srgb(0.60, 0.61, 0.61),
-                    );
+                    label(p, art, "方块消消乐", 31., Color::srgb(1., 0.77, 0.25));
+                    if !compact {
+                        label(
+                            p,
+                            art,
+                            "CLASSIC BLOCKS  ·  拼满一行消除",
+                            14.,
+                            Color::srgb(0.60, 0.61, 0.61),
+                        );
+                    }
                 });
                 button(
                     top,
                     art,
-                    "游戏库",
+                    "‹ 返回游戏库",
                     Action::Library,
-                    82.,
-                    38.,
-                    Color::srgb(0.23, 0.24, 0.26),
+                    128.,
+                    42.,
+                    Color::srgb(0.08, 0.19, 0.43),
                     Color::WHITE,
                 );
             });
@@ -12911,13 +15297,13 @@ fn tetris_ui(
                         width: Val::Px(board_width),
                         height: Val::Px(board_height),
                         flex_direction: FlexDirection::Column,
-                        border: UiRect::all(Val::Px(5.)),
+                        border: UiRect::all(Val::Px(if compact { 3. } else { 5. })),
                         overflow: Overflow::clip(),
                         ..default()
                     },
-                    BackgroundColor(Color::srgb(0.035, 0.045, 0.055)),
-                    BorderColor(Color::srgb(0.72, 0.54, 0.30)),
-                    BorderRadius::all(Val::Px(5.)),
+                    BackgroundColor(Color::srgb(0.012, 0.025, 0.075)),
+                    BorderColor(Color::srgb(0.18, 0.58, 1.)),
+                    BorderRadius::all(Val::Px(9.)),
                 ))
                 .with_children(|board| {
                     for y in 0..TETRIS_HEIGHT {
@@ -12925,7 +15311,7 @@ fn tetris_ui(
                             .spawn(Node {
                                 width: Val::Px(board_width),
                                 height: Val::Px(cell),
-                                column_gap: Val::Px(0.),
+                                column_gap: Val::Px(if compact { 1.5 } else { 0. }),
                                 ..row()
                             })
                             .with_children(|line| {
@@ -12936,8 +15322,8 @@ fn tetris_ui(
                                         && ghost_cells.contains(&(x as i8, y as i8));
                                     line.spawn((
                                         Node {
-                                            width: Val::Px(cell),
-                                            height: Val::Px(cell),
+                                            width: Val::Px(cell - if compact { 1.5 } else { 0. }),
+                                            height: Val::Px(cell - if compact { 1.5 } else { 0. }),
                                             border: UiRect::all(Val::Px(if value == 0 {
                                                 1.
                                             } else {
@@ -12946,19 +15332,20 @@ fn tetris_ui(
                                             ..default()
                                         },
                                         BackgroundColor(if ghost {
-                                            Color::srgb(0.13, 0.16, 0.17)
+                                            Color::srgba(0.31, 0.53, 0.91, 0.18)
                                         } else {
                                             tetris_color(value)
                                         }),
                                         BorderColor(if value == 0 {
                                             if ghost {
-                                                Color::srgb(0.76, 0.69, 0.50)
+                                                Color::srgb(0.40, 0.70, 1.)
                                             } else {
-                                                Color::srgb(0.13, 0.17, 0.18)
+                                                Color::srgb(0.10, 0.19, 0.36)
                                             }
                                         } else {
-                                            Color::srgb(0.16, 0.12, 0.09)
+                                            Color::srgb(0.74, 0.89, 1.)
                                         }),
+                                        BorderRadius::all(Val::Px(if compact { 5. } else { 2. })),
                                     ));
                                     if value > 0 {
                                         line.spawn((
@@ -12966,12 +15353,12 @@ fn tetris_ui(
                                                 position_type: PositionType::Absolute,
                                                 left: Val::Px(x as f32 * cell + 3.),
                                                 top: Val::Px(3.),
-                                                width: Val::Px(cell - 6.),
-                                                height: Val::Px((cell * 0.14).max(3.)),
+                                                width: Val::Px((cell - 8.).max(4.)),
+                                                height: Val::Px((cell * 0.12).max(3.)),
                                                 ..default()
                                             },
-                                            BackgroundColor(Color::srgba(1., 1., 1., 0.26)),
-                                            BorderRadius::all(Val::Px(3.)),
+                                            BackgroundColor(Color::srgba(1., 1., 1., 0.35)),
+                                            BorderRadius::all(Val::Px(5.)),
                                         ));
                                     }
                                 }
@@ -12979,10 +15366,10 @@ fn tetris_ui(
                     }
                 });
                 area.spawn(Node {
-                    width: Val::Px(if compact { 140. } else { 188. }),
+                    width: Val::Px(side_width),
                     flex_direction: FlexDirection::Column,
                     align_items: AlignItems::Center,
-                    row_gap: Val::Px(if compact { 10. } else { 16. }),
+                    row_gap: Val::Px(if compact { 8. } else { 16. }),
                     ..default()
                 })
                 .with_children(|side| {
@@ -12990,32 +15377,26 @@ fn tetris_ui(
                     tetris_stat(side, art, "最高", g.best_score.to_string());
                     tetris_stat(side, art, "消除", g.lines.to_string());
                     tetris_stat(side, art, "等级", g.level.to_string());
-                    label(
-                        side,
-                        art,
-                        "NEXT  下一个",
-                        15.,
-                        Color::srgb(0.90, 0.72, 0.43),
-                    );
+                    label(side, art, "NEXT  下一个", 16., Color::srgb(0.48, 0.86, 1.));
                     side.spawn((
                         Node {
-                            width: Val::Px(cell * 4.),
-                            height: Val::Px(cell * 4.),
+                            width: Val::Px(preview_cell * 4.),
+                            height: Val::Px(preview_cell * 4.),
                             flex_direction: FlexDirection::Column,
                             border: UiRect::all(Val::Px(2.)),
                             ..default()
                         },
-                        BackgroundColor(Color::srgb(0.06, 0.075, 0.08)),
-                        BorderColor(Color::srgb(0.46, 0.43, 0.34)),
-                        BorderRadius::all(Val::Px(4.)),
+                        BackgroundColor(Color::srgb(0.025, 0.045, 0.105)),
+                        BorderColor(Color::srgb(0.20, 0.46, 0.84)),
+                        BorderRadius::all(Val::Px(10.)),
                     ))
                     .with_children(|preview| {
                         let next_cells = TetrisGame::cells(g.next, 0);
                         for y in 0..4_i8 {
                             preview
                                 .spawn(Node {
-                                    width: Val::Px(cell * 4.),
-                                    height: Val::Px(cell),
+                                    width: Val::Px(preview_cell * 4.),
+                                    height: Val::Px(preview_cell),
                                     ..row()
                                 })
                                 .with_children(|line| {
@@ -13023,15 +15404,15 @@ fn tetris_ui(
                                         let filled = next_cells.contains(&(x, y));
                                         line.spawn((
                                             Node {
-                                                width: Val::Px(cell),
-                                                height: Val::Px(cell),
+                                                width: Val::Px(preview_cell),
+                                                height: Val::Px(preview_cell),
                                                 border: UiRect::all(Val::Px(1.)),
                                                 ..default()
                                             },
                                             BackgroundColor(if filled {
                                                 tetris_color(g.next + 1)
                                             } else {
-                                                Color::srgb(0.06, 0.075, 0.08)
+                                                Color::srgb(0.025, 0.045, 0.105)
                                             }),
                                             BorderColor(Color::srgb(0.18, 0.20, 0.20)),
                                         ));
@@ -13039,105 +15420,84 @@ fn tetris_ui(
                                 });
                         }
                     });
+                    if compact {
+                        tetris_button(
+                            side,
+                            art,
+                            "重来",
+                            Action::TetrisReset,
+                            side_width,
+                            36.,
+                            Color::srgb(0.08, 0.19, 0.43),
+                            Color::srgb(0.26, 0.49, 0.82),
+                        );
+                    }
                 });
             });
-            label(root, art, g.feedback, 15., Color::srgb(0.91, 0.71, 0.39));
+            if !compact {
+                label(root, art, g.feedback, 15., Color::srgb(0.91, 0.71, 0.39));
+            }
             if compact {
-                root.spawn((
-                    Node {
-                        width: Val::Percent(100.),
-                        max_width: Val::Px(content_width),
-                        padding: UiRect::horizontal(Val::Px(8.)),
-                        justify_content: JustifyContent::Center,
-                        column_gap: Val::Px(14.),
-                        border: UiRect::all(Val::Px(1.)),
-                        ..row()
-                    },
-                    BackgroundColor(Color::srgb(0.14, 0.15, 0.16)),
-                    BorderColor(Color::srgb(0.39, 0.37, 0.32)),
-                    BorderRadius::all(Val::Px(12.)),
-                ))
-                .with_children(|controls| {
-                    controls
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            align_items: AlignItems::Center,
-                            row_gap: Val::Px(4.),
-                            ..default()
-                        })
-                        .with_children(|pad| {
-                            tetris_button(
-                                pad,
-                                art,
-                                "旋转",
-                                Action::TetrisRotate,
-                                82.,
-                                48.,
-                                Color::srgb(0.27, 0.28, 0.30),
-                                Color::srgb(0.78, 0.62, 0.36),
-                            );
-                            pad.spawn(row()).with_children(|line| {
-                                tetris_button(
-                                    line,
-                                    art,
-                                    "←",
-                                    Action::TetrisLeft,
-                                    62.,
-                                    50.,
-                                    Color::srgb(0.25, 0.27, 0.29),
-                                    Color::srgb(0.63, 0.64, 0.62),
-                                );
-                                tetris_button(
-                                    line,
-                                    art,
-                                    "↓",
-                                    Action::TetrisDown,
-                                    62.,
-                                    50.,
-                                    Color::srgb(0.25, 0.27, 0.29),
-                                    Color::srgb(0.63, 0.64, 0.62),
-                                );
-                                tetris_button(
-                                    line,
-                                    art,
-                                    "→",
-                                    Action::TetrisRight,
-                                    62.,
-                                    50.,
-                                    Color::srgb(0.25, 0.27, 0.29),
-                                    Color::srgb(0.63, 0.64, 0.62),
-                                );
-                            });
-                        });
-                    controls
-                        .spawn(Node {
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(5.),
-                            ..default()
-                        })
-                        .with_children(|actions| {
-                            tetris_button(
-                                actions,
-                                art,
-                                "快速下落",
-                                Action::TetrisDrop,
-                                96.,
-                                60.,
-                                Color::srgb(0.69, 0.42, 0.20),
-                                Color::srgb(0.98, 0.72, 0.38),
-                            );
-                            tetris_button(
-                                actions,
-                                art,
-                                "重来",
-                                Action::TetrisReset,
-                                96.,
-                                36.,
-                                Color::srgb(0.23, 0.24, 0.26),
-                                Color::srgb(0.55, 0.53, 0.48),
-                            );
-                        });
-                });
+                root.spawn((Node {
+                    width: Val::Percent(100.),
+                    max_width: Val::Px(content_width),
+                    justify_content: JustifyContent::SpaceEvenly,
+                    align_items: AlignItems::Center,
+                    ..row()
+                },))
+                    .with_children(|controls| {
+                        let control_size = ((content_width - 64.) / 5.).min(76.);
+                        tetris_control_button(
+                            controls,
+                            art,
+                            "←",
+                            "左移",
+                            Action::TetrisLeft,
+                            control_size,
+                            Color::srgb(0.02, 0.66, 0.83),
+                            Color::srgb(0.28, 0.92, 1.),
+                        );
+                        tetris_control_button(
+                            controls,
+                            art,
+                            "→",
+                            "右移",
+                            Action::TetrisRight,
+                            control_size,
+                            Color::srgb(0.10, 0.40, 0.89),
+                            Color::srgb(0.40, 0.68, 1.),
+                        );
+                        tetris_control_button(
+                            controls,
+                            art,
+                            "转",
+                            "旋转",
+                            Action::TetrisRotate,
+                            control_size,
+                            Color::srgb(0.62, 0.18, 0.87),
+                            Color::srgb(0.83, 0.50, 1.),
+                        );
+                        tetris_control_button(
+                            controls,
+                            art,
+                            "↓",
+                            "快速下落",
+                            Action::TetrisDown,
+                            control_size,
+                            Color::srgb(0.03, 0.68, 0.43),
+                            Color::srgb(0.31, 0.96, 0.70),
+                        );
+                        tetris_control_button(
+                            controls,
+                            art,
+                            "↓↓",
+                            "直接落下",
+                            Action::TetrisDrop,
+                            control_size,
+                            Color::srgb(0.98, 0.57, 0.06),
+                            Color::srgb(1., 0.82, 0.27),
+                        );
+                    });
             } else {
                 root.spawn(Node {
                     width: Val::Percent(100.),
@@ -13158,17 +15518,15 @@ fn tetris_ui(
                     )
                 });
             }
-            label(
-                root,
-                art,
-                if compact {
-                    "长按 ↓ 连续下落 · 快速下落可一键到底"
-                } else {
-                    "键盘：← → 移动 · ↑ 旋转 · 长按 ↓ 连续下落 · 空格快速下落"
-                },
-                13.,
-                Color::srgb(0.53, 0.54, 0.53),
-            );
+            if !compact {
+                label(
+                    root,
+                    art,
+                    "键盘：← → 移动 · ↑ 旋转 · 长按 ↓ 连续下落 · 空格快速下落",
+                    13.,
+                    Color::srgb(0.53, 0.54, 0.53),
+                );
+            }
             if g.failed {
                 root.spawn((
                     Node {
@@ -14311,43 +16669,88 @@ fn assault_enemy_sprite(parent: &mut ChildSpawnerCommands, heavy: bool) {
     }
 }
 
-// A full-screen, hand-drawn arcade flight field.  The pieces are deliberately
-// simple UI shapes rather than emoji or placeholder letters, so the player,
-// enemy planes and projectiles remain legible while moving on a phone.
+// Touch controls keep the same visual language as the flight HUD.
 fn sky_control_button(parent: &mut ChildSpawnerCommands, art: &Art, direction: i8, compact: bool) {
-    let cyan = Color::srgb(0.19, 0.88, 0.98);
-    let size = if compact { 104. } else { 96. };
+    let cyan = Color::srgb(0.64, 0.94, 1.0);
+    let size = if compact { 88. } else { 104. };
     parent
         .spawn((
             Button,
-            ButtonTone(Color::srgb(0.06, 0.23, 0.39)),
+            ButtonTone(Color::srgb(0.08, 0.30, 0.62)),
             Action::SkyMove(direction),
             Node {
                 width: Val::Px(size),
-                height: Val::Px(if compact { 62. } else { 56. }),
-                min_height: Val::Px(if compact { 62. } else { 56. }),
+                height: Val::Px(size),
+                min_height: Val::Px(size),
                 border: UiRect::all(Val::Px(3.)),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.06, 0.23, 0.39)),
+            BackgroundColor(Color::srgb(0.08, 0.30, 0.62)),
             BorderColor(cyan),
-            BorderRadius::all(Val::Px(22.)),
+            BorderRadius::all(Val::Percent(50.)),
         ))
-        .with_children(|p| label(p, art, if direction < 0 { "←" } else { "→" }, 30., cyan));
+        .with_children(|p| label(p, art, if direction < 0 { "←" } else { "→" }, 42., cyan));
 }
 
-fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
+fn sky_secondary_button(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    action: Action,
+    symbol: &str,
+    caption: &str,
+    compact: bool,
+) {
+    let size = if compact { 66. } else { 76. };
+    let bg = Color::srgb(0.035, 0.20, 0.42);
+    parent
+        .spawn((
+            Button,
+            ButtonTone(bg),
+            action,
+            Node {
+                width: Val::Px(size),
+                height: Val::Px(size),
+                min_height: Val::Px(size),
+                border: UiRect::all(Val::Px(2.)),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(bg),
+            BorderColor(Color::srgb(0.49, 0.84, 1.0)),
+            BorderRadius::all(Val::Percent(50.)),
+        ))
+        .with_children(|p| {
+            label(
+                p,
+                art,
+                symbol,
+                if compact { 25. } else { 30. },
+                Color::WHITE,
+            );
+            label(
+                p,
+                art,
+                caption,
+                if compact { 11. } else { 13. },
+                Color::srgb(0.72, 0.90, 1.0),
+            );
+        });
+}
+
+fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool, width: f32) {
     let g = &s.sky;
-    let field_top = if compact { 66. } else { 82. };
-    let field_bottom = if compact { 112. } else { 118. };
-    let plane_size = if compact { 66. } else { 82. };
-    let enemy_size = if compact { 48. } else { 58. };
-    let cyan = Color::srgb(0.19, 0.88, 0.98);
-    let coral = Color::srgb(1.0, 0.36, 0.43);
-    let navy = Color::srgb(0.025, 0.045, 0.12);
-    let soft = Color::srgb(0.64, 0.80, 0.93);
+    let field_top = if compact { 88. } else { 106. };
+    let field_bottom = if compact { 144. } else { 158. };
+    let plane_size = (width * 0.24).clamp(90., 158.);
+    let enemy_size = (width * 0.16).clamp(58., 104.);
+    let cyan = Color::srgb(0.29, 0.88, 1.0);
+    let coral = Color::srgb(1.0, 0.35, 0.36);
+    let navy = Color::srgb(0.015, 0.055, 0.17);
+    let soft = Color::srgb(0.69, 0.85, 0.98);
     commands
         .spawn((
             UiRoot,
@@ -14361,38 +16764,41 @@ fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
         ))
         .with_children(|root| {
             root.spawn((
+                ImageNode::new(art.sky_backdrop.clone()),
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: Val::Percent(100.),
+                    height: Val::Percent(100.),
+                    ..default()
+                },
+            ));
+            root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
                     top: Val::Px(field_top),
                     bottom: Val::Px(field_bottom),
-                    left: Val::Px(if compact { 12. } else { 42. }),
-                    right: Val::Px(if compact { 12. } else { 42. }),
-                    border: UiRect::all(Val::Px(2.)),
+                    left: Val::Px(if compact { 10. } else { 32. }),
+                    right: Val::Px(if compact { 10. } else { 32. }),
+                    border: UiRect::horizontal(Val::Px(1.)),
                     overflow: Overflow::clip(),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.035, 0.08, 0.20)),
-                BorderColor(Color::srgba(0.19, 0.88, 0.98, 0.78)),
-                BorderRadius::all(Val::Px(18.)),
+                BackgroundColor(Color::srgba(0.01, 0.03, 0.10, 0.08)),
+                BorderColor(Color::srgba(0.31, 0.73, 1.0, 0.35)),
             ))
             .with_children(|field| {
-                // Broad translucent nebula layers sit behind the moving star field.
-                for (left, top, width, height, color) in [
-                    (4., 7., 74., 30., Color::srgba(0.18, 0.21, 0.59, 0.48)),
-                    (39., 32., 70., 29., Color::srgba(0.31, 0.10, 0.44, 0.38)),
-                    (6., 67., 72., 26., Color::srgba(0.05, 0.37, 0.47, 0.28)),
-                ] {
+                // The background plate supplies the nebula; faint guides stay behind gameplay.
+                for x in [25., 50., 75.] {
                     field.spawn((
                         Node {
                             position_type: PositionType::Absolute,
-                            left: Val::Percent(left),
-                            top: Val::Percent(top),
-                            width: Val::Percent(width),
-                            height: Val::Percent(height),
+                            left: Val::Percent(x),
+                            top: Val::Px(0.),
+                            bottom: Val::Px(0.),
+                            width: Val::Px(1.),
                             ..default()
                         },
-                        BackgroundColor(color),
-                        BorderRadius::all(Val::Percent(50.)),
+                        BackgroundColor(Color::srgba(0.55, 0.82, 1.0, 0.08)),
                     ));
                 }
                 // Two star sizes drift at different speeds with the play field.
@@ -14444,59 +16850,34 @@ fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                     ));
                 }
                 for rock in &g.rocks {
-                    let size = if compact {
-                        rock.size * 440.
-                    } else {
-                        rock.size * 560.
-                    };
-                    field
-                        .spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Percent(rock.x * 100.),
-                                margin: UiRect::left(Val::Px(-size * 0.5)),
-                                top: Val::Percent(rock.y * 100.),
-                                width: Val::Px(size),
-                                height: Val::Px(size),
-                                border: UiRect::all(Val::Px(2.)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.28, 0.37, 0.53)),
-                            BorderColor(Color::srgb(0.42, 0.62, 0.77)),
-                            BorderRadius::all(Val::Px(size * 0.52)),
-                        ))
-                        .with_children(|rock_node| {
-                            for (left, top, dot) in
-                                [(25., 28., 20.), (61., 48., 14.), (44., 70., 11.)]
-                            {
-                                rock_node.spawn((
-                                    Node {
-                                        position_type: PositionType::Absolute,
-                                        left: Val::Percent(left),
-                                        top: Val::Percent(top),
-                                        width: Val::Percent(dot),
-                                        height: Val::Percent(dot),
-                                        ..default()
-                                    },
-                                    BackgroundColor(Color::srgb(0.16, 0.25, 0.39)),
-                                    BorderRadius::all(Val::Percent(50.)),
-                                ));
-                            }
-                        });
+                    let size = rock.size * width * 1.5;
+                    field.spawn((
+                        ImageNode::new(art.sky_asteroid.clone()),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(rock.x * 100.),
+                            margin: UiRect::left(Val::Px(-size * 0.5)),
+                            top: Val::Percent(rock.y * 100.),
+                            width: Val::Px(size),
+                            height: Val::Px(size),
+                            ..default()
+                        },
+                    ));
                 }
                 if let Some(boss) = &g.boss {
-                    let width = if compact { 148. } else { 184. };
-                    field
-                        .spawn(Node {
+                    let boss_width = (width * 0.68).clamp(220., 390.);
+                    field.spawn((
+                        ImageNode::new(art.sky_boss.clone()),
+                        Node {
                             position_type: PositionType::Absolute,
                             left: Val::Percent(boss.x * 100.),
-                            margin: UiRect::left(Val::Px(-width * 0.5)),
+                            margin: UiRect::left(Val::Px(-boss_width * 0.5)),
                             top: Val::Percent(boss.y * 100.),
-                            width: Val::Px(width),
-                            height: Val::Px(width * 0.64),
+                            width: Val::Px(boss_width),
+                            height: Val::Px(boss_width * 0.52),
                             ..default()
-                        })
-                        .with_children(sky_boss_sprite);
+                        },
+                    ));
                 }
                 for enemy in &g.enemies {
                     let size = if enemy.heavy {
@@ -14504,17 +16885,18 @@ fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                     } else {
                         enemy_size
                     };
-                    field
-                        .spawn(Node {
+                    field.spawn((
+                        ImageNode::new(art.sky_enemy.clone()),
+                        Node {
                             position_type: PositionType::Absolute,
                             left: Val::Percent(enemy.x * 100.),
                             margin: UiRect::left(Val::Px(-size * 0.5)),
                             top: Val::Percent(enemy.y * 100.),
                             width: Val::Px(size),
-                            height: Val::Px(size * 0.94),
+                            height: Val::Px(size),
                             ..default()
-                        })
-                        .with_children(|ship| sky_plane_sprite(ship, false, enemy.heavy));
+                        },
+                    ));
                 }
                 for shot in &g.shots {
                     field
@@ -14550,47 +16932,35 @@ fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                         });
                 }
                 field.spawn((
+                    ImageNode::new(art.sky_player.clone()),
                     Node {
                         position_type: PositionType::Absolute,
                         left: Val::Percent(g.x * 100.),
-                        margin: UiRect::left(Val::Px(-plane_size * 0.18)),
-                        top: Val::Percent(91.),
-                        width: Val::Px(plane_size * 0.36),
-                        height: Val::Px(plane_size * 0.52),
+                        margin: UiRect::left(Val::Px(-plane_size * 0.5)),
+                        top: Val::Percent(69.),
+                        width: Val::Px(plane_size),
+                        height: Val::Px(plane_size * 1.35),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.12, 0.85, 1.0, 0.40)),
-                    BorderRadius::all(Val::Percent(50.)),
                 ));
-                field
-                    .spawn(Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Percent(g.x * 100.),
-                        margin: UiRect::left(Val::Px(-plane_size * 0.5)),
-                        top: Val::Percent(81.),
-                        width: Val::Px(plane_size),
-                        height: Val::Px(plane_size * 1.05),
-                        ..default()
-                    })
-                    .with_children(|ship| sky_plane_sprite(ship, true, false));
             });
 
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(if compact { 12. } else { 42. }),
-                    right: Val::Px(if compact { 12. } else { 42. }),
+                    left: Val::Px(if compact { 8. } else { 24. }),
+                    right: Val::Px(if compact { 8. } else { 24. }),
                     top: Val::Px(if compact { 6. } else { 12. }),
-                    height: Val::Px(54.),
-                    padding: UiRect::horizontal(Val::Px(10.)),
-                    border: UiRect::bottom(Val::Px(2.)),
+                    height: Val::Px(if compact { 76. } else { 88. }),
+                    padding: UiRect::horizontal(Val::Px(if compact { 9. } else { 18. })),
+                    border: UiRect::all(Val::Px(2.)),
                     justify_content: JustifyContent::SpaceBetween,
                     align_items: AlignItems::Center,
                     ..row()
                 },
-                BackgroundColor(Color::srgb(0.045, 0.10, 0.22)),
+                BackgroundColor(Color::srgba(0.02, 0.12, 0.31, 0.92)),
                 BorderColor(cyan),
-                BorderRadius::all(Val::Px(14.)),
+                BorderRadius::all(Val::Px(22.)),
             ))
             .with_children(|top| {
                 top.spawn(Node {
@@ -14599,57 +16969,112 @@ fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                     ..default()
                 })
                 .with_children(|p| {
+                    p.spawn(Node {
+                        align_items: AlignItems::Center,
+                        column_gap: Val::Px(5.),
+                        ..row()
+                    })
+                    .with_children(|brand| {
+                        label(brand, art, "◉", if compact { 25. } else { 31. }, cyan);
+                        label(
+                            brand,
+                            art,
+                            "星际飞行队",
+                            if compact { 20. } else { 27. },
+                            Color::WHITE,
+                        );
+                    });
                     label(
                         p,
                         art,
                         format!("第 {} 星区", g.stage),
-                        if compact { 18. } else { 24. },
-                        cyan,
-                    );
-                    label(
-                        p,
-                        art,
-                        format!("得分 {:05} · 连击 ×{}", g.score, g.combo),
                         if compact { 12. } else { 15. },
                         soft,
                     );
                 });
-                top.spawn(row()).with_children(|p| {
-                    label(p, art, "战机", if compact { 12. } else { 15. }, soft);
-                    for alive in 0..3 {
-                        p.spawn((
-                            Node {
-                                width: Val::Px(if compact { 18. } else { 24. }),
-                                height: Val::Px(if compact { 14. } else { 18. }),
-                                margin: UiRect::left(Val::Px(3.)),
-                                ..default()
-                            },
-                            BackgroundColor(if alive < g.lives as usize {
-                                cyan
-                            } else {
-                                Color::srgb(0.21, 0.29, 0.42)
-                            }),
-                            BorderRadius::all(Val::Px(5.)),
-                        ));
-                    }
-                    button(
+                top.spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    padding: UiRect::axes(Val::Px(if compact { 8. } else { 14. }), Val::Px(6.)),
+                    ..default()
+                })
+                .insert((
+                    BackgroundColor(Color::srgba(0.03, 0.23, 0.49, 0.85)),
+                    BorderRadius::all(Val::Px(12.)),
+                ))
+                .with_children(|p| {
+                    label(p, art, "得分", if compact { 10. } else { 13. }, soft);
+                    label(
                         p,
                         art,
-                        "暂停",
-                        Action::Help,
-                        54.,
-                        34.,
-                        Color::srgb(0.10, 0.25, 0.38),
+                        format!("{:05}", g.score),
+                        if compact { 20. } else { 26. },
                         cyan,
                     );
                 });
+                top.spawn(Node {
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    row_gap: Val::Px(4.),
+                    padding: UiRect::axes(Val::Px(if compact { 7. } else { 12. }), Val::Px(6.)),
+                    ..default()
+                })
+                .insert((
+                    BackgroundColor(Color::srgba(0.03, 0.23, 0.49, 0.85)),
+                    BorderRadius::all(Val::Px(12.)),
+                ))
+                .with_children(|p| {
+                    label(
+                        p,
+                        art,
+                        format!("连击 ×{}", g.combo),
+                        if compact { 12. } else { 16. },
+                        Color::srgb(1., 0.69, 0.35),
+                    );
+                    p.spawn(row()).with_children(|shields| {
+                        for alive in 0..3 {
+                            shields.spawn((
+                                Node {
+                                    width: Val::Px(if compact { 14. } else { 20. }),
+                                    height: Val::Px(if compact { 12. } else { 16. }),
+                                    margin: UiRect::left(Val::Px(3.)),
+                                    ..default()
+                                },
+                                BackgroundColor(if alive < g.lives as usize {
+                                    cyan
+                                } else {
+                                    Color::srgb(0.21, 0.29, 0.42)
+                                }),
+                                BorderRadius::all(Val::Px(5.)),
+                            ));
+                        }
+                    });
+                });
+            });
+            root.spawn(Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(if compact { 12. } else { 34. }),
+                top: Val::Px(field_top + 8.),
+                ..row()
+            })
+            .with_children(|nav| {
+                button(
+                    nav,
+                    art,
+                    "← 返回游戏库",
+                    Action::Library,
+                    if compact { 118. } else { 142. },
+                    if compact { 36. } else { 42. },
+                    Color::srgb(0.02, 0.20, 0.43),
+                    Color::srgb(0.78, 0.95, 1.),
+                );
             });
             if let Some(boss) = &g.boss {
                 let health = boss.hp as f32 / boss.max_hp as f32 * 100.;
                 root.spawn((
                     Node {
                         position_type: PositionType::Absolute,
-                        top: Val::Px(field_top + 8.),
+                        top: Val::Px(field_top + 50.),
                         left: Val::Percent(20.),
                         width: Val::Percent(60.),
                         padding: UiRect::all(Val::Px(5.)),
@@ -14658,14 +17083,14 @@ fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                         row_gap: Val::Px(2.),
                         ..default()
                     },
-                    BackgroundColor(Color::srgba(0.07, 0.08, 0.22, 0.86)),
+                    BackgroundColor(Color::srgba(0.16, 0.04, 0.18, 0.90)),
                     BorderRadius::all(Val::Px(10.)),
                 ))
                 .with_children(|panel| {
                     label(
                         panel,
                         art,
-                        format!("首领母舰  {}", boss.hp),
+                        format!("BOSS 来袭 · 首领母舰  {}", boss.hp),
                         if compact { 12. } else { 15. },
                         coral,
                     );
@@ -14699,18 +17124,18 @@ fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                     left: Val::Px(0.),
                     right: Val::Px(0.),
                     bottom: Val::Px(0.),
-                    height: Val::Px(if compact { 106. } else { 112. }),
+                    height: Val::Px(if compact { 144. } else { 158. }),
                     border: UiRect::top(Val::Px(2.)),
                     ..default()
                 },
-                BackgroundColor(Color::srgb(0.035, 0.075, 0.17)),
-                BorderColor(Color::srgba(0.19, 0.88, 0.98, 0.68)),
+                BackgroundColor(Color::srgba(0.02, 0.13, 0.34, 0.94)),
+                BorderColor(Color::srgba(0.35, 0.79, 1.0, 0.82)),
             ));
             root.spawn(Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(14.),
                 right: Val::Px(14.),
-                bottom: Val::Px(3.),
+                bottom: Val::Px(7.),
                 justify_content: JustifyContent::Center,
                 ..row()
             })
@@ -14718,40 +17143,26 @@ fn sky_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                 label(
                     hint,
                     art,
-                    "左右移动 · 能量炮自动开火",
-                    if compact { 11. } else { 14. },
+                    "左右移动 · 自动开火",
+                    if compact { 10. } else { 13. },
                     soft,
                 );
             });
             root.spawn(Node {
                 position_type: PositionType::Absolute,
-                left: Val::Px(if compact { 16. } else { 44. }),
-                bottom: Val::Px(if compact { 35. } else { 40. }),
-                ..row()
-            })
-            .with_children(|p| {
-                button(
-                    p,
-                    art,
-                    "重新起飞",
-                    Action::SkyReset,
-                    if compact { 92. } else { 108. },
-                    40.,
-                    Color::srgb(0.13, 0.27, 0.43),
-                    cyan,
-                );
-            });
-            root.spawn(Node {
-                position_type: PositionType::Absolute,
-                left: Val::Percent(50.),
-                margin: UiRect::left(Val::Px(if compact { -112. } else { -104. })),
-                bottom: Val::Px(if compact { 28. } else { 36. }),
-                column_gap: Val::Px(8.),
+                left: Val::Px(0.),
+                right: Val::Px(0.),
+                bottom: Val::Px(if compact { 34. } else { 42. }),
+                justify_content: JustifyContent::Center,
+                align_items: AlignItems::Center,
+                column_gap: Val::Px(if compact { 6. } else { 12. }),
                 ..row()
             })
             .with_children(|pad| {
+                sky_secondary_button(pad, art, Action::SkyReset, "R", "重来", compact);
                 sky_control_button(pad, art, -1, compact);
                 sky_control_button(pad, art, 1, compact);
+                sky_secondary_button(pad, art, Action::Help, "Ⅱ", "暂停", compact);
             });
             if g.failed {
                 root.spawn((
@@ -14893,7 +17304,7 @@ fn bubble_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool, sid
                 }
                 for pop in &g.pops {
                     let age = 0.65 - pop.life;
-                    for i in 0..5 {
+                    for i in 0..3 {
                         let angle = i as f32 * std::f32::consts::TAU / 5.;
                         let pos =
                             pop.position * side + Vec2::new(angle.cos(), angle.sin()) * age * 70.;
@@ -15061,70 +17472,72 @@ fn bubble_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool, sid
                     Color::srgb(0.08, 0.26, 0.34),
                 )
             });
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(22.),
-                    top: Val::Px(100.),
-                    width: Val::Px(if compact { 150. } else { 230. }),
-                    padding: UiRect::all(Val::Px(12.)),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(8.),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.99, 0.96, 0.88, 0.87)),
-                BorderRadius::all(Val::Px(18.)),
-            ))
-            .with_children(|p| {
-                label(
-                    p,
-                    art,
-                    "按住瞄准
-松手发射",
-                    24.,
-                    Color::srgb(0.27, 0.24, 0.42),
-                );
-                label(
-                    p,
-                    art,
-                    "看白色虚线
-连到两个同色泡泡",
-                    16.,
-                    Color::srgb(0.27, 0.24, 0.42),
-                );
-                label(
-                    p,
-                    art,
-                    if g.level == 1 {
-                        "第 1 关：泡泡墙不会下压"
-                    } else {
-                        "连续 8 次未消除才会下压"
+            if !compact {
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(22.),
+                        top: Val::Px(100.),
+                        width: Val::Px(if compact { 150. } else { 230. }),
+                        padding: UiRect::all(Val::Px(12.)),
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(8.),
+                        ..default()
                     },
-                    13.,
-                    Color::srgb(0.27, 0.24, 0.42),
-                );
-                button(
-                    p,
-                    art,
-                    "帮我瞄准",
-                    Action::BubbleAssist,
-                    160.,
-                    52.,
-                    PAPER,
-                    NAVY,
-                );
-                button(p, art, "发射 →", Action::BubbleFire, 160., 60., MINT, NAVY);
-                button(
-                    p,
-                    art,
-                    "重新开始",
-                    Action::BubbleReset,
-                    120.,
-                    44.,
-                    PAPER,
-                    NAVY,
-                );
-            });
+                    BackgroundColor(Color::srgba(0.99, 0.96, 0.88, 0.87)),
+                    BorderRadius::all(Val::Px(18.)),
+                ))
+                .with_children(|p| {
+                    label(
+                        p,
+                        art,
+                        "按住瞄准
+松手发射",
+                        24.,
+                        Color::srgb(0.27, 0.24, 0.42),
+                    );
+                    label(
+                        p,
+                        art,
+                        "看白色虚线
+连到两个同色泡泡",
+                        16.,
+                        Color::srgb(0.27, 0.24, 0.42),
+                    );
+                    label(
+                        p,
+                        art,
+                        if g.level == 1 {
+                            "第 1 关：泡泡墙不会下压"
+                        } else {
+                            "连续 8 次未消除才会下压"
+                        },
+                        13.,
+                        Color::srgb(0.27, 0.24, 0.42),
+                    );
+                    button(
+                        p,
+                        art,
+                        "帮我瞄准",
+                        Action::BubbleAssist,
+                        160.,
+                        52.,
+                        PAPER,
+                        NAVY,
+                    );
+                    button(p, art, "发射 →", Action::BubbleFire, 160., 60., MINT, NAVY);
+                    button(
+                        p,
+                        art,
+                        "重新开始",
+                        Action::BubbleReset,
+                        120.,
+                        44.,
+                        PAPER,
+                        NAVY,
+                    );
+                });
+            }
             if g.failed {
                 root.spawn((
                     Node {
@@ -15132,7 +17545,7 @@ fn bubble_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool, sid
                         align_self: AlignSelf::Center,
                         justify_self: JustifySelf::Center,
                         width: Val::Px(if compact { 300. } else { 360. }),
-                        height: Val::Px(160.),
+                        height: Val::Px(212.),
                         flex_direction: FlexDirection::Column,
                         justify_content: JustifyContent::Center,
                         align_items: AlignItems::Center,
@@ -15154,6 +17567,16 @@ fn bubble_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool, sid
                         44.,
                         Color::srgb(0.94, 0.45, 0.25),
                         Color::WHITE,
+                    );
+                    button(
+                        panel,
+                        art,
+                        "回到游戏库",
+                        Action::Library,
+                        136.,
+                        42.,
+                        PAPER,
+                        NAVY,
                     );
                 });
             }
@@ -15286,9 +17709,14 @@ fn fruit_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                     label(
                         p,
                         art,
-                    format!(
+                        format!(
                             "第 {} 轮 · 目标 {}/{} · 得分 {:04} · {} 连击 · 最佳 {}",
-                            g.stage, g.stage_progress, g.stage_target, g.score, g.combo, g.best_combo
+                            g.stage,
+                            g.stage_progress,
+                            g.stage_target,
+                            g.score,
+                            g.combo,
+                            g.best_combo
                         ),
                         if compact { 13. } else { 16. },
                         Color::srgb(0.70, 0.15, 0.11),
@@ -15366,7 +17794,7 @@ fn fruit_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
                 label(
                     p,
                     art,
-                    "一笔切一串更高分 · 金色水果 +25 · 不要碰炸弹",
+                    "漏切不扣命 · 一笔切一串更高分 · 金色水果 +25 · 不要碰炸弹",
                     if compact { 13. } else { 16. },
                     Color::srgb(0.24, 0.21, 0.18),
                 );
@@ -15435,9 +17863,19 @@ fn fruit_sprite(parent: &mut ChildSpawnerCommands, art: &Art, kind: u8, bomb: bo
         let mut image = ImageNode::new(art.fruit_extras.clone());
         image.rect = Some(Rect::from_corners(
             Vec2::new(column as f32 * cell_w + inset, row as f32 * cell_h + inset),
-            Vec2::new((column + 1) as f32 * cell_w - inset, (row + 1) as f32 * cell_h - inset),
+            Vec2::new(
+                (column + 1) as f32 * cell_w - inset,
+                (row + 1) as f32 * cell_h - inset,
+            ),
         ));
-        parent.spawn((image, Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() }));
+        parent.spawn((
+            image,
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                ..default()
+            },
+        ));
         return;
     }
     let index = if bomb { 6 } else { kind.min(5) as usize };
@@ -15488,7 +17926,7 @@ fn bomber_ui(
     width: f32,
     height: f32,
 ) {
-    if compact {
+    if compact || _wide {
         bomber_ui_compact(commands, s, art, true, _wide, width, height);
     } else {
         bomber_ui_desktop(commands, s, art, width, height);
@@ -15505,28 +17943,25 @@ fn bomber_ui_compact(
     height: f32,
 ) {
     let g = &s.bomber;
-    // Compact layout pans a touch-sized window across the same arena.
-    let visible_columns = if compact { 7 } else { BOMBER_COLUMNS };
-    let first_column = if compact {
-        (g.player.0 - visible_columns / 2).clamp(0, BOMBER_COLUMNS - visible_columns)
-    } else {
+    let landscape = width > height;
+    let visible_columns = if landscape { BOMBER_COLUMNS } else { 7 };
+    let first_column = if landscape {
         0
+    } else {
+        (g.player.0 - visible_columns / 2).clamp(0, BOMBER_COLUMNS - visible_columns)
     };
-    let dpad_size = if compact { 58. } else { 68. };
-    let dpad_height = if compact { 54. } else { 60. };
-    let cell = if compact {
+    let dpad_size = 58.;
+    let dpad_height = 54.;
+    let cell = if landscape {
+        (height * 0.60 / BOMBER_ROWS as f32).min(width * 0.6375 / BOMBER_COLUMNS as f32)
+    } else {
         ((height - 210.) / BOMBER_ROWS as f32)
             .min((width - 24.) / visible_columns as f32)
             .floor()
             .clamp(34., 68.)
-    } else {
-        ((height - 238.) / BOMBER_ROWS as f32)
-            .min((width - 64.) / visible_columns as f32)
-            .floor()
-            .clamp(48., 128.)
     };
     let board = cell * visible_columns as f32;
-    let board_left = (width - board) * 0.5;
+    let board_left = (width - board - 6.) * 0.5;
     commands
         .spawn((
             UiRoot,
@@ -15548,39 +17983,39 @@ fn bomber_ui_compact(
                     ..default()
                 },
             ));
+            if landscape {
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.),
+                        height: Val::Percent(100.),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0., 0.078, 0.137, 0.33)),
+                ));
+            }
             root.spawn(Node {
                 position_type: PositionType::Absolute,
                 left: Val::Px(if compact { 12. } else { 26. }),
                 right: Val::Px(if compact { 12. } else { 26. }),
-                top: Val::Px(if compact { 8. } else { 12. }),
-                height: Val::Px(if compact { 48. } else { 58. }),
-                padding: UiRect::horizontal(Val::Px(if compact { 10. } else { 18. })),
+                top: Val::Px(if landscape { 11. } else { 8. }),
+                height: Val::Px(if landscape { 51. } else { 48. }),
+                padding: UiRect::horizontal(Val::Px(if landscape { 15. } else { 10. })),
                 justify_content: JustifyContent::SpaceBetween,
                 align_items: AlignItems::Center,
                 ..row()
             })
             .insert((
-                BackgroundColor(Color::srgba(0.035, 0.12, 0.21, 0.82)),
+                BackgroundColor(Color::srgba(0.035, 0.137, 0.216, 0.98)),
                 BorderRadius::all(Val::Px(18.)),
             ))
             .with_children(|top| {
-                top.spawn(row()).with_children(|brand| {
-                    brand
-                        .spawn(Node {
-                            width: Val::Px(if compact { 34. } else { 44. }),
-                            height: Val::Px(if compact { 34. } else { 44. }),
-                            ..default()
-                        })
-                        .with_children(|avatar| {
-                            avatar.spawn((
-                                bomber_atlas_image(art, 4),
-                                Node {
-                                    width: Val::Percent(100.),
-                                    height: Val::Percent(100.),
-                                    ..default()
-                                },
-                            ));
-                        });
+                top.spawn(Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(15.),
+                    ..row()
+                })
+                .with_children(|brand| {
                     label(
                         brand,
                         art,
@@ -15589,7 +18024,13 @@ fn bomber_ui_compact(
                         Color::WHITE,
                     );
                 });
-                top.spawn(row()).with_children(|stats| {
+                top.spawn(Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Percent(33.9),
+                    column_gap: Val::Px(8.),
+                    ..row()
+                })
+                .with_children(|stats| {
                     label(
                         stats,
                         art,
@@ -15605,8 +18046,12 @@ fn bomber_ui_compact(
                         Color::srgb(0.56, 0.91, 1.),
                     );
                 });
-                top.spawn(row()).with_children(|p| {
-                    label(p, art, "♥", if compact { 17. } else { 22. }, Color::WHITE);
+                top.spawn(Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Percent(61.2),
+                    ..row()
+                })
+                .with_children(|p| {
                     for i in 0..5 {
                         label(
                             p,
@@ -15621,15 +18066,24 @@ fn bomber_ui_compact(
                         );
                     }
                 });
-                top.spawn(row()).with_children(|nav| {
+                top.spawn(Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(8.),
+                    ..row()
+                })
+                .with_children(|nav| {
                     button(
                         nav,
                         art,
-                        "?",
+                        "暂停",
                         Action::Help,
-                        42.,
+                        60.,
                         40.,
-                        Color::srgb(0.12, 0.35, 0.55),
+                        if landscape {
+                            Color::NONE
+                        } else {
+                            Color::srgb(0.12, 0.35, 0.55)
+                        },
                         Color::WHITE,
                     );
                     button(
@@ -15639,7 +18093,11 @@ fn bomber_ui_compact(
                         Action::Library,
                         if compact { 70. } else { 88. },
                         40.,
-                        Color::srgb(0.12, 0.35, 0.55),
+                        if landscape {
+                            Color::NONE
+                        } else {
+                            Color::srgb(0.12, 0.35, 0.55)
+                        },
                         Color::WHITE,
                     );
                 });
@@ -15647,7 +18105,7 @@ fn bomber_ui_compact(
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    top: Val::Px(if compact { 66. } else { 72. }),
+                    top: Val::Px(if landscape { height * 0.1444 } else { 66. }),
                     left: Val::Px(board_left),
                     width: Val::Px(board + 6.),
                     height: Val::Px(cell * BOMBER_ROWS as f32 + 6.),
@@ -15716,9 +18174,98 @@ fn bomber_ui_compact(
                                         ..default()
                                     },
                                 ));
+                                if g.bushes.contains(&(x, y)) {
+                                    tile.spawn((
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            left: Val::Px(cell * 0.08),
+                                            top: Val::Px(cell * 0.12),
+                                            width: Val::Px(cell * 0.84),
+                                            height: Val::Px(cell * 0.76),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgb(0.12, 0.38, 0.19)),
+                                        BorderRadius::all(Val::Px(cell * 0.34)),
+                                    ))
+                                    .with_children(|bush| {
+                                        for (dx, dy, shade) in [
+                                            (0.19, 0.22, Color::srgb(0.18, 0.53, 0.23)),
+                                            (0.43, 0.08, Color::srgb(0.24, 0.61, 0.26)),
+                                            (0.65, 0.24, Color::srgb(0.14, 0.46, 0.20)),
+                                            (0.35, 0.44, Color::srgb(0.28, 0.64, 0.28)),
+                                            (0.61, 0.52, Color::srgb(0.19, 0.52, 0.22)),
+                                        ] {
+                                            bush.spawn((
+                                                Node {
+                                                    position_type: PositionType::Absolute,
+                                                    left: Val::Percent(dx * 100.),
+                                                    top: Val::Percent(dy * 100.),
+                                                    width: Val::Percent(34.),
+                                                    height: Val::Percent(43.),
+                                                    ..default()
+                                                },
+                                                BackgroundColor(shade),
+                                                BorderRadius::all(Val::Percent(50.)),
+                                            ));
+                                        }
+                                        bush.spawn((
+                                            Node {
+                                                position_type: PositionType::Absolute,
+                                                left: Val::Percent(40.),
+                                                top: Val::Percent(26.),
+                                                width: Val::Px(cell * 0.12),
+                                                height: Val::Px(cell * 0.12),
+                                                ..default()
+                                            },
+                                            BackgroundColor(Color::srgb(1., 0.82, 0.22)),
+                                            BorderRadius::all(Val::Percent(50.)),
+                                        ));
+                                    });
+                                } else if g.pots.contains(&(x, y)) {
+                                    tile.spawn((
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            left: Val::Px(cell * 0.20),
+                                            top: Val::Px(cell * 0.15),
+                                            width: Val::Px(cell * 0.60),
+                                            height: Val::Px(cell * 0.72),
+                                            align_items: AlignItems::Center,
+                                            justify_content: JustifyContent::Center,
+                                            ..default()
+                                        },
+                                        BackgroundColor(Color::srgb(0.54, 0.25, 0.12)),
+                                        BorderColor(Color::srgb(0.90, 0.59, 0.29)),
+                                        BorderRadius::all(Val::Px(cell * 0.22)),
+                                    ))
+                                    .with_children(|pot| {
+                                        pot.spawn((
+                                            Node {
+                                                width: Val::Percent(55.),
+                                                height: Val::Percent(55.),
+                                                ..default()
+                                            },
+                                            BackgroundColor(Color::srgb(0.70, 0.42, 0.22)),
+                                            BorderRadius::all(Val::Percent(50.)),
+                                        ));
+                                    });
+                                }
                             });
                         }
                     });
+                }
+                for pickup in &g.pickups {
+                    if (first_column..first_column + visible_columns).contains(&pickup.x) {
+                        bomber_pickup_marker(
+                            grid,
+                            art,
+                            pickup,
+                            (pickup.x - first_column) as f32 * cell + cell * 0.22,
+                            pickup.y as f32 * cell + cell * 0.22,
+                            cell * 0.56,
+                        );
+                    }
                 }
                 for bomb in &g.bombs {
                     for (x, y) in g.blast_cells(bomb) {
@@ -15767,7 +18314,7 @@ fn bomber_ui_compact(
                     })
                     .with_children(|node| {
                         node.spawn((
-                            bomber_atlas_image(art, 7),
+                            ImageNode::new(art.bomber_action_bubble.clone()),
                             Node {
                                 width: Val::Px(cell * 0.68 * pulse),
                                 height: Val::Px(cell * 0.68 * pulse),
@@ -15848,7 +18395,7 @@ fn bomber_ui_compact(
                     ))
                     .with_children(|node| {
                         node.spawn((
-                            bomber_atlas_image(art, if enemy.step % 2 == 0 { 5 } else { 6 }),
+                            bomber_monster_image(art, enemy.kind),
                             Node {
                                 width: Val::Percent(100.),
                                 height: Val::Percent(100.),
@@ -15858,102 +18405,121 @@ fn bomber_ui_compact(
                     });
                 }
             });
-            root.spawn(Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(if compact { 14. } else { 42. }),
-                right: Val::Px(if compact { 14. } else { 42. }),
-                bottom: Val::Px(if compact { 16. } else { 26. }),
-                padding: UiRect::horizontal(Val::Px(if compact { 8. } else { 16. })),
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::SpaceBetween,
-                column_gap: Val::Px(4.),
-                ..row()
-            })
-            .insert((
-                BackgroundColor(Color::srgba(0.025, 0.13, 0.23, 0.52)),
-                BorderRadius::all(Val::Px(28.)),
-                BorderColor(Color::srgb(0.25, 0.72, 0.91)),
-            ))
-            .with_children(|controls| {
-                controls
-                    .spawn(Node {
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        row_gap: Val::Px(3.),
-                        ..default()
-                    })
-                    .with_children(|pad| {
-                        button(
-                            pad,
-                            art,
-                            "↑",
-                            Action::BomberMove(0, -1),
-                            dpad_size,
-                            dpad_height,
-                            Color::srgb(0.13, 0.38, 0.65),
-                            Color::WHITE,
-                        );
-                        pad.spawn(row()).with_children(|row| {
+            if landscape {
+                bomber_landscape_controls(root, art, width, height);
+                root.spawn(Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(board_left),
+                    right: Val::Px(board_left),
+                    top: Val::Px(height * 0.776),
+                    height: Val::Px(height * 0.165),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    padding: UiRect::horizontal(Val::Px(12.)),
+                    ..default()
+                })
+                .insert((
+                    BackgroundColor(Color::srgb(0.035, 0.137, 0.216)),
+                    BorderRadius::all(Val::Px(12.)),
+                ))
+                .with_children(|hint| {
+                    label(hint, art, &g.feedback, 13., Color::WHITE);
+                });
+            } else {
+                root.spawn(Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(if compact { 14. } else { 42. }),
+                    right: Val::Px(if compact { 14. } else { 42. }),
+                    bottom: Val::Px(if compact { 16. } else { 26. }),
+                    padding: UiRect::horizontal(Val::Px(if compact { 8. } else { 16. })),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::SpaceBetween,
+                    column_gap: Val::Px(4.),
+                    ..row()
+                })
+                .insert((
+                    BackgroundColor(Color::srgba(0.025, 0.13, 0.23, 0.52)),
+                    BorderRadius::all(Val::Px(28.)),
+                    BorderColor(Color::srgb(0.25, 0.72, 0.91)),
+                ))
+                .with_children(|controls| {
+                    controls
+                        .spawn(Node {
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            row_gap: Val::Px(3.),
+                            ..default()
+                        })
+                        .with_children(|pad| {
                             button(
-                                row,
+                                pad,
                                 art,
-                                "←",
-                                Action::BomberMove(-1, 0),
+                                "↑",
+                                Action::BomberMove(0, -1),
                                 dpad_size,
                                 dpad_height,
                                 Color::srgb(0.13, 0.38, 0.65),
                                 Color::WHITE,
                             );
-                            button(
-                                row,
-                                art,
-                                "↓",
-                                Action::BomberMove(0, 1),
-                                dpad_size,
-                                dpad_height,
-                                Color::srgb(0.13, 0.38, 0.65),
-                                Color::WHITE,
-                            );
-                            button(
-                                row,
-                                art,
-                                "→",
-                                Action::BomberMove(1, 0),
-                                dpad_size,
-                                dpad_height,
-                                Color::srgb(0.13, 0.38, 0.65),
-                                Color::WHITE,
-                            );
+                            pad.spawn(row()).with_children(|row| {
+                                button(
+                                    row,
+                                    art,
+                                    "←",
+                                    Action::BomberMove(-1, 0),
+                                    dpad_size,
+                                    dpad_height,
+                                    Color::srgb(0.13, 0.38, 0.65),
+                                    Color::WHITE,
+                                );
+                                button(
+                                    row,
+                                    art,
+                                    "↓",
+                                    Action::BomberMove(0, 1),
+                                    dpad_size,
+                                    dpad_height,
+                                    Color::srgb(0.13, 0.38, 0.65),
+                                    Color::WHITE,
+                                );
+                                button(
+                                    row,
+                                    art,
+                                    "→",
+                                    Action::BomberMove(1, 0),
+                                    dpad_size,
+                                    dpad_height,
+                                    Color::srgb(0.13, 0.38, 0.65),
+                                    Color::WHITE,
+                                );
+                            });
                         });
-                    });
-                button(
-                    controls,
-                    art,
-                    "●\n放置水泡",
-                    Action::BomberPlace,
-                    if compact { 104. } else { 142. },
-                    if compact { 66. } else { 88. },
-                    Color::srgb(0.02, 0.58, 0.91),
-                    Color::WHITE,
-                );
-            });
-            root.spawn(Node {
-                position_type: PositionType::Absolute,
-                left: Val::Px(if compact { 96. } else { 225. }),
-                right: Val::Px(if compact { 96. } else { 225. }),
-                bottom: Val::Px(if compact { 8. } else { 10. }),
-                justify_content: JustifyContent::Center,
-                ..row()
-            })
-            .with_children(|hint| {
-                label(
-                    hint,
-                    art,
-                    &g.feedback,
-                    if compact { 11. } else { 14. },
-                    Color::WHITE,
-                );
-            });
+                    bomber_place_button(
+                        controls,
+                        art,
+                        if compact { 104. } else { 142. },
+                        if compact { 66. } else { 88. },
+                        if compact { 13. } else { 17. },
+                    );
+                });
+                root.spawn(Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(if compact { 96. } else { 225. }),
+                    right: Val::Px(if compact { 96. } else { 225. }),
+                    bottom: Val::Px(if compact { 8. } else { 10. }),
+                    justify_content: JustifyContent::Center,
+                    ..row()
+                })
+                .with_children(|hint| {
+                    label(
+                        hint,
+                        art,
+                        &g.feedback,
+                        if compact { 11. } else { 14. },
+                        Color::WHITE,
+                    );
+                });
+            }
             if g.failed {
                 root.spawn((
                     Node {
@@ -15961,7 +18527,7 @@ fn bomber_ui_compact(
                         align_self: AlignSelf::Center,
                         justify_self: JustifySelf::Center,
                         width: Val::Px(300.),
-                        height: Val::Px(154.),
+                        height: Val::Px(206.),
                         flex_direction: FlexDirection::Column,
                         align_items: AlignItems::Center,
                         justify_content: JustifyContent::Center,
@@ -15984,148 +18550,887 @@ fn bomber_ui_compact(
                         Color::srgb(0.26, 0.62, 0.88),
                         Color::WHITE,
                     );
+                    button(
+                        panel,
+                        art,
+                        "回到游戏库",
+                        Action::Library,
+                        136.,
+                        42.,
+                        if landscape {
+                            Color::NONE
+                        } else {
+                            Color::srgb(0.12, 0.35, 0.55)
+                        },
+                        Color::WHITE,
+                    );
                 });
             }
         });
 }
 
+fn bomber_landscape_controls(root: &mut ChildSpawnerCommands, art: &Art, width: f32, height: f32) {
+    let panel_w = width * 0.152;
+    for right in [false, true] {
+        root.spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: if right {
+                    Val::Auto
+                } else {
+                    Val::Px(width * 0.0146)
+                },
+                right: if right {
+                    Val::Px(width * 0.0146)
+                } else {
+                    Val::Auto
+                },
+                top: Val::Px(height * 0.5185),
+                width: Val::Px(panel_w),
+                height: Val::Px(height * 0.4222),
+                align_items: AlignItems::Center,
+                flex_direction: FlexDirection::Column,
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.035, 0.137, 0.216)),
+            BorderRadius::all(Val::Px(15.)),
+        ))
+        .with_children(|panel| {
+            if right {
+                panel
+                    .spawn((
+                        BomberTouchPlace,
+                        Node {
+                            width: Val::Percent(100.),
+                            height: Val::Percent(100.),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            flex_direction: FlexDirection::Column,
+                            row_gap: Val::Px(12.),
+                            ..default()
+                        },
+                    ))
+                    .with_children(|action| {
+                        action.spawn((
+                            ImageNode::new(art.bomber_action_bubble.clone()),
+                            Node {
+                                width: Val::Px(panel_w * 0.72),
+                                height: Val::Px(panel_w * 0.72),
+                                ..default()
+                            },
+                        ));
+                        label(action, art, "放置泡泡", 15., Color::WHITE);
+                        label(action, art, "支持边走边放", 12., Color::WHITE);
+                    });
+            } else {
+                panel
+                    .spawn(Node {
+                        margin: UiRect::top(Val::Px(16.)),
+                        ..default()
+                    })
+                    .with_children(|title| {
+                        label(title, art, "拖动摇杆", 15., Color::WHITE);
+                    });
+                panel
+                    .spawn((
+                        BomberJoystick,
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(panel_w * 0.116),
+                            top: Val::Px(height * 0.12),
+                            width: Val::Px(panel_w * 0.768),
+                            height: Val::Px(panel_w * 0.768),
+                            border: UiRect::all(Val::Px(2.)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgb(0.09, 0.247, 0.35)),
+                        BorderColor(Color::srgb(0.51, 0.80, 0.89)),
+                        BorderRadius::all(Val::Percent(50.)),
+                    ))
+                    .with_children(|pad| {
+                        for (symbol, x, y) in [
+                            ("↑", 43., 0.),
+                            ("↓", 43., 76.),
+                            ("←", 3., 38.),
+                            ("→", 80., 38.),
+                        ] {
+                            pad.spawn(Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Percent(x),
+                                top: Val::Percent(y),
+                                ..default()
+                            })
+                            .with_children(|arrow| {
+                                label(arrow, art, symbol, 15., Color::WHITE);
+                            });
+                        }
+                        pad.spawn((
+                            BomberJoystickKnob,
+                            Node {
+                                position_type: PositionType::Absolute,
+                                width: Val::Percent(46.),
+                                height: Val::Percent(46.),
+                                left: Val::Percent(27.),
+                                top: Val::Percent(27.),
+                                border: UiRect::all(Val::Px(2.)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.247, 0.604, 0.753)),
+                            BorderColor(Color::srgb(0.78, 0.95, 1.)),
+                            BorderRadius::all(Val::Percent(50.)),
+                        ));
+                    });
+                panel
+                    .spawn(Node {
+                        position_type: PositionType::Absolute,
+                        bottom: Val::Px(16.),
+                        ..default()
+                    })
+                    .with_children(|hint| {
+                        label(hint, art, "松手即停止", 12., Color::WHITE);
+                    });
+            }
+        });
+    }
+}
+
+fn bomber_joystick_direction(offset: Vec2, radius: f32) -> Option<(i8, i8)> {
+    if offset.length() < radius * 0.18 {
+        return None;
+    }
+    if offset.x.abs() > offset.y.abs() {
+        Some((if offset.x > 0. { 1 } else { -1 }, 0))
+    } else {
+        Some((0, if offset.y > 0. { 1 } else { -1 }))
+    }
+}
+
 fn bomber_monster_image(art: &Art, kind: u8) -> ImageNode {
-    let cell = 543.;
+    let (texture, cell, column) = if kind < 4 {
+        (art.bomber_monsters.clone(), 543., kind as usize)
+    } else {
+        (art.bomber_extra_monsters.clone(), 724., (kind - 4) as usize)
+    };
     let inset = 8.;
-    let mut image = ImageNode::new(art.bomber_monsters.clone());
+    let mut image = ImageNode::new(texture);
     image.rect = Some(Rect::from_corners(
-        Vec2::new(kind.min(3) as f32 * cell + inset, inset),
-        Vec2::new((kind.min(3) as f32 + 1.) * cell - inset, 724. - inset),
+        Vec2::new(column as f32 * cell + inset, inset),
+        Vec2::new((column + 1) as f32 * cell - inset, 724. - inset),
     ));
     image
 }
 
-fn bomber_touch_button(
+fn bomber_desktop_direction(
     parent: &mut ChildSpawnerCommands,
     art: &Art,
     text: &str,
     action: Action,
-    size: f32,
-    color: Color,
+    left: f32,
+    top: f32,
+    width: f32,
+    height: f32,
 ) {
-    parent.spawn((
-        Button,
-        action,
-        Node { width: Val::Px(size), height: Val::Px(size), align_items: AlignItems::Center, justify_content: JustifyContent::Center, ..default() },
-        BackgroundColor(color),
-        BorderColor(Color::srgba(1., 1., 1., 0.72)),
-        BorderRadius::all(Val::Percent(50.)),
-    )).with_children(|label_node| label(label_node, art, text, size * 0.43, Color::WHITE));
+    parent
+        .spawn((
+            Button,
+            action,
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(left),
+                top: Val::Px(top),
+                width: Val::Px(width),
+                height: Val::Px(height),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.10, 0.40, 0.62, 0.72)),
+            BorderColor(Color::srgba(1., 1., 1., 0.78)),
+            BorderRadius::all(Val::Percent(50.)),
+        ))
+        .with_children(|arrow| label(arrow, art, text, height * 0.40, Color::WHITE));
+}
+
+fn bomber_place_button(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    width: f32,
+    height: f32,
+    font_size: f32,
+) {
+    let bubble_size = width.min(height);
+    parent
+        .spawn((
+            Button,
+            Action::BomberPlace,
+            Node {
+                width: Val::Px(width),
+                height: Val::Px(height),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::NONE),
+            ZIndex(2),
+        ))
+        .with_children(|button| {
+            button.spawn((
+                ImageNode::new(art.bomber_action_bubble.clone()),
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: Val::Px(bubble_size),
+                    height: Val::Px(bubble_size),
+                    left: Val::Px((width - bubble_size) * 0.5),
+                    top: Val::Px((height - bubble_size) * 0.5),
+                    ..default()
+                },
+            ));
+            button
+                .spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(width * 0.04),
+                        right: Val::Px(width * 0.04),
+                        bottom: Val::Px(0.),
+                        height: Val::Px((font_size * 1.65).max(22.)),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.015, 0.075, 0.14, 0.91)),
+                    BorderRadius::all(Val::Px(font_size)),
+                ))
+                .with_children(|pill| {
+                    label(pill, art, "放置泡泡", font_size, Color::WHITE);
+                });
+        });
+}
+
+fn bomber_pickup_marker(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    pickup: &BomberPickup,
+    left: f32,
+    top: f32,
+    size: f32,
+) {
+    let (symbol, color) = match pickup.kind {
+        BomberPickupKind::Range => ("↗", Color::srgb(0.05, 0.62, 0.95)),
+        BomberPickupKind::Capacity => ("＋", Color::srgb(0.54, 0.30, 0.88)),
+        BomberPickupKind::Heart => ("♥", Color::srgb(0.93, 0.25, 0.38)),
+    };
+    parent
+        .spawn((
+            Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(left),
+                top: Val::Px(top),
+                width: Val::Px(size),
+                height: Val::Px(size),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                ..default()
+            },
+            BackgroundColor(Color::srgb(1., 0.91, 0.48)),
+            BorderColor(Color::WHITE),
+            BorderRadius::all(Val::Percent(50.)),
+        ))
+        .with_children(|node| label(node, art, symbol, size * 0.58, color));
 }
 
 fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32, height: f32) {
     let g = &s.bomber;
     let sx = width / 1672.;
     let sy = height / 941.;
+    // Reserve a clear HUD strip, then fit all nine rows into the remaining
+    // play area so the top row stays visible without shrinking the board.
+    let board_top = 100. * sy;
+    let board_height = (height - board_top).max(1.);
     let cell_w = width / BOMBER_COLUMNS as f32;
-    let cell_h = height / BOMBER_ROWS as f32;
-    let rating = if g.remaining >= 100. { 3 } else if g.remaining >= 45. { 2 } else { 1 };
-    commands.spawn((UiRoot, Node { width: Val::Percent(100.), height: Val::Percent(100.), overflow: Overflow::clip(), ..default() }))
+    let cell_h = board_height / BOMBER_ROWS as f32;
+    let rating = if g.remaining >= 100. {
+        3
+    } else if g.remaining >= 45. {
+        2
+    } else {
+        1
+    };
+    commands
+        .spawn((
+            UiRoot,
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                overflow: Overflow::clip(),
+                ..default()
+            },
+        ))
         .with_children(|root| {
             // Full-bleed arena art: controls and the live board float over the whole scene.
-            root.spawn((ImageNode::new(art.bomber_backdrop.clone()), Node { position_type: PositionType::Absolute, width: Val::Percent(100.), height: Val::Percent(100.), ..default() }));
-            root.spawn((Node { position_type: PositionType::Absolute, width: Val::Percent(100.), height: Val::Percent(100.), ..default() }, BomberBoard { first_column: 0, visible_columns: BOMBER_COLUMNS }))
-                .with_children(|grid| {
-                    // Fixed stone pillars and destructible objects are laid over the arena floor.
-                    for y in 0..BOMBER_ROWS {
-                        for x in 0..BOMBER_COLUMNS {
-                            let left = x as f32 * cell_w;
-                            let top = y as f32 * cell_h;
-                            if g.bushes.contains(&(x, y)) {
-                                grid.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(left + cell_w * 0.08), top: Val::Px(top + cell_h * 0.12), width: Val::Px(cell_w * 0.84), height: Val::Px(cell_h * 0.76), align_items: AlignItems::Center, justify_content: JustifyContent::Center, ..default() }, BackgroundColor(Color::srgb(0.12, 0.38, 0.19)), BorderRadius::all(Val::Px(cell_h * 0.34))))
-                                    .with_children(|bush| {
-                                        for (dx, dy, shade) in [(0.19,0.22,Color::srgb(0.18,0.53,0.23)),(0.43,0.08,Color::srgb(0.24,0.61,0.26)),(0.65,0.24,Color::srgb(0.14,0.46,0.20)),(0.35,0.44,Color::srgb(0.28,0.64,0.28)),(0.61,0.52,Color::srgb(0.19,0.52,0.22))] {
-                                            bush.spawn((Node { position_type: PositionType::Absolute, left: Val::Percent(dx * 100.), top: Val::Percent(dy * 100.), width: Val::Percent(34.), height: Val::Percent(43.), ..default() }, BackgroundColor(shade), BorderRadius::all(Val::Percent(50.))));
-                                        }
-                                        bush.spawn((Node { position_type: PositionType::Absolute, left: Val::Percent(40.), top: Val::Percent(26.), width: Val::Px(7. * sx), height: Val::Px(7. * sy), ..default() }, BackgroundColor(Color::srgb(1.,0.82,0.22)), BorderRadius::all(Val::Percent(50.))));
-                                    });
-                            } else if g.pots.contains(&(x, y)) {
-                                grid.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(left + cell_w * 0.20), top: Val::Px(top + cell_h * 0.15), width: Val::Px(cell_w * 0.60), height: Val::Px(cell_h * 0.72), align_items: AlignItems::Center, justify_content: JustifyContent::Center, ..default() }, BackgroundColor(Color::srgb(0.54,0.25,0.12)), BorderColor(Color::srgb(0.90,0.59,0.29)), BorderRadius::all(Val::Px(cell_h * 0.22))))
-                                    .with_children(|pot| { pot.spawn((Node { width: Val::Percent(55.), height: Val::Percent(55.), ..default() }, BackgroundColor(Color::srgb(0.70,0.42,0.22)), BorderRadius::all(Val::Percent(50.)))); });
-                            } else if g.bricks.contains(&(x, y)) {
-                                grid.spawn((bomber_atlas_image(art, if (x + y) % 4 == 0 { 3 } else { 1 }), Node { position_type: PositionType::Absolute, left: Val::Px(left), top: Val::Px(top), width: Val::Px(cell_w), height: Val::Px(cell_h), ..default() }));
-                            } else if x % 2 == 1 && y % 2 == 1 {
-                                grid.spawn((bomber_atlas_image(art, 2), Node { position_type: PositionType::Absolute, left: Val::Px(left), top: Val::Px(top), width: Val::Px(cell_w), height: Val::Px(cell_h), ..default() }));
-                            }
+            root.spawn((
+                ImageNode::new(art.bomber_backdrop.clone()),
+                Node {
+                    position_type: PositionType::Absolute,
+                    width: Val::Percent(100.),
+                    height: Val::Percent(100.),
+                    ..default()
+                },
+            ));
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    top: Val::Px(board_top),
+                    width: Val::Percent(100.),
+                    height: Val::Px(board_height),
+                    ..default()
+                },
+                BomberBoard {
+                    first_column: 0,
+                    visible_columns: BOMBER_COLUMNS,
+                },
+            ))
+            .with_children(|grid| {
+                // Fixed stone pillars and destructible objects are laid over the arena floor.
+                for y in 0..BOMBER_ROWS {
+                    for x in 0..BOMBER_COLUMNS {
+                        let left = x as f32 * cell_w;
+                        let top = y as f32 * cell_h;
+                        if g.bushes.contains(&(x, y)) {
+                            grid.spawn((
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(left + cell_w * 0.08),
+                                    top: Val::Px(top + cell_h * 0.12),
+                                    width: Val::Px(cell_w * 0.84),
+                                    height: Val::Px(cell_h * 0.76),
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.12, 0.38, 0.19)),
+                                BorderRadius::all(Val::Px(cell_h * 0.34)),
+                            ))
+                            .with_children(|bush| {
+                                for (dx, dy, shade) in [
+                                    (0.19, 0.22, Color::srgb(0.18, 0.53, 0.23)),
+                                    (0.43, 0.08, Color::srgb(0.24, 0.61, 0.26)),
+                                    (0.65, 0.24, Color::srgb(0.14, 0.46, 0.20)),
+                                    (0.35, 0.44, Color::srgb(0.28, 0.64, 0.28)),
+                                    (0.61, 0.52, Color::srgb(0.19, 0.52, 0.22)),
+                                ] {
+                                    bush.spawn((
+                                        Node {
+                                            position_type: PositionType::Absolute,
+                                            left: Val::Percent(dx * 100.),
+                                            top: Val::Percent(dy * 100.),
+                                            width: Val::Percent(34.),
+                                            height: Val::Percent(43.),
+                                            ..default()
+                                        },
+                                        BackgroundColor(shade),
+                                        BorderRadius::all(Val::Percent(50.)),
+                                    ));
+                                }
+                                bush.spawn((
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Percent(40.),
+                                        top: Val::Percent(26.),
+                                        width: Val::Px(7. * sx),
+                                        height: Val::Px(7. * sy),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgb(1., 0.82, 0.22)),
+                                    BorderRadius::all(Val::Percent(50.)),
+                                ));
+                            });
+                        } else if g.pots.contains(&(x, y)) {
+                            grid.spawn((
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(left + cell_w * 0.20),
+                                    top: Val::Px(top + cell_h * 0.15),
+                                    width: Val::Px(cell_w * 0.60),
+                                    height: Val::Px(cell_h * 0.72),
+                                    align_items: AlignItems::Center,
+                                    justify_content: JustifyContent::Center,
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.54, 0.25, 0.12)),
+                                BorderColor(Color::srgb(0.90, 0.59, 0.29)),
+                                BorderRadius::all(Val::Px(cell_h * 0.22)),
+                            ))
+                            .with_children(|pot| {
+                                pot.spawn((
+                                    Node {
+                                        width: Val::Percent(55.),
+                                        height: Val::Percent(55.),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgb(0.70, 0.42, 0.22)),
+                                    BorderRadius::all(Val::Percent(50.)),
+                                ));
+                            });
+                        } else if g.bricks.contains(&(x, y)) {
+                            grid.spawn((
+                                bomber_atlas_image(art, if (x + y) % 4 == 0 { 3 } else { 1 }),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(left),
+                                    top: Val::Px(top),
+                                    width: Val::Px(cell_w),
+                                    height: Val::Px(cell_h),
+                                    ..default()
+                                },
+                            ));
+                        } else if x % 2 == 1 && y % 2 == 1 {
+                            grid.spawn((
+                                bomber_atlas_image(art, 2),
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(left),
+                                    top: Val::Px(top),
+                                    width: Val::Px(cell_w),
+                                    height: Val::Px(cell_h),
+                                    ..default()
+                                },
+                            ));
                         }
                     }
-                    for bomb in &g.bombs {
-                        for (x, y) in g.blast_cells(bomb) {
-                            grid.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(x as f32 * cell_w), top: Val::Px(y as f32 * cell_h), width: Val::Px(cell_w), height: Val::Px(cell_h), ..default() }, BackgroundColor(Color::srgba(0.10,0.73,1.,0.24 + (bomb.fuse * 7.).sin().abs() * 0.20)), BorderRadius::all(Val::Px(14. * sx))));
-                        }
+                }
+                for pickup in &g.pickups {
+                    bomber_pickup_marker(
+                        grid,
+                        art,
+                        pickup,
+                        pickup.x as f32 * cell_w + cell_w * 0.22,
+                        pickup.y as f32 * cell_h + cell_h * 0.22,
+                        cell_w.min(cell_h) * 0.56,
+                    );
+                }
+                for bomb in &g.bombs {
+                    for (x, y) in g.blast_cells(bomb) {
+                        grid.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(x as f32 * cell_w),
+                                top: Val::Px(y as f32 * cell_h),
+                                width: Val::Px(cell_w),
+                                height: Val::Px(cell_h),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(
+                                0.10,
+                                0.73,
+                                1.,
+                                0.24 + (bomb.fuse * 7.).sin().abs() * 0.20,
+                            )),
+                            BorderRadius::all(Val::Px(14. * sx)),
+                        ));
                     }
-                    for blast in &g.blasts {
-                        grid.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(blast.x as f32 * cell_w + cell_w * 0.08), top: Val::Px(blast.y as f32 * cell_h + cell_h * 0.08), width: Val::Px(cell_w * 0.84), height: Val::Px(cell_h * 0.84), ..default() }, BackgroundColor(Color::srgba(0.28,0.89,1.,(blast.life / 0.46).min(1.))), BorderRadius::all(Val::Px(22. * sx))));
-                    }
-                    for bomb in &g.bombs {
-                        let pulse = 1. + (bomb.fuse * 9.).sin() * 0.08;
-                        grid.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(bomb.x as f32 * cell_w + cell_w * (0.16 - (pulse-1.)*0.3)), top: Val::Px(bomb.y as f32 * cell_h + cell_h * (0.16 - (pulse-1.)*0.3)), width: Val::Px(cell_w * 0.68 * pulse), height: Val::Px(cell_h * 0.68 * pulse), ..default() }, bomber_atlas_image(art, 7)));
-                    }
-                    grid.spawn((SceneMotion::bob(Vec2::new(g.visual_player.x * cell_w + cell_w * 0.14, g.visual_player.y * cell_h + cell_h * 0.12)), Node { position_type: PositionType::Absolute, left: Val::Px(g.visual_player.x * cell_w + cell_w * 0.14), top: Val::Px(g.visual_player.y * cell_h + cell_h * 0.12), width: Val::Px(cell_w * 0.72), height: Val::Px(cell_h * 0.76), ..default() }, bomber_atlas_image(art, 4)));
-                    for enemy in &g.enemies {
-                        grid.spawn((SceneMotion::bob(Vec2::new(enemy.visual.x * cell_w + cell_w * 0.16, enemy.visual.y * cell_h + cell_h * 0.12)), Node { position_type: PositionType::Absolute, left: Val::Px(enemy.visual.x * cell_w + cell_w * 0.16), top: Val::Px(enemy.visual.y * cell_h + cell_h * 0.12), width: Val::Px(cell_w * 0.68), height: Val::Px(cell_h * 0.76), ..default() }, bomber_monster_image(art, enemy.kind)));
+                }
+                for blast in &g.blasts {
+                    grid.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(blast.x as f32 * cell_w + cell_w * 0.08),
+                            top: Val::Px(blast.y as f32 * cell_h + cell_h * 0.08),
+                            width: Val::Px(cell_w * 0.84),
+                            height: Val::Px(cell_h * 0.84),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.28, 0.89, 1., (blast.life / 0.46).min(1.))),
+                        BorderRadius::all(Val::Px(22. * sx)),
+                    ));
+                }
+                for bomb in &g.bombs {
+                    let pulse = 1. + (bomb.fuse * 9.).sin() * 0.08;
+                    grid.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(
+                                bomb.x as f32 * cell_w + cell_w * (0.16 - (pulse - 1.) * 0.3),
+                            ),
+                            top: Val::Px(
+                                bomb.y as f32 * cell_h + cell_h * (0.16 - (pulse - 1.) * 0.3),
+                            ),
+                            width: Val::Px(cell_w * 0.68 * pulse),
+                            height: Val::Px(cell_h * 0.68 * pulse),
+                            ..default()
+                        },
+                        ImageNode::new(art.bomber_action_bubble.clone()),
+                    ));
+                }
+                grid.spawn((
+                    SceneMotion::bob(Vec2::new(
+                        g.visual_player.x * cell_w + cell_w * 0.14,
+                        g.visual_player.y * cell_h + cell_h * 0.12,
+                    )),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(g.visual_player.x * cell_w + cell_w * 0.14),
+                        top: Val::Px(g.visual_player.y * cell_h + cell_h * 0.12),
+                        width: Val::Px(cell_w * 0.72),
+                        height: Val::Px(cell_h * 0.76),
+                        ..default()
+                    },
+                    bomber_atlas_image(art, 4),
+                ));
+                for enemy in &g.enemies {
+                    grid.spawn((
+                        SceneMotion::bob(Vec2::new(
+                            enemy.visual.x * cell_w + cell_w * 0.16,
+                            enemy.visual.y * cell_h + cell_h * 0.12,
+                        )),
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(enemy.visual.x * cell_w + cell_w * 0.16),
+                            top: Val::Px(enemy.visual.y * cell_h + cell_h * 0.12),
+                            width: Val::Px(cell_w * 0.68),
+                            height: Val::Px(cell_h * 0.76),
+                            ..default()
+                        },
+                        bomber_monster_image(art, enemy.kind),
+                    ));
+                }
+            });
+
+            let hud = Color::srgba(0.025, 0.10, 0.20, 0.91);
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(506. * sx),
+                    top: Val::Px(12. * sy),
+                    width: Val::Px(370. * sx),
+                    height: Val::Px(82. * sy),
+                    padding: UiRect::horizontal(Val::Px(18. * sx)),
+                    align_items: AlignItems::Center,
+                    column_gap: Val::Px(16. * sx),
+                    ..row()
+                },
+                BackgroundColor(hud),
+                BorderRadius::all(Val::Px(22. * sy)),
+                ZIndex(6),
+            ))
+            .with_children(|stats| {
+                stats.spawn((
+                    bomber_atlas_image(art, 4),
+                    Node {
+                        width: Val::Px(58. * sx),
+                        height: Val::Px(62. * sy),
+                        ..default()
+                    },
+                ));
+                stats.spawn(row()).with_children(|hearts| {
+                    for i in 0..3 {
+                        label(
+                            hearts,
+                            art,
+                            if i < g.lives as usize { "♥" } else { "♡" },
+                            34. * sy,
+                            if i < g.lives as usize {
+                                Color::srgb(1., 0.28, 0.35)
+                            } else {
+                                Color::srgb(0.48, 0.54, 0.62)
+                            },
+                        );
                     }
                 });
-
-            // Original logo crop anchors the exact visual identity from the concept.
-            let mut logo = ImageNode::new(art.bomber_design.clone());
-            logo.rect = Some(Rect::from_corners(Vec2::new(0.,0.), Vec2::new(520.,190.)));
-            root.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(0.), top: Val::Px(0.), width: Val::Px(520. * sx), height: Val::Px(190. * sy), ..default() }, logo, ZIndex(5)));
-
-            let hud = Color::srgba(0.025,0.10,0.20,0.91);
-            root.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(506. * sx), top: Val::Px(12. * sy), width: Val::Px(370. * sx), height: Val::Px(82. * sy), padding: UiRect::horizontal(Val::Px(18. * sx)), align_items: AlignItems::Center, column_gap: Val::Px(16. * sx), ..row() }, BackgroundColor(hud), BorderRadius::all(Val::Px(22. * sy)), ZIndex(6)))
-                .with_children(|stats| {
-                    stats.spawn((bomber_atlas_image(art, 4), Node { width: Val::Px(58. * sx), height: Val::Px(62. * sy), ..default() }));
-                    stats.spawn(row()).with_children(|hearts| { for i in 0..3 { label(hearts, art, if i < g.lives as usize { "♥" } else { "♡" }, 40. * sy, if i < g.lives as usize { Color::srgb(1.,0.28,0.35) } else { Color::srgb(0.48,0.54,0.62) }); } });
+            });
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(925. * sx),
+                    top: Val::Px(12. * sy),
+                    width: Val::Px(258. * sx),
+                    height: Val::Px(82. * sy),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    column_gap: Val::Px(12. * sx),
+                    ..row()
+                },
+                BackgroundColor(hud),
+                BorderRadius::all(Val::Px(22. * sy)),
+                ZIndex(6),
+            ))
+            .with_children(|timer| {
+                label(timer, art, "◴", 42. * sy, Color::WHITE);
+                label(
+                    timer,
+                    art,
+                    format!(
+                        "{:02}:{:02}",
+                        (g.remaining as u32) / 60,
+                        (g.remaining as u32) % 60
+                    ),
+                    38. * sy,
+                    Color::WHITE,
+                );
+            });
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(1220. * sx),
+                    top: Val::Px(12. * sy),
+                    width: Val::Px(205. * sx),
+                    height: Val::Px(82. * sy),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    row_gap: Val::Px(2. * sy),
+                    ..default()
+                },
+                BackgroundColor(hud),
+                BorderRadius::all(Val::Px(22. * sy)),
+                ZIndex(6),
+            ))
+            .with_children(|level| {
+                label(
+                    level,
+                    art,
+                    format!(
+                        "关卡 {}-{}",
+                        g.round.min(BOMBER_MAX_ROUNDS),
+                        BOMBER_MAX_ROUNDS
+                    ),
+                    27. * sy,
+                    Color::WHITE,
+                );
+                level.spawn(row()).with_children(|stars| {
+                    for i in 0..3 {
+                        label(
+                            stars,
+                            art,
+                            "★",
+                            30. * sy,
+                            if i < rating {
+                                Color::srgb(1., 0.77, 0.11)
+                            } else {
+                                Color::srgb(0.25, 0.33, 0.47)
+                            },
+                        );
+                    }
                 });
-            root.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(925. * sx), top: Val::Px(12. * sy), width: Val::Px(258. * sx), height: Val::Px(82. * sy), align_items: AlignItems::Center, justify_content: JustifyContent::Center, column_gap: Val::Px(12. * sx), ..row() }, BackgroundColor(hud), BorderRadius::all(Val::Px(22. * sy)), ZIndex(6)))
-                .with_children(|timer| { label(timer, art, "◴", 42. * sy, Color::WHITE); label(timer, art, format!("{:02}:{:02}", (g.remaining as u32) / 60, (g.remaining as u32) % 60), 38. * sy, Color::WHITE); });
-            root.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(1220. * sx), top: Val::Px(12. * sy), width: Val::Px(205. * sx), height: Val::Px(82. * sy), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, justify_content: JustifyContent::Center, row_gap: Val::Px(2. * sy), ..default() }, BackgroundColor(hud), BorderRadius::all(Val::Px(22. * sy)), ZIndex(6)))
-                .with_children(|level| { label(level, art, format!("关卡 {}-{}", g.round.min(BOMBER_MAX_ROUNDS), BOMBER_MAX_ROUNDS), 27. * sy, Color::WHITE); level.spawn(row()).with_children(|stars| { for i in 0..3 { label(stars, art, "★", 30. * sy, if i < rating { Color::srgb(1.,0.77,0.11) } else { Color::srgb(0.25,0.33,0.47) }); } }); });
-            root.spawn((Node { position_type: PositionType::Absolute, right: Val::Px(24. * sx), top: Val::Px(10. * sy), ..row() }, ZIndex(7)))
-                .with_children(|pause| bomber_ui_pause_button(pause, art, g, sx, sy));
+            });
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(24. * sx),
+                    top: Val::Px(10. * sy),
+                    ..row()
+                },
+                ZIndex(7),
+            ))
+            .with_children(|pause| bomber_ui_pause_button(pause, art, g, sx, sy));
 
             // Floating left thumb pad and right water-bubble action.
-            root.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(20. * sx), bottom: Val::Px(35. * sy), width: Val::Px(270. * sx), height: Val::Px(260. * sy), align_items: AlignItems::Center, justify_content: JustifyContent::Center, flex_direction: FlexDirection::Column, row_gap: Val::Px(4. * sy), ..default() }, BackgroundColor(Color::srgba(0.03,0.18,0.28,0.30)), BorderColor(Color::srgba(1.,1.,1.,0.48)), BorderRadius::all(Val::Percent(50.)), ZIndex(8)))
-                .with_children(|pad| {
-                    bomber_touch_button(pad, art, "▲", Action::BomberMove(0,-1), 64. * sx, Color::srgba(0.08,0.36,0.58,0.80));
-                    pad.spawn(Node { width: Val::Px(214. * sx), justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..row() }).with_children(|middle| {
-                        bomber_touch_button(middle, art, "◀", Action::BomberMove(-1,0), 64. * sx, Color::srgba(0.08,0.36,0.58,0.80));
-                        middle.spawn((Node { width: Val::Px(62. * sx), height: Val::Px(62. * sy), ..default() }, BackgroundColor(Color::srgba(0.82,0.92,0.96,0.58)), BorderColor(Color::srgba(1.,1.,1.,0.7)), BorderRadius::all(Val::Percent(50.))));
-                        bomber_touch_button(middle, art, "▶", Action::BomberMove(1,0), 64. * sx, Color::srgba(0.08,0.36,0.58,0.80));
-                    });
-                    bomber_touch_button(pad, art, "▼", Action::BomberMove(0,1), 64. * sx, Color::srgba(0.08,0.36,0.58,0.80));
-                });
-            root.spawn((Node { position_type: PositionType::Absolute, right: Val::Px(25. * sx), bottom: Val::Px(28. * sy), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, row_gap: Val::Px(5. * sy), ..default() }, ZIndex(8)))
-                .with_children(|action| {
-                    action.spawn((Button, Action::BomberPlace, Node { width: Val::Px(205. * sx), height: Val::Px(205. * sy), align_items: AlignItems::Center, justify_content: JustifyContent::Center, flex_direction: FlexDirection::Column, ..default() }, BackgroundColor(Color::srgb(0.01,0.58,0.94)), BorderColor(Color::WHITE), BorderRadius::all(Val::Percent(50.))))
-                        .with_children(|bubble| { label(bubble, art, "◉", 96. * sy, Color::WHITE); label(bubble, art, "放置泡泡", 24. * sy, Color::WHITE); });
-                });
-            root.spawn((Node { position_type: PositionType::Absolute, left: Val::Px(310. * sx), right: Val::Px(300. * sx), bottom: Val::Px(20. * sy), justify_content: JustifyContent::Center, ..row() }, ZIndex(9)))
-                .with_children(|hint| label(hint, art, &g.feedback, 20. * sy, Color::WHITE));
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(20. * sx),
+                    bottom: Val::Px(35. * sy),
+                    width: Val::Px(270. * sx),
+                    height: Val::Px(260. * sy),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.03, 0.18, 0.28, 0.18)),
+                BorderColor(Color::srgba(1., 1., 1., 0.38)),
+                BorderRadius::all(Val::Percent(50.)),
+                ZIndex(8),
+            ))
+            .with_children(|pad| {
+                bomber_desktop_direction(
+                    pad,
+                    art,
+                    "▲",
+                    Action::BomberMove(0, -1),
+                    102. * sx,
+                    17. * sy,
+                    66. * sx,
+                    66. * sy,
+                );
+                bomber_desktop_direction(
+                    pad,
+                    art,
+                    "◀",
+                    Action::BomberMove(-1, 0),
+                    17. * sx,
+                    97. * sy,
+                    66. * sx,
+                    66. * sy,
+                );
+                bomber_desktop_direction(
+                    pad,
+                    art,
+                    "▶",
+                    Action::BomberMove(1, 0),
+                    187. * sx,
+                    97. * sy,
+                    66. * sx,
+                    66. * sy,
+                );
+                bomber_desktop_direction(
+                    pad,
+                    art,
+                    "▼",
+                    Action::BomberMove(0, 1),
+                    102. * sx,
+                    177. * sy,
+                    66. * sx,
+                    66. * sy,
+                );
+                pad.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(100. * sx),
+                        top: Val::Px(95. * sy),
+                        width: Val::Px(70. * sx),
+                        height: Val::Px(70. * sy),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.82, 0.92, 0.96, 0.60)),
+                    BorderColor(Color::srgba(1., 1., 1., 0.7)),
+                    BorderRadius::all(Val::Percent(50.)),
+                ));
+            });
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(25. * sx),
+                    bottom: Val::Px(28. * sy),
+                    ..default()
+                },
+                ZIndex(8),
+            ))
+            .with_children(|action| {
+                bomber_place_button(action, art, 220. * sx, 250. * sy, 23. * sy)
+            });
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(310. * sx),
+                    right: Val::Px(300. * sx),
+                    bottom: Val::Px(20. * sy),
+                    justify_content: JustifyContent::Center,
+                    ..row()
+                },
+                ZIndex(9),
+            ))
+            .with_children(|hint| label(hint, art, &g.feedback, 20. * sy, Color::WHITE));
 
             if g.paused || g.failed || g.won {
-                root.spawn((Node { position_type: PositionType::Absolute, width: Val::Percent(100.), height: Val::Percent(100.), align_items: AlignItems::Center, justify_content: JustifyContent::Center, ..default() }, BackgroundColor(Color::srgba(0.01,0.06,0.12,if g.paused { 0.56 } else { 0.74 })), ZIndex(20)))
-                    .with_children(|modal| {
-                        modal.spawn((Node { width: Val::Px(420. * sx), height: Val::Px(250. * sy), flex_direction: FlexDirection::Column, align_items: AlignItems::Center, justify_content: JustifyContent::Center, row_gap: Val::Px(18. * sy), ..default() }, BackgroundColor(Color::srgba(0.025,0.13,0.24,0.96)), BorderColor(Color::srgb(0.25,0.72,0.95)), BorderRadius::all(Val::Px(28. * sx))))
-                            .with_children(|card| {
-                                label(card, art, if g.won { "闯关成功！" } else if g.failed { "挑战结束" } else { "游戏暂停" }, 38. * sy, Color::WHITE);
-                                label(card, art, format!("得分 {} · 本关 {} 星", g.score, rating), 22. * sy, Color::srgb(0.67,0.9,1.));
-                                if g.failed || g.won { button(card, art, "再玩一次", Action::BomberReset, 172. * sx, 58. * sy, Color::srgb(0.02,0.58,0.92), Color::WHITE); }
-                                else { button(card, art, "继续游戏", Action::BomberTogglePause, 172. * sx, 58. * sy, Color::srgb(0.02,0.58,0.92), Color::WHITE); }
-                            });
-                    });
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.),
+                        height: Val::Percent(100.),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(
+                        0.01,
+                        0.06,
+                        0.12,
+                        if g.paused { 0.56 } else { 0.74 },
+                    )),
+                    ZIndex(20),
+                ))
+                .with_children(|modal| {
+                    modal
+                        .spawn((
+                            Node {
+                                width: Val::Px(420. * sx),
+                                height: Val::Px(330. * sy),
+                                flex_direction: FlexDirection::Column,
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                row_gap: Val::Px(16. * sy),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.025, 0.13, 0.24, 0.96)),
+                            BorderColor(Color::srgb(0.25, 0.72, 0.95)),
+                            BorderRadius::all(Val::Px(28. * sx)),
+                        ))
+                        .with_children(|card| {
+                            label(
+                                card,
+                                art,
+                                if g.won {
+                                    "闯关成功！"
+                                } else if g.failed {
+                                    "挑战结束"
+                                } else {
+                                    "游戏暂停"
+                                },
+                                38. * sy,
+                                Color::WHITE,
+                            );
+                            label(
+                                card,
+                                art,
+                                format!("得分 {} · 本关 {} 星", g.score, rating),
+                                22. * sy,
+                                Color::srgb(0.67, 0.9, 1.),
+                            );
+                            if g.failed || g.won {
+                                button(
+                                    card,
+                                    art,
+                                    "再玩一次",
+                                    Action::BomberReset,
+                                    172. * sx,
+                                    58. * sy,
+                                    Color::srgb(0.02, 0.58, 0.92),
+                                    Color::WHITE,
+                                );
+                            } else {
+                                button(
+                                    card,
+                                    art,
+                                    "继续游戏",
+                                    Action::BomberTogglePause,
+                                    172. * sx,
+                                    58. * sy,
+                                    Color::srgb(0.02, 0.58, 0.92),
+                                    Color::WHITE,
+                                );
+                            }
+                            button(
+                                card,
+                                art,
+                                "回到游戏库",
+                                Action::Library,
+                                172. * sx,
+                                54. * sy,
+                                Color::srgb(0.12, 0.35, 0.55),
+                                Color::WHITE,
+                            );
+                        });
+                });
             }
         });
 }
 
-fn bomber_ui_pause_button(parent: &mut ChildSpawnerCommands, art: &Art, game: &BomberGame, sx: f32, sy: f32) {
-    button(parent, art, if game.paused { "▶" } else { "Ⅱ" }, Action::BomberTogglePause, 88. * sx, 82. * sy, Color::srgb(0.02,0.50,0.91), Color::WHITE);
+fn bomber_ui_pause_button(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    game: &BomberGame,
+    sx: f32,
+    sy: f32,
+) {
+    button(
+        parent,
+        art,
+        if game.paused { "▶" } else { "Ⅱ" },
+        Action::BomberTogglePause,
+        88. * sx,
+        82. * sy,
+        Color::srgb(0.02, 0.50, 0.91),
+        Color::WHITE,
+    );
 }
 
 fn bubble_color(kind: BubbleKind) -> Color {
@@ -16326,690 +19631,982 @@ fn bubble_sprite(parent: &mut ChildSpawnerCommands, art: &Art, kind: BubbleKind,
         });
 }
 
-fn sky_plane_sprite(parent: &mut ChildSpawnerCommands, friendly: bool, heavy: bool) {
-    let part = |parent: &mut ChildSpawnerCommands, left, top, width, height, color: Color| {
-        parent.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Percent(left),
-                top: Val::Percent(top),
-                width: Val::Percent(width),
-                height: Val::Percent(height),
-                ..default()
-            },
-            BackgroundColor(color),
-            BorderRadius::all(Val::Px(3.)),
-        ));
-    };
-    let body = if friendly {
-        Color::srgb(0.20, 0.58, 0.97)
-    } else if heavy {
-        Color::srgb(0.73, 0.22, 0.48)
+fn tank_ui(
+    commands: &mut Commands,
+    s: &Session,
+    art: &Art,
+    compact: bool,
+    width: f32,
+    height: f32,
+) {
+    if compact {
+        tank_mobile_ui(commands, &s.tank, art, width, height);
     } else {
-        Color::srgb(0.96, 0.32, 0.38)
-    };
-    let wing = if friendly {
-        Color::srgb(0.08, 0.23, 0.62)
-    } else {
-        Color::srgb(0.36, 0.10, 0.30)
-    };
-    let metal = Color::srgb(0.78, 0.91, 1.0);
-    let glass = if friendly {
-        Color::srgb(0.25, 0.95, 1.0)
-    } else {
-        Color::srgb(1.0, 0.68, 0.25)
-    };
-    if friendly {
-        part(
-            parent,
-            37.,
-            8.,
-            26.,
-            78.,
-            Color::srgba(0.17, 0.85, 1.0, 0.28),
-        );
-        part(parent, 43., 5., 14., 68., body);
-        part(parent, 19., 33., 62., 15., wing);
-        part(parent, 5., 45., 35., 12., body);
-        part(parent, 60., 45., 35., 12., body);
-        part(parent, 37., 19., 26., 21., metal);
-        part(parent, 41., 22., 18., 14., glass);
-        part(parent, 29., 74., 13., 18., wing);
-        part(parent, 58., 74., 13., 18., wing);
-        part(parent, 39., 7., 22., 8., metal);
-        part(parent, 13., 45., 12., 6., glass);
-        part(parent, 75., 45., 12., 6., glass);
-        part(parent, 35., 82., 10., 16., Color::srgb(0.25, 0.92, 1.0));
-        part(parent, 55., 82., 10., 16., Color::srgb(0.25, 0.92, 1.0));
-    } else {
-        part(
-            parent,
-            32.,
-            18.,
-            36.,
-            72.,
-            Color::srgba(1.0, 0.26, 0.44, 0.26),
-        );
-        part(parent, 43., 22., 14., 67., body);
-        part(parent, 15., 48., 70., 15., wing);
-        part(parent, 3., 37., 34., 13., body);
-        part(parent, 63., 37., 34., 13., body);
-        part(parent, 36., 55., 28., 20., metal);
-        part(parent, 40., 59., 20., 12., glass);
-        part(parent, 39., 4., 10., 22., wing);
-        part(parent, 51., 4., 10., 22., wing);
-        if heavy {
-            part(parent, 27., 34., 46., 10., Color::srgb(1.0, 0.68, 0.23));
-        }
+        tank_wide_ui(commands, &s.tank, art, width, height);
     }
 }
 
-fn sky_boss_sprite(parent: &mut ChildSpawnerCommands) {
-    let part = |parent: &mut ChildSpawnerCommands, left, top, width, height, color: Color| {
-        parent.spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: Val::Percent(left),
-                top: Val::Percent(top),
-                width: Val::Percent(width),
-                height: Val::Percent(height),
-                ..default()
-            },
-            BackgroundColor(color),
-            BorderRadius::all(Val::Px(4.)),
-        ));
+fn tank_mobile_ui(commands: &mut Commands, g: &TankGame, art: &Art, width: f32, height: f32) {
+    let extra_wide = width / height > 2.0;
+    let board_side = height * if extra_wide { 0.86 } else { 0.765 };
+    let cell = board_side / 7.0;
+    let board_left = (width - board_side) * 0.5;
+    let board_top = height * if extra_wide { 0.092 } else { 0.105 };
+    let stick_side = height * if extra_wide { 0.34 } else { 0.29 };
+    let fire_side = height * if extra_wide { 0.29 } else { 0.26 };
+    let background = if extra_wide {
+        art.tank_mobile_background_wide.clone()
+    } else {
+        art.tank_mobile_background_regular.clone()
     };
-    let hull = Color::srgb(0.61, 0.17, 0.43);
-    let wing = Color::srgb(0.26, 0.08, 0.29);
-    let metal = Color::srgb(0.73, 0.81, 0.96);
-    let glow = Color::srgb(1.0, 0.42, 0.65);
-    // Wide wings, twin cannons and a lit core make this clearly read as a
-    // capital ship rather than an enlarged normal enemy.
-    part(parent, 8., 44., 84., 22., wing);
-    part(parent, 20., 29., 60., 45., hull);
-    part(parent, 35., 14., 30., 62., hull);
-    part(parent, 4., 34., 28., 14., metal);
-    part(parent, 68., 34., 28., 14., metal);
-    part(parent, 0., 38., 15., 7., Color::srgb(0.16, 0.12, 0.18));
-    part(parent, 85., 38., 15., 7., Color::srgb(0.16, 0.12, 0.18));
-    part(
-        parent,
-        31.,
-        29.,
-        38.,
-        36.,
-        Color::srgba(1.0, 0.25, 0.61, 0.26),
-    );
-    part(parent, 36., 34., 28., 26., metal);
-    part(parent, 43., 39., 14., 14., glow);
-    part(parent, 28., 8., 12., 24., wing);
-    part(parent, 60., 8., 12., 24., wing);
-    part(parent, 22., 71., 15., 16., Color::srgb(0.87, 0.31, 0.30));
-    part(parent, 63., 71., 15., 16., Color::srgb(0.87, 0.31, 0.30));
-}
-
-fn tank_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
-    let g = &s.tank;
-    // The controls sit beside the playfield in landscape, so use that open
-    // space for larger tiles while keeping the entire seven-row map visible.
-    let cell = if compact { 56. } else { 75. };
-    let board = cell * 7.;
     commands
         .spawn((
             UiRoot,
             Node {
                 width: Val::Percent(100.),
                 height: Val::Percent(100.),
-                padding: UiRect::all(Val::Px(if compact { 14. } else { 24. })),
-                flex_direction: FlexDirection::Column,
-                align_items: AlignItems::Center,
-                row_gap: Val::Px(10.),
+                position_type: PositionType::Relative,
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.47, 0.47, 0.45)),
+            BackgroundColor(Color::srgb(0.09, 0.22, 0.10)),
         ))
         .with_children(|root| {
-            if !compact {
-                root.spawn(Node {
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
                     width: Val::Percent(100.),
-                    max_width: Val::Px(860.),
-                    flex_shrink: 0.,
-                    justify_content: JustifyContent::SpaceBetween,
-                    align_items: AlignItems::Center,
-                    ..row()
-                })
-                .with_children(|p| {
-                    p.spawn(Node {
-                        flex_direction: FlexDirection::Column,
-                        ..default()
-                    })
-                    .with_children(|p| {
-                        label(p, art, "迷你坦克大战", 28., Color::WHITE);
-                        label(
-                            p,
-                            art,
-                            format!("{} · 守住蓝色基地", g.map_name()),
-                            15.,
-                            SOFT,
-                        );
-                    });
-                    label(
-                        p,
-                        art,
-                        format!("第 {} 关  ·  得分 {}", g.wave, g.score),
-                        17.,
-                        Color::srgb(1., 0.79, 0.30),
+                    height: Val::Percent(100.),
+                    ..default()
+                },
+                ImageNode {
+                    image_mode: NodeImageMode::Stretch,
+                    ..ImageNode::new(background)
+                },
+            ));
+
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(board_left),
+                    top: Val::Px(board_top),
+                    width: Val::Px(board_side),
+                    height: Val::Px(board_side),
+                    flex_direction: FlexDirection::Column,
+                    overflow: Overflow::clip(),
+                    border: UiRect::all(Val::Px(2.)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.18, 0.35, 0.14)),
+                BorderColor(Color::srgba(0.08, 0.20, 0.10, 0.8)),
+            ))
+            .with_children(|board| {
+                for y in 0..7_i8 {
+                    board
+                        .spawn(Node {
+                            width: Val::Px(board_side),
+                            height: Val::Px(cell),
+                            min_height: Val::Px(cell),
+                            column_gap: Val::Px(0.),
+                            ..row()
+                        })
+                        .with_children(|row_node| {
+                            for x in 0..7_i8 {
+                                let wall = g.walls.contains(&(x, y));
+                                let steel = g.steel.contains(&(x, y));
+                                let bush = g.bushes.contains(&(x, y));
+                                let ground = if x == 3 || (x == 1 || x == 5) && y % 3 == 0 {
+                                    1
+                                } else {
+                                    0
+                                };
+                                row_node
+                                    .spawn((
+                                        Node {
+                                            width: Val::Px(cell),
+                                            height: Val::Px(cell),
+                                            min_width: Val::Px(cell),
+                                            min_height: Val::Px(cell),
+                                            border: UiRect::all(Val::Px(0.5)),
+                                            ..default()
+                                        },
+                                        tank_concept_tile(
+                                            art,
+                                            ground,
+                                            x as usize * 7 + y as usize * 11,
+                                        ),
+                                        BorderColor(Color::srgba(0.16, 0.31, 0.13, 0.65)),
+                                    ))
+                                    .with_children(|tile| {
+                                        let obstacle = if wall {
+                                            Some(2)
+                                        } else if steel {
+                                            Some(3)
+                                        } else if bush {
+                                            Some(4)
+                                        } else {
+                                            None
+                                        };
+                                        if let Some(index) = obstacle {
+                                            tile.spawn((
+                                                Node {
+                                                    position_type: PositionType::Absolute,
+                                                    left: Val::Px(cell * 0.04),
+                                                    top: Val::Px(cell * 0.04),
+                                                    width: Val::Px(cell * 0.92),
+                                                    height: Val::Px(cell * 0.92),
+                                                    ..default()
+                                                },
+                                                tank_concept_tile(art, index, (x + y) as usize),
+                                            ));
+                                        }
+                                    });
+                            }
+                        });
+                }
+                let draw_tank = |parent: &mut ChildSpawnerCommands,
+                                 x: i8,
+                                 y: i8,
+                                 friendly: bool,
+                                 tint: Color,
+                                 direction: (i8, i8)| {
+                    parent.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px((x as f32 - 0.125) * cell),
+                            top: Val::Px((y as f32 - 0.125) * cell),
+                            width: Val::Px(cell * 1.25),
+                            height: Val::Px(cell * 1.25),
+                            ..default()
+                        },
+                        Transform::from_rotation(Quat::from_rotation_z(match direction {
+                            (0, -1) => 0.0,
+                            (1, 0) => -std::f32::consts::FRAC_PI_2,
+                            (0, 1) => std::f32::consts::PI,
+                            (-1, 0) => std::f32::consts::FRAC_PI_2,
+                            _ => 0.0,
+                        })),
+                        tank_sprite_image(art, friendly, tint),
+                    ));
+                };
+                draw_tank(
+                    board,
+                    g.player.0,
+                    g.player.1,
+                    true,
+                    if g.invulnerable > 0.0 {
+                        Color::srgb(0.85, 0.97, 1.0)
+                    } else {
+                        Color::WHITE
+                    },
+                    g.direction,
+                );
+                for enemy in &g.enemies {
+                    draw_tank(
+                        board,
+                        enemy.x,
+                        enemy.y,
+                        false,
+                        if enemy.warning > 0.0 {
+                            Color::srgb(1.0, 0.90, 0.62)
+                        } else {
+                            Color::WHITE
+                        },
+                        enemy.direction,
                     );
-                    button(
-                        p,
+                }
+                for bullet in &g.bullets {
+                    board.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px((bullet.x - 0.10) * cell),
+                            top: Val::Px((bullet.y - 0.10) * cell),
+                            width: Val::Px(cell * 0.20),
+                            height: Val::Px(cell * 0.20),
+                            ..default()
+                        },
+                        BackgroundColor(if bullet.friendly {
+                            Color::srgb(1.0, 0.84, 0.20)
+                        } else {
+                            Color::srgb(1.0, 0.39, 0.15)
+                        }),
+                        BorderRadius::all(Val::Percent(50.)),
+                    ));
+                }
+            });
+
+            root.spawn(Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(width * 0.018),
+                right: Val::Px(width * 0.018),
+                top: Val::Px(height * 0.012),
+                height: Val::Px(height * 0.085),
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::FlexStart,
+                ..row()
+            })
+            .with_children(|hud| {
+                tank_hud_stat(
+                    hud,
+                    art,
+                    "★",
+                    "战区",
+                    format!("第 {} 关", g.wave),
+                    Color::WHITE,
+                );
+                tank_hud_stat(
+                    hud,
+                    art,
+                    "分",
+                    "得分",
+                    format!("{:05}", g.score),
+                    Color::WHITE,
+                );
+                tank_hud_stat(hud, art, "盾", "护甲", g.lives.to_string(), Color::WHITE);
+                tank_hud_stat(
+                    hud,
+                    art,
+                    "敌",
+                    "敌军",
+                    (g.enemies.len() + g.reserves).to_string(),
+                    Color::WHITE,
+                );
+                button(
+                    hud,
+                    art,
+                    "重开",
+                    Action::TankReset,
+                    74.,
+                    38.,
+                    Color::srgb(0.03, 0.17, 0.19),
+                    Color::WHITE,
+                );
+                button(
+                    hud,
+                    art,
+                    "游戏库",
+                    Action::Library,
+                    88.,
+                    38.,
+                    Color::srgb(0.07, 0.23, 0.53),
+                    Color::WHITE,
+                );
+            });
+
+            root.spawn((
+                TankStick,
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(width * 0.028),
+                    bottom: Val::Px(height * if extra_wide { 0.08 } else { 0.09 }),
+                    width: Val::Px(stick_side),
+                    height: Val::Px(stick_side),
+                    border: UiRect::all(Val::Px(3.)),
+                    ..default()
+                },
+                BackgroundColor(Color::srgba(0.01, 0.13, 0.18, 0.72)),
+                BorderColor(Color::srgb(0.37, 0.82, 0.96)),
+                BorderRadius::all(Val::Percent(50.)),
+            ))
+            .with_children(|stick| {
+                for (glyph, left, top) in [
+                    ("▲", 45., 5.),
+                    ("▼", 45., 79.),
+                    ("◀", 9., 42.),
+                    ("▶", 78., 42.),
+                ] {
+                    stick
+                        .spawn(Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(left),
+                            top: Val::Percent(top),
+                            ..default()
+                        })
+                        .with_children(|arrow| {
+                            label(arrow, art, glyph, 17., Color::srgb(0.75, 0.96, 1.0))
+                        });
+                }
+                stick.spawn((
+                    TankKnob,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Percent(32.),
+                        top: Val::Percent(32.),
+                        width: Val::Percent(36.),
+                        height: Val::Percent(36.),
+                        border: UiRect::all(Val::Px(3.)),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgb(0.29, 0.74, 0.86)),
+                    BorderColor(Color::srgb(0.79, 0.98, 1.0)),
+                    BorderRadius::all(Val::Percent(50.)),
+                ));
+            });
+
+            root.spawn((
+                TankFirePad,
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(width * 0.025),
+                    bottom: Val::Px(height * if extra_wide { 0.09 } else { 0.10 }),
+                    width: Val::Px(fire_side),
+                    height: Val::Px(fire_side),
+                    border: UiRect::all(Val::Px(4.)),
+                    flex_direction: FlexDirection::Column,
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.91, 0.17, 0.07)),
+                BorderColor(Color::srgb(1.0, 0.75, 0.25)),
+                BorderRadius::all(Val::Percent(50.)),
+            ))
+            .with_children(|fire| {
+                fire.spawn((
+                    Node {
+                        width: Val::Px(fire_side * 0.31),
+                        height: Val::Px(fire_side * 0.31),
+                        border: UiRect::all(Val::Px(3.)),
+                        position_type: PositionType::Relative,
+                        ..default()
+                    },
+                    BorderColor(Color::WHITE),
+                    BorderRadius::all(Val::Percent(50.)),
+                ))
+                .with_children(|target| {
+                    target.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(45.),
+                            top: Val::Percent(-20.),
+                            width: Val::Percent(10.),
+                            height: Val::Percent(140.),
+                            ..default()
+                        },
+                        BackgroundColor(Color::WHITE),
+                        BorderRadius::all(Val::Px(3.)),
+                    ));
+                    target.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Percent(-20.),
+                            top: Val::Percent(45.),
+                            width: Val::Percent(140.),
+                            height: Val::Percent(10.),
+                            ..default()
+                        },
+                        BackgroundColor(Color::WHITE),
+                        BorderRadius::all(Val::Px(3.)),
+                    ));
+                });
+                label(fire, art, "开火", 24., Color::WHITE);
+            });
+
+            if g.failed {
+                root.spawn((
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(0.),
+                        right: Val::Px(0.),
+                        top: Val::Px(0.),
+                        bottom: Val::Px(0.),
+                        align_items: AlignItems::Center,
+                        justify_content: JustifyContent::Center,
+                        flex_direction: FlexDirection::Column,
+                        row_gap: Val::Px(12.),
+                        ..default()
+                    },
+                    BackgroundColor(Color::srgba(0.02, 0.05, 0.04, 0.86)),
+                    ZIndex(5),
+                ))
+                .with_children(|panel| {
+                    label(panel, art, "基地失守", 32., Color::srgb(1.0, 0.67, 0.27));
+                    label(
+                        panel,
                         art,
-                        "游戏库",
-                        Action::Library,
-                        82.,
-                        38.,
-                        SLATE,
+                        "可以重试当前关卡，护甲会补满",
+                        18.,
                         Color::WHITE,
                     );
-                });
-            } else {
-                // The compact phone layout keeps these actions visible even if
-                // the player has used up every armour point.
-                root.spawn(Node {
-                    width: Val::Percent(100.),
-                    flex_shrink: 0.,
-                    justify_content: JustifyContent::SpaceBetween,
-                    align_items: AlignItems::Center,
-                    ..row()
-                })
-                .with_children(|p| {
-                    label(
-                        p,
-                        art,
-                        format!("第 {} 关 · {} 分", g.wave, g.score),
-                        16.,
-                        Color::srgb(1., 0.79, 0.30),
-                    );
-                    p.spawn(row()).with_children(|p| {
+                    panel.spawn(row()).with_children(|actions| {
                         button(
-                            p,
+                            actions,
                             art,
-                            "重开",
-                            Action::TankReset,
-                            62.,
-                            34.,
-                            Color::srgb(0.34, 0.42, 0.72),
-                            Color::WHITE,
+                            "重试本关",
+                            Action::TankRetry,
+                            118.,
+                            46.,
+                            Color::srgb(0.30, 0.74, 0.60),
+                            NAVY,
                         );
                         button(
-                            p,
+                            actions,
                             art,
-                            "游戏库",
+                            "返回游戏库",
                             Action::Library,
-                            70.,
-                            34.,
+                            128.,
+                            46.,
                             SLATE,
                             Color::WHITE,
                         );
                     });
                 });
             }
-            root.spawn((
-                Node {
-                    width: Val::Percent(100.),
-                    max_width: Val::Px(860.),
-                    flex_grow: 1.,
-                    min_height: Val::Px(0.),
-                    position_type: PositionType::Relative,
-                    padding: UiRect::all(Val::Px(if compact { 8. } else { 14. })),
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    row_gap: Val::Px(9.),
-                    ..default()
+        });
+}
+fn tank_concept_tile(art: &Art, index: usize, variation: usize) -> ImageNode {
+    // Source rectangles are taken from unobstructed cells of the approved
+    // concept image. This keeps the live arena on the same palette and texture.
+    let (left, top, right, bottom) = match index {
+        0 => match variation % 5 {
+            0 => (222., 299., 337., 414.),
+            1 => (340., 191., 449., 297.),
+            2 => (667., 541., 769., 655.),
+            3 => (898., 300., 1002., 413.),
+            _ => (1220., 542., 1325., 653.),
+        },
+        1 => match variation % 3 {
+            0 => (561., 541., 663., 655.),
+            1 => (563., 192., 665., 295.),
+            _ => (1006., 542., 1108., 655.),
+        },
+        2 => match variation % 3 {
+            0 => (452., 191., 557., 298.),
+            1 => (451., 542., 557., 655.),
+            _ => (1114., 542., 1218., 654.),
+        },
+        3 => (773., 290., 895., 417.),
+        4 => match variation % 3 {
+            0 => (330., 418., 445., 541.),
+            1 => (450., 418., 561., 541.),
+            _ => (1220., 418., 1330., 541.),
+        },
+        _ => (222., 299., 337., 414.),
+    };
+    let mut image = ImageNode::new(art.tank_concept.clone());
+    image.image_mode = NodeImageMode::Stretch;
+    image.rect = Some(Rect::from_corners(
+        Vec2::new(left, top),
+        Vec2::new(right, bottom),
+    ));
+    image
+}
+
+fn tank_sprite_image(art: &Art, friendly: bool, tint: Color) -> ImageNode {
+    let cell = 887.;
+    let column = usize::from(!friendly);
+    let mut image = ImageNode::new(art.tank_sprites.clone());
+    image.image_mode = NodeImageMode::Stretch;
+    image.color = tint;
+    image.rect = Some(Rect::from_corners(
+        Vec2::new(column as f32 * cell, 0.),
+        Vec2::new((column + 1) as f32 * cell, cell),
+    ));
+    image
+}
+
+fn tank_hud_stat(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    _icon: &str,
+    caption: &str,
+    value: impl Into<String>,
+    _accent: Color,
+) {
+    let value = value.into();
+    let shield_count = value.parse::<usize>().unwrap_or(0).min(3);
+    let is_level_badge = caption == "战区";
+    let is_score = caption == "得分";
+    let is_armor = caption == "护甲";
+    let is_enemy = caption == "敌军";
+    parent
+        .spawn((
+            Node {
+                width: if is_level_badge {
+                    Val::Px(170.)
+                } else if is_score {
+                    Val::Px(135.)
+                } else {
+                    Val::Auto
                 },
-                BackgroundColor(Color::BLACK),
-                BorderRadius::ZERO,
-            ))
-            .with_children(|p| {
-                p.spawn(Node {
-                    width: Val::Percent(100.),
-                    flex_shrink: 0.,
-                    justify_content: JustifyContent::SpaceBetween,
-                    ..row()
-                })
-                .with_children(|p| {
-                    label(
-                        p,
-                        art,
-                        format!("{} · 黄灯预警后开炮", g.map_name()),
-                        19.,
-                        Color::WHITE,
-                    );
-                    label(
-                        p,
-                        art,
-                        format!(
-                            "击毁 {}/{} · 场上 {} · 待出场 {} · 护甲 {}",
-                            g.defeated,
-                            g.level_total(),
-                            g.enemies.len(),
-                            g.reserves,
-                            g.lives
-                        ),
-                        16.,
-                        SOFT,
-                    );
-                });
-                p.spawn((
+                padding: UiRect::axes(Val::Px(if is_level_badge { 6. } else { 8. }), Val::Px(5.)),
+                column_gap: Val::Px(8.),
+                align_items: AlignItems::Center,
+                border: UiRect::all(Val::Px(1.)),
+                ..row()
+            },
+            BackgroundColor(Color::srgb(0.02, 0.09, 0.08)),
+            BorderColor(if is_level_badge {
+                Color::srgba(0.75, 0.55, 0.13, 0.7)
+            } else {
+                Color::srgba(0.31, 0.55, 0.38, 0.55)
+            }),
+            BorderRadius::all(Val::Px(10.)),
+        ))
+        .with_children(|stat| {
+            if is_level_badge || is_armor {
+                let (rect, icon_width) = if is_level_badge {
+                    (
+                        Rect::from_corners(Vec2::new(41., 8.), Vec2::new(117., 50.)),
+                        58.,
+                    )
+                } else {
+                    (
+                        Rect::from_corners(Vec2::new(896., 11.), Vec2::new(931., 50.)),
+                        26.,
+                    )
+                };
+                stat.spawn((
                     Node {
-                        width: Val::Px(board),
-                        height: Val::Px(board),
-                        min_width: Val::Px(board),
-                        min_height: Val::Px(board),
-                        position_type: PositionType::Relative,
-                        flex_direction: FlexDirection::Column,
-                        overflow: Overflow::clip(),
+                        width: Val::Px(icon_width),
+                        height: Val::Px(32.),
                         ..default()
                     },
-                    BackgroundColor(Color::BLACK),
-                    BorderRadius::ZERO,
-                ))
-                .with_children(|board_node| {
-                    for y in 0..7_i8 {
-                        board_node
-                            .spawn(Node {
-                                width: Val::Percent(100.),
-                                height: Val::Px(cell),
-                                min_height: Val::Px(cell),
-                                ..row()
-                            })
-                            .with_children(|row| {
-                                for x in 0..7_i8 {
-                                    let wall = g.walls.contains(&(x, y));
-                                    let steel = g.steel.contains(&(x, y));
-                                    let bush = g.bushes.contains(&(x, y));
-                                    row.spawn((
-                                        Node {
-                                            width: Val::Px(cell),
-                                            height: Val::Px(cell),
-                                            border: UiRect::all(Val::Px(1.)),
-                                            ..default()
-                                        },
-                                        BackgroundColor(if wall {
-                                            Color::srgb(0.72, 0.18, 0.10)
-                                        } else if steel {
-                                            Color::srgb(0.72, 0.73, 0.71)
-                                        } else if bush {
-                                            Color::srgb(0.18, 0.58, 0.12)
-                                        } else {
-                                            Color::BLACK
-                                        }),
-                                        BorderColor(Color::srgb(0.09, 0.09, 0.09)),
-                                    ))
-                                    .with_children(|tile| {
-                                        if wall {
-                                            for top in [cell * 0.16, cell * 0.46, cell * 0.76] {
-                                                tile.spawn((
-                                                    Node {
-                                                        position_type: PositionType::Absolute,
-                                                        left: Val::Px(3.),
-                                                        right: Val::Px(3.),
-                                                        top: Val::Px(top),
-                                                        height: Val::Px(cell * 0.055),
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(Color::srgb(1.0, 0.42, 0.16)),
-                                                ));
-                                            }
-                                        } else if steel {
-                                            for (left, top) in [
-                                                (6., 6.),
-                                                (cell * 0.55, 6.),
-                                                (6., cell * 0.55),
-                                                (cell * 0.55, cell * 0.55),
-                                            ] {
-                                                tile.spawn((
-                                                    Node {
-                                                        position_type: PositionType::Absolute,
-                                                        left: Val::Px(left),
-                                                        top: Val::Px(top),
-                                                        width: Val::Px(cell * 0.25),
-                                                        height: Val::Px(cell * 0.25),
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(Color::srgb(0.92, 0.93, 0.91)),
-                                                ));
-                                            }
-                                        } else if bush {
-                                            for (left, top) in [
-                                                (3., cell * 0.42),
-                                                (cell * 0.28, cell * 0.18),
-                                                (cell * 0.56, cell * 0.42),
-                                            ] {
-                                                tile.spawn((
-                                                    Node {
-                                                        position_type: PositionType::Absolute,
-                                                        left: Val::Px(left),
-                                                        top: Val::Px(top),
-                                                        width: Val::Px(cell * 0.34),
-                                                        height: Val::Px(cell * 0.42),
-                                                        ..default()
-                                                    },
-                                                    BackgroundColor(Color::srgb(0.30, 0.78, 0.16)),
-                                                    BorderRadius::all(Val::Px(2.)),
-                                                ));
-                                            }
-                                        }
-                                    });
-                                }
-                            });
-                    }
-                    // Blue base sits behind the player on the bottom middle tile.
-                    board_node.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(cell * 3. + cell * 0.22),
-                            top: Val::Px(cell * 6. + cell * 0.58),
-                            width: Val::Px(cell * 0.56),
-                            height: Val::Px(cell * 0.22),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.24, 0.54, 0.88)),
-                        BorderRadius::all(Val::Px(4.)),
-                    ));
-                    board_node
-                        .spawn(Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(g.player.0 as f32 * cell + cell * 0.10),
-                            top: Val::Px(g.player.1 as f32 * cell + cell * 0.10),
-                            width: Val::Px(cell * 0.80),
-                            height: Val::Px(cell * 0.80),
-                            ..default()
-                        })
-                        .with_children(|tank| {
-                            tank_sprite(
-                                tank,
-                                if g.invulnerable > 0. {
-                                    Color::srgb(0.72, 0.93, 1.)
-                                } else {
-                                    Color::srgb(0.29, 0.63, 0.92)
-                                },
-                                g.direction,
-                            )
-                        });
-                    for enemy in &g.enemies {
-                        board_node
-                            .spawn(Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(enemy.x as f32 * cell + cell * 0.10),
-                                top: Val::Px(enemy.y as f32 * cell + cell * 0.10),
-                                width: Val::Px(cell * 0.80),
-                                height: Val::Px(cell * 0.80),
-                                ..default()
-                            })
-                            .with_children(|tank| {
-                                tank_sprite(
-                                    tank,
-                                    if enemy.warning > 0. {
-                                        Color::srgb(1., 0.79, 0.16)
-                                    } else {
-                                        Color::srgb(0.88, 0.31, 0.27)
-                                    },
-                                    enemy.direction,
-                                )
-                            });
-                    }
-                    for bullet in &g.bullets {
-                        board_node.spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(bullet.x * cell - cell * 0.09),
-                                top: Val::Px(bullet.y * cell - cell * 0.09),
-                                width: Val::Px(cell * 0.18),
-                                height: Val::Px(cell * 0.18),
-                                ..default()
-                            },
-                            BackgroundColor(if bullet.friendly {
-                                Color::srgb(1., 0.82, 0.25)
-                            } else {
-                                Color::srgb(1., 0.43, 0.28)
-                            }),
-                            BorderRadius::all(Val::Px(cell * 0.09)),
-                        ));
-                    }
-                });
-                p.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        right: Val::Px(if compact { 8. } else { 18. }),
-                        top: Val::Px(if compact { 42. } else { 62. }),
-                        width: Val::Px(if compact { 64. } else { 88. }),
-                        flex_direction: FlexDirection::Column,
-                        align_items: AlignItems::Center,
-                        row_gap: Val::Px(4.),
-                        padding: UiRect::all(Val::Px(6.)),
-                        ..default()
+                    ImageNode {
+                        rect: Some(rect),
+                        image_mode: NodeImageMode::Stretch,
+                        ..ImageNode::new(art.tank_concept.clone())
                     },
-                    BackgroundColor(Color::srgb(0.47, 0.47, 0.45)),
-                ))
-                .with_children(|side| {
-                    label(
-                        side,
-                        art,
-                        "敌军",
-                        if compact { 12. } else { 15. },
-                        Color::BLACK,
-                    );
-                    for index in 0..5 {
-                        let alive = index < g.enemies.len();
-                        side.spawn((
-                            Node {
-                                width: Val::Px(if compact { 24. } else { 34. }),
-                                height: Val::Px(if compact { 24. } else { 34. }),
-                                ..default()
-                            },
-                            BackgroundColor(if alive {
-                                Color::srgb(0.88, 0.31, 0.27)
-                            } else {
-                                Color::srgb(0.31, 0.31, 0.30)
-                            }),
-                        ))
-                        .with_children(|tank| {
-                            if alive {
-                                tank_sprite(tank, Color::srgb(0.88, 0.31, 0.27), (0, 1));
-                            }
-                        });
-                    }
-                    label(
-                        side,
-                        art,
-                        "1P",
-                        if compact { 13. } else { 16. },
-                        Color::BLACK,
-                    );
-                    label(
-                        side,
-                        art,
-                        format!("×{}", g.lives),
-                        if compact { 15. } else { 19. },
-                        Color::srgb(0.80, 0.20, 0.08),
-                    );
-                });
-                if g.failed {
-                    p.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(0.),
-                            right: Val::Px(0.),
-                            top: Val::Px(0.),
-                            bottom: Val::Px(0.),
-                            justify_content: JustifyContent::Center,
-                            align_items: AlignItems::Center,
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(12.),
-                            padding: UiRect::all(Val::Px(22.)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgba(0.02, 0.04, 0.06, 0.88)),
-                        ZIndex(5),
-                    ))
-                    .with_children(|panel| {
-                        label(
-                            panel,
-                            art,
-                            "基地失守",
-                            if compact { 28. } else { 34. },
-                            Color::srgb(1., 0.65, 0.30),
-                        );
-                        label(
-                            panel,
-                            art,
-                            "可以重试当前关卡，护甲会补满",
-                            16.,
-                            Color::WHITE,
-                        );
-                        panel.spawn(row()).with_children(|actions| {
-                            button(
-                                actions,
-                                art,
-                                "重试本关",
-                                Action::TankRetry,
-                                118.,
-                                46.,
-                                Color::srgb(0.30, 0.74, 0.60),
-                                NAVY,
-                            );
-                            button(
-                                actions,
-                                art,
-                                "返回游戏库",
-                                Action::Library,
-                                118.,
-                                46.,
-                                SLATE,
-                                Color::WHITE,
-                            );
-                        });
-                    });
+                ));
+            }
+            if !is_level_badge {
+                label(stat, art, caption, 12., Color::srgb(0.82, 0.88, 0.81));
+            }
+            label(
+                stat,
+                art,
+                value,
+                if is_level_badge { 20. } else { 18. },
+                if is_score || is_enemy {
+                    Color::srgb(1., 0.84, 0.33)
+                } else {
+                    Color::WHITE
+                },
+            );
+            if is_armor {
+                for _ in 0..shield_count {
+                    label(stat, art, "◆", 13., Color::srgb(0.28, 0.89, 0.96));
                 }
-                if !compact {
-                    label(p, art, &g.feedback, 16., Color::srgb(1., 0.83, 0.46));
-                }
-                let stick_size = if compact { 176. } else { 150. };
-                p.spawn((
-                    TankStick,
-                    WorldInputBlocker,
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(14.),
-                        bottom: Val::Px(16.),
-                        width: Val::Px(stick_size),
-                        height: Val::Px(stick_size),
-                        border: UiRect::all(Val::Px(4.)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.14, 0.24, 0.31)),
-                    BorderColor(Color::srgb(0.38, 0.59, 0.68)),
-                    BorderRadius::all(Val::Percent(50.)),
-                ))
-                .with_children(|stick| {
-                    stick
-                        .spawn((
-                            TankKnob,
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Percent(32.),
-                                top: Val::Percent(32.),
-                                width: Val::Percent(36.),
-                                height: Val::Percent(36.),
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                border: UiRect::all(Val::Px(2.)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.33, 0.68, 0.81)),
-                            BorderColor(Color::srgb(0.67, 0.90, 0.95)),
-                            BorderRadius::all(Val::Percent(50.)),
-                        ))
-                        .with_children(|knob| label(knob, art, "移动", 16., Color::WHITE));
-                });
-                p.spawn((
-                    TankFirePad,
-                    WorldInputBlocker,
-                    Node {
-                        position_type: PositionType::Absolute,
-                        right: Val::Px(24.),
-                        bottom: Val::Px(38.),
-                        width: Val::Px(124.),
-                        height: Val::Px(124.),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        flex_direction: FlexDirection::Column,
-                        border: UiRect::all(Val::Px(4.)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.78, 0.25, 0.16)),
-                    BorderColor(Color::srgb(1., 0.65, 0.30)),
-                    BorderRadius::all(Val::Percent(50.)),
-                ))
-                .with_children(|p| {
-                    label(p, art, "开火", 28., Color::WHITE);
-                    label(p, art, "按住连发", 14., Color::WHITE);
-                });
-                if !compact {
-                    label(p, art, "键盘：方向键或 WASD 移动，空格开火", 14., SOFT);
-                }
-            });
-            if !compact {
-                root.spawn(Node {
-                    width: Val::Percent(100.),
-                    max_width: Val::Px(860.),
-                    justify_content: JustifyContent::SpaceBetween,
-                    ..row()
-                })
-                .with_children(|p| {
-                    label(p, art, "炮口会朝最后一次移动的方向", 15., SOFT);
-                    button(
-                        p,
-                        art,
-                        "重新部署",
-                        Action::TankReset,
-                        104.,
-                        38.,
-                        Color::srgb(0.34, 0.42, 0.72),
-                        Color::WHITE,
-                    );
-                });
             }
         });
 }
 
-fn tank_sprite(parent: &mut ChildSpawnerCommands, color: Color, direction: (i8, i8)) {
-    let part = |parent: &mut ChildSpawnerCommands, left, top, width, height, color| {
-        parent.spawn((
+fn tank_wide_ui(commands: &mut Commands, g: &TankGame, art: &Art, width: f32, height: f32) {
+    // The concept uses small ground tiles around larger, spaced gameplay objects.
+    // Keep the 7 x 7 collision map, but draw it on a denser 15 x 8 field.
+    let columns = 15_i8;
+    let rows = 8_i8;
+    let tile_gap = 0.;
+    let cell_w = (width - (columns as f32 - 1.) * tile_gap) / columns as f32;
+    let cell_h = (height - (rows as f32 - 1.) * tile_gap) / rows as f32;
+    let step_w = cell_w + tile_gap;
+    let step_h = cell_h + tile_gap;
+    let control = (height * 0.15).clamp(96., 112.);
+    let tank_side = cell_h * 1.85;
+    commands
+        .spawn((
+            UiRoot,
             Node {
-                position_type: PositionType::Absolute,
-                left: Val::Percent(left),
-                top: Val::Percent(top),
-                width: Val::Percent(width),
-                height: Val::Percent(height),
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                position_type: PositionType::Relative,
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(color),
-            BorderRadius::all(Val::Px(3.)),
-        ));
-    };
-    let tread = Color::srgb(0.12, 0.16, 0.20);
-    part(parent, 8., 22., 84., 56., tread);
-    part(parent, 18., 29., 64., 40., color);
-    part(parent, 34., 18., 32., 28., color);
-    let barrel = Color::srgb(0.78, 0.82, 0.76);
-    match direction {
-        (0, -1) => part(parent, 45., 0., 10., 25., barrel),
-        (0, 1) => part(parent, 45., 71., 10., 27., barrel),
-        (-1, 0) => part(parent, 0., 44., 28., 10., barrel),
-        _ => part(parent, 72., 44., 28., 10., barrel),
-    }
-    part(parent, 42., 33., 16., 12., Color::srgb(0.15, 0.18, 0.22));
+            BackgroundColor(Color::srgb(0.15, 0.30, 0.16)),
+        ))
+        .with_children(|root| {
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(0.),
+                    top: Val::Px(0.),
+                    width: Val::Percent(100.),
+                    height: Val::Percent(100.),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: Val::Px(tile_gap),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.20, 0.36, 0.20)),
+            ))
+            .with_children(|arena| {
+                for y in 0..rows {
+                    arena
+                        .spawn(Node {
+                            width: Val::Percent(100.),
+                            height: Val::Px(cell_h),
+                            min_height: Val::Px(cell_h),
+                            column_gap: Val::Px(tile_gap),
+                            ..row()
+                        })
+                        .with_children(|row_node| {
+                            for x in 0..columns {
+                                let is_border_decor = x == 0 || x == columns - 1;
+                                let mapped_y = |ly: i8| ly;
+                                let mapped_x = |lx: i8| ((2.5 + lx as f32 * 1.45).round()) as i8;
+                                let wall = !is_border_decor
+                                    && g.walls
+                                        .iter()
+                                        .any(|&(lx, ly)| x == mapped_x(lx) && y == mapped_y(ly));
+                                let steel = !is_border_decor
+                                    && g.steel
+                                        .iter()
+                                        .any(|&(lx, ly)| x == mapped_x(lx) && y == mapped_y(ly));
+                                let bush = !is_border_decor
+                                    && g.bushes.iter().any(|&(lx, ly)| {
+                                        let bx = match lx {
+                                            0 => 2,
+                                            1 => 3,
+                                            5 => 11,
+                                            6 => 12,
+                                            _ => mapped_x(lx),
+                                        };
+                                        x == bx && y == mapped_y(ly)
+                                    });
+                                let obstacle_index = if wall {
+                                    Some(2)
+                                } else if steel {
+                                    Some(3)
+                                } else if bush {
+                                    Some(4)
+                                } else {
+                                    None
+                                };
+                                let tile_index = if is_border_decor {
+                                    if (x + y) % 2 == 0 { 5 } else { 4 }
+                                } else if obstacle_index.is_none() && (x == 5 || x == 9) {
+                                    1
+                                } else {
+                                    0
+                                };
+                                let mut tile_image = tank_concept_tile(
+                                    art,
+                                    tile_index,
+                                    x as usize * 7 + y as usize * 11,
+                                );
+                                tile_image.image_mode = NodeImageMode::Stretch;
+                                row_node
+                                    .spawn((
+                                        Node {
+                                            width: Val::Px(cell_w),
+                                            height: Val::Px(cell_h),
+                                            min_width: Val::Px(cell_w),
+                                            border: UiRect::all(Val::Px(1.)),
+                                            ..default()
+                                        },
+                                        tile_image,
+                                        BackgroundColor(Color::WHITE),
+                                        BorderColor(Color::srgb(0.24, 0.37, 0.16)),
+                                        BorderRadius::all(Val::Px(2.)),
+                                    ))
+                                    .with_children(|cell| {
+                                        if let Some(obstacle_index) = obstacle_index {
+                                            let scale = if bush { 1.0 } else { 0.94 };
+                                            let mut obstacle_image = tank_concept_tile(
+                                                art,
+                                                obstacle_index,
+                                                x as usize + y as usize,
+                                            );
+                                            obstacle_image.image_mode = NodeImageMode::Stretch;
+                                            cell.spawn((
+                                                Node {
+                                                    position_type: PositionType::Absolute,
+                                                    left: Val::Px(cell_w * (1. - scale) * 0.5),
+                                                    top: Val::Px(cell_h * 0.04),
+                                                    width: Val::Px(cell_w * scale),
+                                                    height: Val::Px(cell_h * 0.92),
+                                                    ..default()
+                                                },
+                                                obstacle_image,
+                                            ));
+                                        }
+                                    });
+                            }
+                        });
+                }
+                let side_width = width * 210. / 1672.;
+                for (left, right, right_side) in [(0., 210., false), (1462., 1672., true)] {
+                    let mut side_image = ImageNode::new(art.tank_concept.clone());
+                    side_image.image_mode = NodeImageMode::Stretch;
+                    side_image.rect = Some(Rect::from_corners(
+                        Vec2::new(left, 0.),
+                        Vec2::new(right, 941.),
+                    ));
+                    arena.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: if right_side { Val::Auto } else { Val::Px(0.) },
+                            right: if right_side { Val::Px(0.) } else { Val::Auto },
+                            top: Val::Px(0.),
+                            width: Val::Px(side_width),
+                            height: Val::Percent(100.),
+                            ..default()
+                        },
+                        side_image,
+                    ));
+                }
+                let spawn_tank = |parent: &mut ChildSpawnerCommands,
+                                  x: f32,
+                                  y: f32,
+                                  friendly: bool,
+                                  color: Color,
+                                  direction: (i8, i8)| {
+                    parent
+                        .spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(x + (cell_w - tank_side) * 0.5),
+                                top: Val::Px(y + (cell_h - tank_side) * 0.5),
+                                width: Val::Px(tank_side),
+                                height: Val::Px(tank_side),
+                                ..default()
+                            },
+                            Transform::from_rotation(Quat::from_rotation_z(match direction {
+                                (0, -1) => 0.,
+                                (1, 0) => -std::f32::consts::FRAC_PI_2,
+                                (0, 1) => std::f32::consts::PI,
+                                (-1, 0) => std::f32::consts::FRAC_PI_2,
+                                _ => 0.,
+                            })),
+                        ))
+                        .insert(tank_sprite_image(art, friendly, color));
+                };
+                spawn_tank(
+                    arena,
+                    (2.5 + g.player.0 as f32 * 1.45) * step_w,
+                    (0.6 + g.player.1 as f32 * 5.8 / 6.) * step_h,
+                    true,
+                    if g.invulnerable > 0. {
+                        Color::srgb(0.88, 0.97, 1.)
+                    } else {
+                        Color::WHITE
+                    },
+                    g.direction,
+                );
+                for enemy in &g.enemies {
+                    spawn_tank(
+                        arena,
+                        (2.5 + enemy.x as f32 * 1.45) * step_w,
+                        (0.6 + enemy.y as f32 * 5.8 / 6.) * step_h,
+                        false,
+                        if enemy.warning > 0. {
+                            Color::srgb(1., 0.90, 0.67)
+                        } else {
+                            Color::WHITE
+                        },
+                        enemy.direction,
+                    );
+                }
+                for bullet in &g.bullets {
+                    arena.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(((2.5 + bullet.x * 1.45) * step_w) - cell_h * 0.08),
+                            top: Val::Px((0.6 + bullet.y * 5.8 / 6.) * step_h - cell_h * 0.08),
+                            width: Val::Px(cell_h * 0.16),
+                            height: Val::Px(cell_h * 0.16),
+                            ..default()
+                        },
+                        BackgroundColor(if bullet.friendly {
+                            Color::srgb(1., 0.82, 0.25)
+                        } else {
+                            Color::srgb(1., 0.43, 0.28)
+                        }),
+                        BorderRadius::all(Val::Percent(50.)),
+                    ));
+                }
+                if g.failed {
+                    arena
+                        .spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(0.),
+                                right: Val::Px(0.),
+                                top: Val::Px(0.),
+                                bottom: Val::Px(0.),
+                                justify_content: JustifyContent::Center,
+                                align_items: AlignItems::Center,
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(12.),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.02, 0.04, 0.06, 0.88)),
+                            ZIndex(5),
+                        ))
+                        .with_children(|panel| {
+                            label(panel, art, "基地失守", 34., Color::srgb(1., 0.65, 0.30));
+                            label(
+                                panel,
+                                art,
+                                "可以重试当前关卡，护甲会补满",
+                                18.,
+                                Color::WHITE,
+                            );
+                            panel.spawn(row()).with_children(|actions| {
+                                button(
+                                    actions,
+                                    art,
+                                    "重试本关",
+                                    Action::TankRetry,
+                                    118.,
+                                    46.,
+                                    Color::srgb(0.30, 0.74, 0.60),
+                                    NAVY,
+                                );
+                                button(
+                                    actions,
+                                    art,
+                                    "返回游戏库",
+                                    Action::Library,
+                                    128.,
+                                    46.,
+                                    SLATE,
+                                    Color::WHITE,
+                                );
+                            });
+                        });
+                }
+            });
+
+            root.spawn(Node {
+                position_type: PositionType::Absolute,
+                left: Val::Px(16.),
+                right: Val::Px(16.),
+                top: Val::Px(0.),
+                justify_content: JustifyContent::SpaceBetween,
+                align_items: AlignItems::Center,
+                ..row()
+            })
+            .with_children(|hud| {
+                tank_hud_stat(
+                    hud,
+                    art,
+                    "★",
+                    "战区",
+                    format!("第 {} 关", g.wave),
+                    Color::srgb(0.83, 0.57, 0.16),
+                );
+                hud.spawn((Node {
+                    padding: UiRect::axes(Val::Px(8.), Val::Px(5.)),
+                    column_gap: Val::Px(10.),
+                    ..row()
+                },))
+                    .with_children(|stats| {
+                        tank_hud_stat(
+                            stats,
+                            art,
+                            "分",
+                            "得分",
+                            format!("{:05}", g.score),
+                            Color::srgb(0.27, 0.59, 0.52),
+                        );
+                        tank_hud_stat(
+                            stats,
+                            art,
+                            "盾",
+                            "护甲",
+                            g.lives.to_string(),
+                            Color::srgb(0.24, 0.53, 0.72),
+                        );
+                    });
+                hud.spawn(row()).with_children(|actions| {
+                    button(
+                        actions,
+                        art,
+                        "重新开始",
+                        Action::TankReset,
+                        100.,
+                        45.,
+                        Color::srgb(0.13, 0.31, 0.57),
+                        Color::WHITE,
+                    );
+                    button(
+                        actions,
+                        art,
+                        "返回游戏库",
+                        Action::Library,
+                        116.,
+                        45.,
+                        Color::srgb(0.06, 0.15, 0.16),
+                        Color::WHITE,
+                    );
+                });
+            });
+
+            // The right border already contains the concept's enemy badge.
+            // Cover only its sample number and draw the live count in its place.
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(13.),
+                    top: Val::Px(52.),
+                    width: Val::Px(45.),
+                    height: Val::Px(42.),
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..default()
+                },
+                BackgroundColor(Color::srgb(0.02, 0.09, 0.08)),
+                BorderRadius::all(Val::Px(6.)),
+            ))
+            .with_children(|enemy_count| {
+                label(
+                    enemy_count,
+                    art,
+                    format!("{:02}", g.enemies.len() + g.reserves as usize),
+                    18.,
+                    Color::srgb(1., 0.84, 0.33),
+                );
+            });
+
+            root.spawn((
+                TankStick,
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    left: Val::Px(14.),
+                    bottom: Val::Px(14.),
+                    width: Val::Px(control),
+                    height: Val::Px(control),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                BorderRadius::all(Val::Percent(50.)),
+                ImageNode {
+                    rect: Some(Rect::from_corners(
+                        Vec2::new(17., 798.),
+                        Vec2::new(138., 925.),
+                    )),
+                    image_mode: NodeImageMode::Stretch,
+                    ..ImageNode::new(art.tank_concept.clone())
+                },
+            ));
+            root.spawn((
+                TankFirePad,
+                WorldInputBlocker,
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(9.),
+                    bottom: Val::Px(13.),
+                    width: Val::Px(control),
+                    height: Val::Px(control),
+                    overflow: Overflow::clip(),
+                    ..default()
+                },
+                BorderRadius::all(Val::Percent(50.)),
+                ImageNode {
+                    rect: Some(Rect::from_corners(
+                        Vec2::new(1540., 796.),
+                        Vec2::new(1661., 922.),
+                    )),
+                    image_mode: NodeImageMode::Stretch,
+                    ..ImageNode::new(art.tank_concept.clone())
+                },
+            ));
+        });
 }
 
 // The library keeps its title and return button visible while the card collection
@@ -17024,6 +20621,7 @@ fn library_scroll_input(
     mut drag: ResMut<LibraryDrag>,
     mut s: ResMut<Session>,
     mut cards: Query<(&mut ScrollPosition, &ComputedNode, &GlobalTransform), With<LibraryCards>>,
+    game_buttons: Query<(&Action, &ComputedNode, &GlobalTransform), With<Button>>,
 ) {
     if !s.library_open {
         *drag = LibraryDrag::default();
@@ -17091,7 +20689,25 @@ fn library_scroll_input(
             scroll.offset_y =
                 (scroll.offset_y + drag.move_to(point, scale.0)).clamp(0., max_scroll);
         }
-        if let Some(mode) = drag.finish(released, scale.0) {
+        let raw_tap = released
+            .filter(|point| {
+                drag.in_list
+                    && drag
+                        .start
+                        .is_some_and(|start| point.distance(start) / scale.0.max(0.01) < 8.)
+            })
+            .and_then(|point| {
+                let physical = point * window.scale_factor();
+                game_buttons.iter().find_map(|(action, node, transform)| {
+                    let Action::SelectGame(mode) = action else {
+                        return None;
+                    };
+                    Rect::from_center_size(transform.translation().truncate(), node.size())
+                        .contains(physical)
+                        .then_some(*mode)
+                })
+            });
+        if let Some(mode) = drag.finish(released, scale.0).or(raw_tap) {
             if mode == GameMode::Island {
                 s.library_open = false;
                 s.magnet_modes_open = true;
@@ -17519,6 +21135,7 @@ fn library_ui(commands: &mut Commands, _s: &Session, art: &Art, compact: bool) {
                         (GameMode::Fishing, Color::srgb(0.08, 0.50, 0.68)),
                         (GameMode::HoneyHunt, Color::srgb(0.86, 0.52, 0.15)),
                         (GameMode::MoonFestival, Color::srgb(0.78, 0.16, 0.18)),
+                        (GameMode::SpaceCourier, Color::srgb(0.21, 0.56, 0.86)),
                         (GameMode::Snake, Color::srgb(0.28, 0.68, 0.34)),
                         (GameMode::Minesweeper, Color::srgb(0.38, 0.44, 0.54)),
                         (GameMode::Classic2048, Color::srgb(0.82, 0.51, 0.22)),
@@ -17835,21 +21452,23 @@ fn game_wants_portrait(mode: GameMode, library_open: bool) -> bool {
             | GameMode::Tetris
             | GameMode::MoonFestival
             | GameMode::Snake
-            | GameMode::Minesweeper
             | GameMode::Classic2048
             | GameMode::Klotski
-            | GameMode::Sokoban
             | GameMode::Sudoku
             | GameMode::LightPath
     ) && !library_open
 }
 fn sync_game_orientation(
     s: Res<Session>,
-    mut applied: Local<Option<bool>>,
+    mut applied: Local<Option<(bool, bool)>>,
     mut windows: Query<&mut Window, With<PrimaryWindow>>,
 ) {
     let portrait = game_wants_portrait(s.mode, s.library_open);
-    if *applied == Some(portrait) {
+    let game_wide = matches!(
+        s.mode,
+        GameMode::TankBattle | GameMode::Firefighters | GameMode::Detective | GameMode::SpaceFarm
+    ) && !s.library_open;
+    if *applied == Some((portrait, game_wide)) {
         return;
     }
     #[cfg(target_os = "android")]
@@ -17888,13 +21507,15 @@ fn sync_game_orientation(
                 }
             } else if phone_preview {
                 (960., 540.)
+            } else if game_wide {
+                (1280., 720.)
             } else {
                 (1280., 800.)
             };
             window.resolution.set(width, height);
         }
     }
-    *applied = Some(portrait);
+    *applied = Some((portrait, game_wide));
 }
 #[cfg(test)]
 mod orientation_tests {
@@ -17906,6 +21527,8 @@ mod orientation_tests {
         assert!(game_wants_portrait(GameMode::Tetris, false));
         assert!(game_wants_portrait(GameMode::MoonFestival, false));
         assert!(!game_wants_portrait(GameMode::GardenDefense, false));
+        assert!(!game_wants_portrait(GameMode::Sokoban, false));
+        assert!(!game_wants_portrait(GameMode::Minesweeper, false));
         assert!(!game_wants_portrait(GameMode::GardenDefense, true));
         for mode in [
             GameMode::Island,
@@ -17961,5 +21584,122 @@ mod tank_stick_tests {
             assert_eq!(tank_stick_direction(point, 90.), Some(expected));
             assert_eq!(tank_stick_direction(point * 3., 90.), Some(expected));
         }
+    }
+}
+
+#[cfg(test)]
+mod bomber_joystick_tests {
+    use super::*;
+
+    #[test]
+    fn joystick_has_dead_zone_and_uses_dominant_axis() {
+        assert_eq!(bomber_joystick_direction(Vec2::ZERO, 56.), None);
+        assert_eq!(bomber_joystick_direction(Vec2::new(5., -5.), 56.), None);
+        assert_eq!(
+            bomber_joystick_direction(Vec2::new(45., 20.), 56.),
+            Some((1, 0))
+        );
+        assert_eq!(
+            bomber_joystick_direction(Vec2::new(-45., 20.), 56.),
+            Some((-1, 0))
+        );
+        assert_eq!(
+            bomber_joystick_direction(Vec2::new(20., -45.), 56.),
+            Some((0, -1))
+        );
+        assert_eq!(
+            bomber_joystick_direction(Vec2::new(20., 45.), 56.),
+            Some((0, 1))
+        );
+        // A captured finger may leave the ring without losing its direction.
+        assert_eq!(
+            bomber_joystick_direction(Vec2::new(500., 20.), 56.),
+            Some((1, 0))
+        );
+    }
+}
+
+#[cfg(test)]
+mod bomber_multitouch_tests {
+    use super::*;
+    use bevy::input::{
+        InputPlugin,
+        touch::{TouchInput, TouchPhase},
+    };
+
+    #[test]
+    fn captured_joystick_survives_second_finger_and_stops_on_release() {
+        let mut app = App::new();
+        app.add_plugins(InputPlugin)
+            .init_resource::<Time>()
+            .init_resource::<BomberHold>()
+            .add_systems(Update, bomber_joystick_input);
+        let mut session = Session::new();
+        session.mode = GameMode::BubbleBomber;
+        session.library_open = false;
+        session.help_open = false;
+        session.bomber = BomberGame::new();
+        session.bomber.bricks.clear();
+        session.bomber.bushes.clear();
+        session.bomber.pots.clear();
+        app.insert_resource(session);
+        let window = app
+            .world_mut()
+            .spawn((Window::default(), PrimaryWindow))
+            .id();
+        app.world_mut().spawn((
+            BomberJoystick,
+            ComputedNode {
+                size: Vec2::splat(100.),
+                ..default()
+            },
+            GlobalTransform::from_translation(Vec3::new(100., 100., 0.)),
+        ));
+        let knob = app
+            .world_mut()
+            .spawn((BomberJoystickKnob, Node::default()))
+            .id();
+        app.world_mut().spawn((
+            BomberTouchPlace,
+            ComputedNode {
+                size: Vec2::splat(100.),
+                ..default()
+            },
+            GlobalTransform::from_translation(Vec3::new(800., 100., 0.)),
+        ));
+        let send = |app: &mut App, id, phase, position| {
+            app.world_mut().send_event(TouchInput {
+                window,
+                id,
+                phase,
+                position,
+                force: None,
+            });
+        };
+        send(&mut app, 11, TouchPhase::Started, Vec2::new(100., 70.));
+        app.update();
+        assert_eq!(app.world().resource::<Session>().bomber.player, (2, 7));
+        assert_eq!(app.world().resource::<BomberHold>().touch_id, Some(11));
+        send(&mut app, 22, TouchPhase::Started, Vec2::new(800., 100.));
+        app.world_mut()
+            .resource_mut::<Time>()
+            .advance_by(std::time::Duration::from_millis(170));
+        app.update();
+        let session = app.world().resource::<Session>();
+        assert_eq!(session.bomber.player, (2, 6));
+        assert_eq!(session.bomber.bombs.len(), 1);
+        assert_eq!(
+            (session.bomber.bombs[0].x, session.bomber.bombs[0].y),
+            (2, 6)
+        );
+        assert_eq!(app.world().resource::<BomberHold>().touch_id, Some(11));
+        send(&mut app, 11, TouchPhase::Ended, Vec2::new(100., 70.));
+        app.update();
+        assert_eq!(app.world().resource::<Session>().bomber.player, (2, 6));
+        assert_eq!(app.world().resource::<BomberHold>().direction, None);
+        assert_eq!(
+            app.world().get::<Node>(knob).unwrap().left,
+            Val::Percent(27.)
+        );
     }
 }

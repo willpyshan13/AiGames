@@ -5,15 +5,15 @@ const GOLD: Color = Color::srgb(1.00, 0.77, 0.30);
 const CREAM: Color = Color::srgb(1.00, 0.94, 0.78);
 
 pub(super) struct MoonFestivalGame {
-    dice: [u8; 6],
+    pub(super) dice: [u8; 6],
     pub(super) score: u32,
     pub(super) rolls_left: u8,
-    rolling: bool,
+    pub(super) rolling: bool,
     roll_clock: f32,
     sparkle: f32,
     seed: u32,
-    collection: [u8; 3],
-    feedback: String,
+    pub(super) collection: [u8; 3],
+    pub(super) feedback: String,
 }
 
 impl MoonFestivalGame {

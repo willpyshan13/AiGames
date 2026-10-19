@@ -224,6 +224,13 @@ impl MinesweeperGame {
         if self.revealed[index] || self.flagged[index] || self.lost || self.won {
             return;
         }
+        // The first move always opens a safe square.
+        if !self.revealed.iter().any(|&revealed| revealed) && self.mines[index] {
+            self.mines[index] = false;
+            if let Some(next) = (0..64).find(|&cell| !self.mines[cell] && cell != index) {
+                self.mines[next] = true;
+            }
+        }
         if self.mines[index] {
             self.lost = true;
             self.revealed[index] = true;
@@ -486,62 +493,6 @@ impl KlotskiGame {
     }
 }
 
-pub(super) struct SokobanGame {
-    pub(super) player: (i8, i8),
-    pub(super) crates: Vec<(i8, i8)>,
-    pub(super) moves: u32,
-    pub(super) won: bool,
-}
-impl SokobanGame {
-    pub(super) fn new() -> Self {
-        let mut g = Self {
-            player: (1, 1),
-            crates: vec![],
-            moves: 0,
-            won: false,
-        };
-        g.reset();
-        g
-    }
-    pub(super) fn reset(&mut self) {
-        self.player = (1, 1);
-        self.crates = vec![(3, 2), (4, 4)];
-        self.moves = 0;
-        self.won = false;
-    }
-    fn wall(point: (i8, i8)) -> bool {
-        let (x, y) = point;
-        x == 0
-            || y == 0
-            || x == 7
-            || y == 7
-            || matches!(point, (2, 1) | (2, 2) | (5, 2) | (2, 4) | (5, 4) | (2, 5))
-    }
-    pub(super) fn target(point: (i8, i8)) -> bool {
-        matches!(point, (5, 1) | (5, 5))
-    }
-    pub(super) fn move_player(&mut self, dx: i8, dy: i8) -> bool {
-        if self.won {
-            return false;
-        }
-        let next = (self.player.0 + dx, self.player.1 + dy);
-        if Self::wall(next) {
-            return false;
-        }
-        if let Some(index) = self.crates.iter().position(|&p| p == next) {
-            let pushed = (next.0 + dx, next.1 + dy);
-            if Self::wall(pushed) || self.crates.contains(&pushed) {
-                return false;
-            }
-            self.crates[index] = pushed;
-        }
-        self.player = next;
-        self.moves += 1;
-        self.won = self.crates.iter().all(|&p| Self::target(p));
-        true
-    }
-}
-
 pub(super) struct SudokuGame {
     puzzle: [u8; 81],
     solution: [u8; 81],
@@ -626,6 +577,10 @@ impl SudokuGame {
         self.mistakes = 0;
         self.won = false;
     }
+    pub(super) fn is_wrong(&self, index: usize) -> bool {
+        self.cells[index] != 0 && self.cells[index] != self.solution[index]
+    }
+
     pub(super) fn is_given(&self, index: usize) -> bool {
         self.puzzle[index] != 0
     }
@@ -894,6 +849,7 @@ fn designed_page(
         });
     retro_shortcuts(commands, art, reset);
 }
+
 fn retro_shortcuts(commands: &mut Commands, art: &Art, reset: Action) {
     commands
         .spawn((
@@ -953,7 +909,11 @@ fn snake_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32,
     commands
         .spawn((
             UiRoot,
-            Node { width: Val::Percent(100.), height: Val::Percent(100.), ..default() },
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                ..default()
+            },
         ))
         .with_children(|root| {
             let mut backdrop = ImageNode::new(art.snake_reference.clone());
@@ -990,17 +950,37 @@ fn snake_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32,
                     ..default()
                 },
                 BackgroundColor(Color::srgb(0.84, 0.88, 0.80)),
-                BorderColor(if game.over { Color::srgb(0.79, 0.39, 0.32) } else { Color::srgb(0.42, 0.53, 0.42) }),
+                BorderColor(if game.over {
+                    Color::srgb(0.79, 0.39, 0.32)
+                } else {
+                    Color::srgb(0.42, 0.53, 0.42)
+                }),
                 BorderRadius::all(Val::Px(8. * scale)),
                 ZIndex(1),
             ))
             .with_children(|board| {
                 for y in 0..SNAKE_H {
-                    board.spawn(Node { height: Val::Px(cell_h), column_gap: Val::Px(sx), ..row() })
+                    board
+                        .spawn(Node {
+                            height: Val::Px(cell_h),
+                            column_gap: Val::Px(sx),
+                            ..row()
+                        })
                         .with_children(|line| {
                             for x in 0..SNAKE_W {
-                                let shade = if (x + y) % 2 == 0 { Color::srgb(0.88, 0.91, 0.85) } else { Color::srgb(0.85, 0.89, 0.82) };
-                                line.spawn((Node { width: Val::Px(cell_w), height: Val::Px(cell_h), ..default() }, BackgroundColor(shade)));
+                                let shade = if (x + y) % 2 == 0 {
+                                    Color::srgb(0.88, 0.91, 0.85)
+                                } else {
+                                    Color::srgb(0.85, 0.89, 0.82)
+                                };
+                                line.spawn((
+                                    Node {
+                                        width: Val::Px(cell_w),
+                                        height: Val::Px(cell_h),
+                                        ..default()
+                                    },
+                                    BackgroundColor(shade),
+                                ));
                             }
                         });
                 }
@@ -1016,58 +996,141 @@ fn snake_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32,
                             height: Val::Px(cell_h - sx * 2.),
                             ..default()
                         },
-                        BackgroundColor(Color::srgb(0.19 + shade * 0.035, 0.34 + shade * 0.035, 0.24 + shade * 0.02)),
+                        BackgroundColor(Color::srgb(
+                            0.19 + shade * 0.035,
+                            0.34 + shade * 0.035,
+                            0.24 + shade * 0.02,
+                        )),
                         BorderRadius::all(Val::Px(5. * scale)),
                         ZIndex(4),
                     ));
                 }
                 if let Some(head) = body.first() {
-                    board.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(head.x * (cell_w + sx) + sx),
-                            top: Val::Px(head.y * (cell_h + sx) + sx),
-                            width: Val::Px(cell_w - sx * 2.),
-                            height: Val::Px(cell_h - sx * 2.),
-                            ..default()
-                        },
-                        BackgroundColor(if game.over { Color::srgb(0.72, 0.39, 0.31) } else { Color::srgb(0.34, 0.48, 0.34) }),
-                        BorderRadius::all(Val::Px(5. * scale)),
-                        ZIndex(5),
-                    )).with_children(|head_node| {
-                        let eyes = match game.direction {
-                            (1, 0) => [(cell_w * 0.66, cell_h * 0.25), (cell_w * 0.66, cell_h * 0.64)],
-                            (-1, 0) => [(cell_w * 0.25, cell_h * 0.25), (cell_w * 0.25, cell_h * 0.64)],
-                            (0, -1) => [(cell_w * 0.25, cell_h * 0.25), (cell_w * 0.64, cell_h * 0.25)],
-                            _ => [(cell_w * 0.25, cell_h * 0.64), (cell_w * 0.64, cell_h * 0.64)],
-                        };
-                        for (left, top) in eyes {
-                            head_node.spawn((
-                                Node { position_type: PositionType::Absolute, left: Val::Px(left), top: Val::Px(top), width: Val::Px(5. * scale), height: Val::Px(5. * scale), ..default() },
-                                BackgroundColor(Color::srgb(0.94, 0.93, 0.84)),
-                                BorderRadius::all(Val::Percent(50.)),
-                            ));
-                        }
-                    });
+                    board
+                        .spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(head.x * (cell_w + sx) + sx),
+                                top: Val::Px(head.y * (cell_h + sx) + sx),
+                                width: Val::Px(cell_w - sx * 2.),
+                                height: Val::Px(cell_h - sx * 2.),
+                                ..default()
+                            },
+                            BackgroundColor(if game.over {
+                                Color::srgb(0.72, 0.39, 0.31)
+                            } else {
+                                Color::srgb(0.34, 0.48, 0.34)
+                            }),
+                            BorderRadius::all(Val::Px(5. * scale)),
+                            ZIndex(5),
+                        ))
+                        .with_children(|head_node| {
+                            let eyes = match game.direction {
+                                (1, 0) => [
+                                    (cell_w * 0.66, cell_h * 0.25),
+                                    (cell_w * 0.66, cell_h * 0.64),
+                                ],
+                                (-1, 0) => [
+                                    (cell_w * 0.25, cell_h * 0.25),
+                                    (cell_w * 0.25, cell_h * 0.64),
+                                ],
+                                (0, -1) => [
+                                    (cell_w * 0.25, cell_h * 0.25),
+                                    (cell_w * 0.64, cell_h * 0.25),
+                                ],
+                                _ => [
+                                    (cell_w * 0.25, cell_h * 0.64),
+                                    (cell_w * 0.64, cell_h * 0.64),
+                                ],
+                            };
+                            for (left, top) in eyes {
+                                head_node.spawn((
+                                    Node {
+                                        position_type: PositionType::Absolute,
+                                        left: Val::Px(left),
+                                        top: Val::Px(top),
+                                        width: Val::Px(5. * scale),
+                                        height: Val::Px(5. * scale),
+                                        ..default()
+                                    },
+                                    BackgroundColor(Color::srgb(0.94, 0.93, 0.84)),
+                                    BorderRadius::all(Val::Percent(50.)),
+                                ));
+                            }
+                        });
                 }
                 let fruit_left = game.fruit.0 as f32 * (cell_w + sx) + cell_w * 0.28;
                 let fruit_top = game.fruit.1 as f32 * (cell_h + sx) + cell_h * 0.28;
                 board.spawn((
-                    Node { position_type: PositionType::Absolute, left: Val::Px(fruit_left), top: Val::Px(fruit_top), width: Val::Px(cell_w * 0.44), height: Val::Px(cell_h * 0.44), ..default() },
-                    BackgroundColor(if game.golden_fruit { Color::srgb(0.83, 0.58, 0.25) } else { Color::srgb(0.82, 0.29, 0.25) }),
+                    Node {
+                        position_type: PositionType::Absolute,
+                        left: Val::Px(fruit_left),
+                        top: Val::Px(fruit_top),
+                        width: Val::Px(cell_w * 0.44),
+                        height: Val::Px(cell_h * 0.44),
+                        ..default()
+                    },
+                    BackgroundColor(if game.golden_fruit {
+                        Color::srgb(0.83, 0.58, 0.25)
+                    } else {
+                        Color::srgb(0.82, 0.29, 0.25)
+                    }),
                     BorderRadius::all(Val::Percent(45.)),
                     ZIndex(6),
                 ));
                 if !game.running {
-                    board.spawn((
-                        Node { position_type: PositionType::Absolute, left: Val::Px(3. * scale), top: Val::Px(3. * scale), width: Val::Px(board_width - 12. * scale), height: Val::Px(board_height - 12. * scale), align_items: AlignItems::Center, justify_content: JustifyContent::Center, flex_direction: FlexDirection::Column, row_gap: Val::Px(8. * scale), ..default() },
-                        BackgroundColor(Color::srgba(0.96, 0.96, 0.91, 0.88)),
-                        ZIndex(8),
-                    )).with_children(|overlay| {
-                        label(overlay, art, if game.over { "哎呀，撞到啦！" } else { "准备好了吗？" }, 26. * scale, ink);
-                        label(overlay, art, if game.over { format!("这次吃到 {} 个果实", game.fruits_eaten) } else { "红果 +1 · 金果 +3".to_owned() }, 16. * scale, muted);
-                        label(overlay, art, if game.over { "点击右侧按钮再来一局" } else { "点开始，或按方向键出发" }, 14. * scale, muted);
-                    });
+                    board
+                        .spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(3. * scale),
+                                top: Val::Px(3. * scale),
+                                width: Val::Px(board_width - 12. * scale),
+                                height: Val::Px(board_height - 12. * scale),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                flex_direction: FlexDirection::Column,
+                                row_gap: Val::Px(8. * scale),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgba(0.96, 0.96, 0.91, 0.88)),
+                            ZIndex(8),
+                        ))
+                        .with_children(|overlay| {
+                            label(
+                                overlay,
+                                art,
+                                if game.over {
+                                    "哎呀，撞到啦！"
+                                } else {
+                                    "准备好了吗？"
+                                },
+                                26. * scale,
+                                ink,
+                            );
+                            label(
+                                overlay,
+                                art,
+                                if game.over {
+                                    format!("这次吃到 {} 个果实", game.fruits_eaten)
+                                } else {
+                                    "红果 +1 · 金果 +3".to_owned()
+                                },
+                                16. * scale,
+                                muted,
+                            );
+                            label(
+                                overlay,
+                                art,
+                                if game.over {
+                                    "点击右侧按钮再来一局"
+                                } else {
+                                    "点开始，或按方向键出发"
+                                },
+                                14. * scale,
+                                muted,
+                            );
+                        });
                 }
             });
 
@@ -1090,22 +1153,87 @@ fn snake_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32,
                 BorderColor(Color::srgb(0.90, 0.88, 0.81)),
                 BorderRadius::all(Val::Px(18. * scale)),
                 ZIndex(2),
-            )).with_children(|panel| {
+            ))
+            .with_children(|panel| {
                 label(panel, art, "本局得分", 22. * scale, ink);
                 label(panel, art, game.score.to_string(), 76. * scale, green);
-                panel.spawn(Node { width: Val::Percent(100.), height: Val::Px(38. * scale), align_items: AlignItems::Center, ..row() })
+                panel
+                    .spawn(Node {
+                        width: Val::Percent(100.),
+                        height: Val::Px(38. * scale),
+                        align_items: AlignItems::Center,
+                        ..row()
+                    })
                     .with_children(|divider| {
-                        divider.spawn((Node { flex_grow: 1., height: Val::Px(1. * scale), ..default() }, BackgroundColor(Color::srgb(0.88, 0.86, 0.80))));
-                        divider.spawn((Node { width: Val::Px(30. * scale), height: Val::Px(24. * scale), margin: UiRect::horizontal(Val::Px(12. * scale)), ..default() }, BackgroundColor(Color::srgb(0.82, 0.29, 0.25)), BorderRadius::all(Val::Percent(45.))));
-                        divider.spawn((Node { flex_grow: 1., height: Val::Px(1. * scale), ..default() }, BackgroundColor(Color::srgb(0.88, 0.86, 0.80))));
+                        divider.spawn((
+                            Node {
+                                flex_grow: 1.,
+                                height: Val::Px(1. * scale),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.88, 0.86, 0.80)),
+                        ));
+                        divider.spawn((
+                            Node {
+                                width: Val::Px(30. * scale),
+                                height: Val::Px(24. * scale),
+                                margin: UiRect::horizontal(Val::Px(12. * scale)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.82, 0.29, 0.25)),
+                            BorderRadius::all(Val::Percent(45.)),
+                        ));
+                        divider.spawn((
+                            Node {
+                                flex_grow: 1.,
+                                height: Val::Px(1. * scale),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.88, 0.86, 0.80)),
+                        ));
                     });
-                panel.spawn((Node { width: Val::Percent(100.), height: Val::Px(54. * scale), padding: UiRect::horizontal(Val::Px(16. * scale)), justify_content: JustifyContent::SpaceBetween, align_items: AlignItems::Center, ..row() }, BackgroundColor(Color::srgb(0.96, 0.95, 0.91)), BorderRadius::all(Val::Px(12. * scale))))
+                panel
+                    .spawn((
+                        Node {
+                            width: Val::Percent(100.),
+                            height: Val::Px(54. * scale),
+                            padding: UiRect::horizontal(Val::Px(16. * scale)),
+                            justify_content: JustifyContent::SpaceBetween,
+                            align_items: AlignItems::Center,
+                            ..row()
+                        },
+                        BackgroundColor(Color::srgb(0.96, 0.95, 0.91)),
+                        BorderRadius::all(Val::Px(12. * scale)),
+                    ))
                     .with_children(|best| {
                         label(best, art, "♛  最高得分", 18. * scale, muted);
                         label(best, art, game.best.to_string(), 19. * scale, ink);
                     });
-                button(panel, art, if game.over { "再来一局  ›" } else if game.running { "暂停游戏 Ⅱ" } else if game.started { "继续游戏  ›" } else { "开始游戏  ›" }, Action::SnakeToggle, panel_w - 76. * scale, 88. * scale, green, Color::WHITE);
-                panel.spawn(Node { width: Val::Percent(100.), height: Val::Px(1. * scale), ..default() }).insert(BackgroundColor(Color::srgb(0.90, 0.88, 0.82)));
+                button(
+                    panel,
+                    art,
+                    if game.over {
+                        "再来一局  ›"
+                    } else if game.running {
+                        "暂停游戏 Ⅱ"
+                    } else if game.started {
+                        "继续游戏  ›"
+                    } else {
+                        "开始游戏  ›"
+                    },
+                    Action::SnakeToggle,
+                    panel_w - 76. * scale,
+                    88. * scale,
+                    green,
+                    Color::WHITE,
+                );
+                panel
+                    .spawn(Node {
+                        width: Val::Percent(100.),
+                        height: Val::Px(1. * scale),
+                        ..default()
+                    })
+                    .insert(BackgroundColor(Color::srgb(0.90, 0.88, 0.82)));
                 label(panel, art, "操作说明", 20. * scale, ink);
                 snake_dpad_scaled(panel, art, scale);
                 label(panel, art, "使用键盘方向键控制蛇的移动", 13. * scale, muted);
@@ -1113,10 +1241,48 @@ fn snake_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32,
 
             // Functional gear and library actions sit over the static header
             // locations from the concept art.
-            root.spawn((Node { position_type: PositionType::Absolute, right: Val::Px(112. * sx), top: Val::Px(24. * sy), ..row() }, ZIndex(10)))
-                .with_children(|gear| button(gear, art, "⚙", Action::Help, 54. * sx, 54. * sy, parchment, ink));
-            root.spawn((Node { position_type: PositionType::Absolute, right: Val::Px(100. * sx), top: Val::Px(24. * sy), ..row() }, ZIndex(10)))
-                .with_children(|back| button(back, art, "游戏库", Action::Library, 92. * sx, 42. * sy, parchment, muted));
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(112. * sx),
+                    top: Val::Px(24. * sy),
+                    ..row()
+                },
+                ZIndex(10),
+            ))
+            .with_children(|gear| {
+                button(
+                    gear,
+                    art,
+                    "⚙",
+                    Action::Help,
+                    54. * sx,
+                    54. * sy,
+                    parchment,
+                    ink,
+                )
+            });
+            root.spawn((
+                Node {
+                    position_type: PositionType::Absolute,
+                    right: Val::Px(100. * sx),
+                    top: Val::Px(24. * sy),
+                    ..row()
+                },
+                ZIndex(10),
+            ))
+            .with_children(|back| {
+                button(
+                    back,
+                    art,
+                    "游戏库",
+                    Action::Library,
+                    92. * sx,
+                    42. * sy,
+                    parchment,
+                    muted,
+                )
+            });
         });
 }
 
@@ -1579,194 +1745,320 @@ fn snake_dpad_scaled(parent: &mut ChildSpawnerCommands, art: &Art, scale: f32) {
         .with_children(|pad| {
             let key_bg = Color::srgb(0.89, 0.91, 0.85);
             let key_fg = Color::srgb(0.22, 0.32, 0.24);
-            button(pad, art, "↑", Action::SnakeMove(0, -1), 52. * scale, 36. * scale, key_bg, key_fg);
-            pad.spawn(Node { column_gap: Val::Px(4. * scale), ..row() })
-                .with_children(|keys| {
-                    button(keys, art, "←", Action::SnakeMove(-1, 0), 52. * scale, 36. * scale, key_bg, key_fg);
-                    button(keys, art, "↓", Action::SnakeMove(0, 1), 52. * scale, 36. * scale, key_bg, key_fg);
-                    button(keys, art, "→", Action::SnakeMove(1, 0), 52. * scale, 36. * scale, key_bg, key_fg);
-                });
+            button(
+                pad,
+                art,
+                "↑",
+                Action::SnakeMove(0, -1),
+                52. * scale,
+                36. * scale,
+                key_bg,
+                key_fg,
+            );
+            pad.spawn(Node {
+                column_gap: Val::Px(4. * scale),
+                ..row()
+            })
+            .with_children(|keys| {
+                button(
+                    keys,
+                    art,
+                    "←",
+                    Action::SnakeMove(-1, 0),
+                    52. * scale,
+                    36. * scale,
+                    key_bg,
+                    key_fg,
+                );
+                button(
+                    keys,
+                    art,
+                    "↓",
+                    Action::SnakeMove(0, 1),
+                    52. * scale,
+                    36. * scale,
+                    key_bg,
+                    key_fg,
+                );
+                button(
+                    keys,
+                    art,
+                    "→",
+                    Action::SnakeMove(1, 0),
+                    52. * scale,
+                    36. * scale,
+                    key_bg,
+                    key_fg,
+                );
+            });
         });
 }
 
-pub(super) fn minesweeper_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
+const MINES_DESIGN: Vec2 = Vec2::new(1586., 992.);
+const MINES_GRID_ORIGIN: Vec2 = Vec2::new(357., 188.);
+const MINES_CELL_SIZE: Vec2 = Vec2::new(84.5, 85.5);
+
+pub(super) fn minesweeper_ui(
+    commands: &mut Commands,
+    s: &Session,
+    art: &Art,
+    width: f32,
+    height: f32,
+) {
     let g = &s.minesweeper;
-    let flags = g.flagged.iter().filter(|flagged| **flagged).count();
-    designed_page(
-        commands,
-        art,
-        "扫雷 · 档案室 08",
-        "逐格勘查现场，标记可疑位置",
-        Action::MineReset,
-        Color::srgb(0.16, 0.19, 0.22),
-        Color::srgb(0.22, 0.26, 0.29),
-        Color::srgb(0.94, 0.91, 0.83),
-        Color::srgb(0.67, 0.71, 0.70),
-        |root| {
-            root.spawn(Node {
-                width: Val::Px(if compact { 400. } else { 650. }),
-                justify_content: JustifyContent::Center,
+    let scale = (width / MINES_DESIGN.x).min(height / MINES_DESIGN.y);
+    let flags = g.flagged.iter().filter(|flag| **flag).count();
+    let opened = (0..64).filter(|&i| g.revealed[i] && !g.mines[i]).count();
+    commands
+        .spawn((
+            UiRoot,
+            Node {
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
                 align_items: AlignItems::Center,
-                flex_direction: if compact {
-                    FlexDirection::Column
-                } else {
-                    FlexDirection::Row
-                },
-                column_gap: Val::Px(18.),
-                row_gap: Val::Px(14.),
-                ..row()
+                justify_content: JustifyContent::Center,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(Color::srgb(0.20, 0.29, 0.16)),
+        ))
+        .with_children(|root| {
+            root.spawn(Node {
+                width: Val::Px(MINES_DESIGN.x * scale),
+                height: Val::Px(MINES_DESIGN.y * scale),
+                flex_shrink: 0.,
+                position_type: PositionType::Relative,
+                ..default()
             })
-            .with_children(|layout| {
-                layout
-                    .spawn((
-                        Node {
-                            width: Val::Px(400.),
-                            height: Val::Px(400.),
-                            flex_direction: FlexDirection::Column,
-                            column_gap: Val::Px(2.),
-                            row_gap: Val::Px(2.),
-                            padding: UiRect::all(Val::Px(2.)),
-                            border: UiRect::all(Val::Px(2.)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.29, 0.33, 0.34)),
-                        BorderColor(Color::srgb(0.48, 0.53, 0.52)),
-                        BorderRadius::all(Val::Px(8.)),
-                    ))
-                    .with_children(|board| {
-                        for y in 0..8 {
-                            board
-                                .spawn(Node {
-                                    height: Val::Px(48.),
-                                    column_gap: Val::Px(2.),
-                                    ..row()
-                                })
-                                .with_children(|line| {
-                                    for x in 0..8 {
-                                        let i = y * 8 + x;
-                                        let revealed = g.revealed[i];
-                                        let flagged = g.flagged[i];
-                                        let text = if flagged {
-                                            "⚑".to_owned()
-                                        } else if !revealed {
-                                            String::new()
-                                        } else if g.mines[i] {
-                                            "×".to_owned()
-                                        } else {
-                                            let n = g.around(i);
-                                            if n == 0 { String::new() } else { n.to_string() }
-                                        };
-                                        let color = if revealed && g.mines[i] {
-                                            Color::srgb(0.72, 0.34, 0.29)
-                                        } else if revealed {
-                                            Color::srgb(0.82, 0.82, 0.76)
-                                        } else if flagged {
-                                            Color::srgb(0.68, 0.40, 0.32)
-                                        } else {
-                                            Color::srgb(0.36, 0.42, 0.43)
-                                        };
-                                        button(
-                                            line,
-                                            art,
-                                            text,
-                                            Action::MineReveal(i),
-                                            48.,
-                                            48.,
-                                            color,
-                                            if revealed {
-                                                Color::srgb(0.20, 0.25, 0.25)
-                                            } else {
-                                                Color::srgb(0.94, 0.91, 0.83)
-                                            },
-                                        );
-                                    }
-                                });
+            .with_children(|scene| {
+                scene.spawn((
+                    ImageNode::new(art.minesweeper_plate.clone()),
+                    mines_node(Vec2::ZERO, MINES_DESIGN, scale),
+                ));
+                mines_text(
+                    scene,
+                    art,
+                    Vec2::new(894., 70.),
+                    Vec2::new(97., 59.),
+                    format!("{flags}/10"),
+                    35.,
+                    Color::srgb(0.81, 0.23, 0.055),
+                    scale,
+                );
+                mines_text(
+                    scene,
+                    art,
+                    Vec2::new(1205., 70.),
+                    Vec2::new(105., 59.),
+                    format!("{opened}/54"),
+                    35.,
+                    Color::srgb(0.16, 0.32, 0.13),
+                    scale,
+                );
+                for index in 0..64 {
+                    let origin = mines_cell_origin(index);
+                    let rect = if g.flagged[index] && !g.revealed[index] {
+                        Rect::new(780., 444., 866., 531.)
+                    } else if g.revealed[index] {
+                        Rect::new(610., 358., 696., 445.)
+                    } else {
+                        Rect::new(357., 188., 442., 274.)
+                    };
+                    let atlas = if g.flagged[index] && !g.revealed[index] {
+                        art.minesweeper_atlas.clone()
+                    } else {
+                        art.minesweeper_plate.clone()
+                    };
+                    mines_sample(scene, atlas, rect, origin, MINES_CELL_SIZE, scale, 1);
+                    if g.revealed[index] {
+                        if g.mines[index] {
+                            mines_sample(
+                                scene,
+                                art.minesweeper_atlas.clone(),
+                                Rect::new(503., 74., 556., 128.),
+                                origin + Vec2::new(15., 15.),
+                                Vec2::new(54., 55.),
+                                scale,
+                                3,
+                            );
+                        } else {
+                            let n = g.around(index);
+                            if n > 0 {
+                                let color = match n {
+                                    1 => Color::srgb(0.15, 0.33, 0.78),
+                                    2 => Color::srgb(0.05, 0.40, 0.16),
+                                    3 => Color::srgb(0.78, 0.17, 0.10),
+                                    4 => Color::srgb(0.35, 0.20, 0.58),
+                                    _ => Color::srgb(0.30, 0.16, 0.07),
+                                };
+                                mines_text(
+                                    scene,
+                                    art,
+                                    origin,
+                                    MINES_CELL_SIZE,
+                                    n.to_string(),
+                                    44.,
+                                    color,
+                                    scale,
+                                );
+                            }
                         }
-                    });
-                layout
-                    .spawn((
-                        Node {
-                            width: Val::Px(224.),
-                            min_height: Val::Px(if compact { 300. } else { 400. }),
-                            padding: UiRect::all(Val::Px(if compact { 12. } else { 16. })),
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(14.),
-                            border: UiRect::all(Val::Px(1.)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.22, 0.26, 0.29)),
-                        BorderColor(Color::srgb(0.37, 0.42, 0.43)),
-                        BorderRadius::all(Val::Px(12.)),
-                    ))
-                    .with_children(|case| {
-                        label(case, art, "案件记录", 13., Color::srgb(0.71, 0.74, 0.69));
-                        label(case, art, "地雷 10 枚", 21., Color::srgb(0.94, 0.91, 0.83));
-                        label(
-                            case,
-                            art,
-                            format!("已标记 {flags}/10"),
-                            15.,
-                            Color::srgb(0.82, 0.64, 0.48),
-                        );
-                        case.spawn((
-                            Node {
-                                height: Val::Px(1.),
-                                width: Val::Percent(100.),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.39, 0.44, 0.44)),
-                        ));
-                        label(case, art, "现场规则", 15., Color::srgb(0.91, 0.89, 0.82));
-                        label(
-                            case,
-                            art,
-                            "数字表示周围地雷数量。先找出安全区域，再逐步缩小范围。",
-                            13.,
-                            Color::srgb(0.70, 0.74, 0.72),
-                        );
-                        button(
-                            case,
-                            art,
-                            if g.flag_mode {
-                                "切到揭开"
-                            } else {
-                                "切到旗帜"
-                            },
-                            Action::MineToggleFlag,
-                            190.,
-                            42.,
-                            if g.flag_mode {
-                                Color::srgb(0.70, 0.43, 0.33)
-                            } else {
-                                Color::srgb(0.36, 0.43, 0.44)
-                            },
-                            Color::srgb(0.97, 0.94, 0.86),
-                        );
-                        label(
-                            case,
-                            art,
-                            if g.lost {
-                                "案件结论：发现地雷"
-                            } else if g.won {
-                                "案件结论：区域安全"
-                            } else if g.flag_mode {
-                                "当前：标记可疑格"
-                            } else {
-                                "当前：勘查未知格"
-                            },
-                            13.,
-                            if g.lost {
-                                Color::srgb(0.91, 0.52, 0.42)
-                            } else if g.won {
-                                Color::srgb(0.66, 0.79, 0.63)
-                            } else {
-                                Color::srgb(0.72, 0.75, 0.70)
-                            },
-                        );
-                    });
+                    }
+                    mines_hit(
+                        scene,
+                        Action::MineReveal(index),
+                        origin,
+                        MINES_CELL_SIZE,
+                        scale,
+                    );
+                }
+                mines_text(
+                    scene,
+                    art,
+                    Vec2::new(1204., 653.),
+                    Vec2::new(186., 74.),
+                    if g.flag_mode {
+                        "标记模式"
+                    } else {
+                        "探索模式"
+                    },
+                    40.,
+                    Color::srgb(1., 0.94, 0.73),
+                    scale,
+                );
+                // The actual approved toggle thumb moves along its track with the mode.
+                let mut track = ImageNode::new(art.minesweeper_atlas.clone());
+                track.rect = Some(Rect::new(1395., 659., 1434., 724.));
+                scene.spawn((
+                    track,
+                    mines_node(Vec2::new(1393., 654.), Vec2::new(108., 73.), scale),
+                    BorderRadius::all(Val::Percent(50.)),
+                    ZIndex(2),
+                ));
+                let mut thumb = ImageNode::new(art.minesweeper_atlas.clone());
+                thumb.rect = Some(Rect::new(1439., 660., 1496., 723.));
+                scene.spawn((
+                    thumb,
+                    mines_node(
+                        Vec2::new(if g.flag_mode { 1398. } else { 1439. }, 659.),
+                        Vec2::new(58., 64.),
+                        scale,
+                    ),
+                    BorderRadius::all(Val::Percent(50.)),
+                    ZIndex(3),
+                ));
+                mines_hit(
+                    scene,
+                    Action::MineToggleFlag,
+                    Vec2::new(1074., 626.),
+                    Vec2::new(456., 131.),
+                    scale,
+                );
+                mines_hit(
+                    scene,
+                    Action::MineReset,
+                    Vec2::new(1173., 772.),
+                    Vec2::new(249., 81.),
+                    scale,
+                );
+                mines_hit(
+                    scene,
+                    Action::Library,
+                    Vec2::new(43., 43.),
+                    Vec2::new(104., 104.),
+                    scale,
+                );
+                mines_text(
+                    scene,
+                    art,
+                    Vec2::new(577., 900.),
+                    Vec2::new(254., 45.),
+                    if g.lost {
+                        "踩到地雷，点击重开"
+                    } else if g.won {
+                        "所有安全格都找到了！"
+                    } else {
+                        "首次翻开不会踩雷"
+                    },
+                    if g.lost || g.won { 23. } else { 25. },
+                    Color::srgb(0.43, 0.25, 0.11),
+                    scale,
+                );
             });
-        },
-    );
+        });
+}
+
+fn mines_cell_origin(index: usize) -> Vec2 {
+    MINES_GRID_ORIGIN + MINES_CELL_SIZE * Vec2::new((index % 8) as f32, (index / 8) as f32)
+}
+
+fn mines_node(origin: Vec2, size: Vec2, scale: f32) -> Node {
+    Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(origin.x * scale),
+        top: Val::Px(origin.y * scale),
+        width: Val::Px(size.x * scale),
+        height: Val::Px(size.y * scale),
+        ..default()
+    }
+}
+
+fn mines_hit(
+    parent: &mut ChildSpawnerCommands,
+    action: Action,
+    origin: Vec2,
+    size: Vec2,
+    scale: f32,
+) {
+    parent.spawn((
+        Button,
+        action,
+        mines_node(origin, size, scale),
+        BackgroundColor(Color::NONE),
+        ZIndex(10),
+    ));
+}
+
+fn mines_sample(
+    parent: &mut ChildSpawnerCommands,
+    handle: Handle<Image>,
+    rect: Rect,
+    origin: Vec2,
+    size: Vec2,
+    scale: f32,
+    layer: i32,
+) {
+    let mut image = ImageNode::new(handle);
+    image.rect = Some(rect);
+    parent.spawn((image, mines_node(origin, size, scale), ZIndex(layer)));
+}
+
+fn mines_text(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    origin: Vec2,
+    size: Vec2,
+    text: impl Into<String>,
+    font: f32,
+    color: Color,
+    scale: f32,
+) {
+    let text = text.into();
+    // The approved digits and button labels have a heavier weight than the shared font.
+    for dx in [-0.35, 0.35] {
+        parent
+            .spawn((
+                Node {
+                    align_items: AlignItems::Center,
+                    justify_content: JustifyContent::Center,
+                    ..mines_node(origin + Vec2::new(dx, 0.), size, scale)
+                },
+                ZIndex(5),
+            ))
+            .with_children(|container| {
+                label(container, art, text.clone(), font * scale, color);
+            });
+    }
 }
 
 #[derive(Component)]
@@ -2202,182 +2494,6 @@ pub(super) fn klotski_ui(commands: &mut Commands, s: &Session, art: &Art, compac
     );
 }
 
-pub(super) fn sokoban_ui(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
-    let g = &s.sokoban;
-    designed_page(
-        commands,
-        art,
-        "推箱子 · 03 号仓库",
-        "把货箱推到黄色标记点，规划好路线再出发",
-        Action::SokobanReset,
-        Color::srgb(0.18, 0.21, 0.25),
-        Color::srgb(0.25, 0.30, 0.34),
-        Color::srgb(0.92, 0.93, 0.89),
-        Color::srgb(0.70, 0.76, 0.77),
-        |root| {
-            root.spawn(Node {
-                flex_direction: if compact {
-                    FlexDirection::Column
-                } else {
-                    FlexDirection::Row
-                },
-                column_gap: Val::Px(18.),
-                row_gap: Val::Px(14.),
-                align_items: AlignItems::Center,
-                ..row()
-            })
-            .with_children(|layout| {
-                layout
-                    .spawn((
-                        Node {
-                            width: Val::Px(448.),
-                            height: Val::Px(448.),
-                            flex_direction: FlexDirection::Column,
-                            padding: UiRect::all(Val::Px(2.)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.12, 0.15, 0.18)),
-                        BorderRadius::all(Val::Px(8.)),
-                    ))
-                    .with_children(|board| {
-                        for y in 0..8_i8 {
-                            board
-                                .spawn(Node {
-                                    height: Val::Px(56.),
-                                    ..row()
-                                })
-                                .with_children(|line| {
-                                    for x in 0..8_i8 {
-                                        let p = (x, y);
-                                        let wall = SokobanGame::wall(p);
-                                        let target = SokobanGame::target(p);
-                                        let crate_here = g.crates.contains(&p);
-                                        let player = p == g.player;
-                                        let color = if wall {
-                                            Color::srgb(0.32, 0.38, 0.42)
-                                        } else if crate_here && target {
-                                            Color::srgb(0.54, 0.67, 0.43)
-                                        } else if crate_here {
-                                            Color::srgb(0.68, 0.48, 0.30)
-                                        } else if player {
-                                            Color::srgb(0.43, 0.62, 0.70)
-                                        } else if target {
-                                            Color::srgb(0.72, 0.62, 0.38)
-                                        } else {
-                                            Color::srgb(0.62, 0.67, 0.66)
-                                        };
-                                        line.spawn((
-                                            Node {
-                                                width: Val::Px(56.),
-                                                height: Val::Px(56.),
-                                                border: UiRect::all(Val::Px(1.)),
-                                                align_items: AlignItems::Center,
-                                                justify_content: JustifyContent::Center,
-                                                ..default()
-                                            },
-                                            BackgroundColor(color),
-                                            BorderColor(Color::srgb(0.21, 0.26, 0.29)),
-                                        ))
-                                        .with_children(
-                                            |cell| {
-                                                let icon = if crate_here {
-                                                    "箱"
-                                                } else if player {
-                                                    "●"
-                                                } else if target {
-                                                    "◎"
-                                                } else if wall {
-                                                    "▦"
-                                                } else {
-                                                    ""
-                                                };
-                                                let ink = if wall {
-                                                    Color::srgb(0.45, 0.50, 0.51)
-                                                } else {
-                                                    Color::srgb(0.21, 0.25, 0.24)
-                                                };
-                                                if !icon.is_empty() {
-                                                    label(
-                                                        cell,
-                                                        art,
-                                                        icon,
-                                                        if player { 23. } else { 18. },
-                                                        ink,
-                                                    );
-                                                }
-                                            },
-                                        );
-                                    }
-                                });
-                        }
-                    });
-                layout
-                    .spawn((
-                        Node {
-                            width: Val::Px(226.),
-                            min_height: Val::Px(if compact { 250. } else { 420. }),
-                            padding: UiRect::all(Val::Px(16.)),
-                            flex_direction: FlexDirection::Column,
-                            row_gap: Val::Px(14.),
-                            align_items: AlignItems::Center,
-                            border: UiRect::all(Val::Px(1.)),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.24, 0.29, 0.32)),
-                        BorderColor(Color::srgb(0.39, 0.45, 0.47)),
-                        BorderRadius::all(Val::Px(12.)),
-                    ))
-                    .with_children(|panel| {
-                        label(panel, art, "当前进度", 13., Color::srgb(0.70, 0.76, 0.77));
-                        label(
-                            panel,
-                            art,
-                            format!("移动 {} 步", g.moves),
-                            25.,
-                            Color::srgb(0.94, 0.91, 0.80),
-                        );
-                        panel.spawn((
-                            Node {
-                                height: Val::Px(1.),
-                                width: Val::Percent(100.),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.40, 0.46, 0.47)),
-                        ));
-                        label(
-                            panel,
-                            art,
-                            if g.won {
-                                "货物全部入库"
-                            } else {
-                                "操作控制"
-                            },
-                            16.,
-                            Color::srgb(0.89, 0.89, 0.82),
-                        );
-                        label(
-                            panel,
-                            art,
-                            "方向键移动，箱子只能推，不能拉。",
-                            13.,
-                            Color::srgb(0.70, 0.76, 0.77),
-                        );
-                        themed_dpad(
-                            panel,
-                            art,
-                            Action::SokobanMove(0, -1),
-                            Action::SokobanMove(0, 1),
-                            Action::SokobanMove(-1, 0),
-                            Action::SokobanMove(1, 0),
-                            Color::srgb(0.36, 0.43, 0.46),
-                            Color::srgb(0.94, 0.92, 0.84),
-                        );
-                    });
-            });
-        },
-    );
-}
-
 fn themed_dpad(
     parent: &mut ChildSpawnerCommands,
     art: &Art,
@@ -2723,8 +2839,17 @@ mod tests {
     fn snake_grows_only_after_eating_a_fruit() {
         let mut snake = SnakeGame::new();
         snake.fruit = (6, 6);
+        assert!(!snake.advance(0.2));
+        assert_eq!((snake.score, snake.body.len(), snake.body[0]), (0, 3, (5, 6)));
+        assert!(snake.turn(1, 0));
         assert!(snake.advance(0.2));
         assert_eq!((snake.score, snake.body.len()), (1, 4));
+        snake.fruit = (0, 0);
+        assert!(snake.advance(0.16));
+        assert_eq!((snake.score, snake.body.len(), snake.body[0]), (1, 4, (7, 6)));
+        snake.toggle();
+        assert!(!snake.advance(1.));
+        assert_eq!(snake.body[0], (7, 6));
     }
 
     #[test]
@@ -2735,6 +2860,15 @@ mod tests {
         mines.reveal(0);
         assert!(mines.revealed[0]);
         assert!(!mines.lost);
+    }
+
+    #[test]
+    fn minesweeper_first_reveal_is_safe() {
+        let mut mines = MinesweeperGame::new();
+        mines.reveal(2);
+        assert!(mines.revealed[2]);
+        assert!(!mines.lost);
+        assert_eq!(mines.mines.iter().filter(|&&mine| mine).count(), 10);
     }
 
     #[test]

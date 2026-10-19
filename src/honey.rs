@@ -25,6 +25,11 @@ pub(super) struct HoneyGame {
 }
 
 impl HoneyGame {
+    #[cfg(debug_assertions)]
+    pub(super) fn qa_state(&self) -> serde_json::Value {
+        serde_json::json!({"flying": self.flying, "pulling": self.pulling,
+            "hook": self.hook, "score": self.score, "jars": self.jars})
+    }
     pub(super) fn new() -> Self {
         Self {
             treasures: vec![

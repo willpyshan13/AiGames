@@ -2,30 +2,42 @@
 
 Rust + Bevy 制作的离线小游戏合集，以立体磁力方块编程世界为主线，包含益智、动作与休闲玩法。先面向安卓，提供 macOS 桌面调试版。不是网页或 WebView 应用。
 
+当前安卓安装包版本为 **0.1.8**。本版收录坦克大战新增的第 9–12 关及横屏操作调整，也包含扫雷、推箱子、光路小侦探、星球快递员等游戏的近期关卡和界面更新。安装包仅包含 ARM64 架构，采用 Release 构建并剥离原生调试符号。
+
 ## 游戏画面一览
 
 以下直接使用项目已有的实机截图。点击图片可查看大图；每张图下方是对应的画面与玩法介绍。
 
 | 游戏 | 游戏 |
 | --- | --- |
-| **磁力小岛**<br><a href="docs/screenshots/island.jpg"><img src="docs/screenshots/island.jpg" width="360" alt="磁力小岛游戏画面"></a><br>在立体方块小岛上搭桥、放置材料，再编排指令让机器人抵达目标。 | **2048 球球**<br><a href="docs/screenshots/ball2048.jpg"><img src="docs/screenshots/ball2048.jpg" width="240" alt="2048 球球游戏画面"></a><br>在三条彩色跑道之间换道，让相同数字的球相撞合并。 |
+| **磁力小岛**<br><a href="docs/screenshots/island-redesign.png"><img src="docs/screenshots/island-redesign.png" width="360" alt="磁力小岛新版实际游戏画面"></a><br>在立体方块小岛上搭桥、放置材料，再编排指令让机器人抵达目标。 | **2048 球球**<br><a href="docs/screenshots/ball2048.jpg"><img src="docs/screenshots/ball2048.jpg" width="240" alt="2048 球球游戏画面"></a><br>在三条彩色跑道之间换道，让相同数字的球相撞合并。 |
 | **方块消消乐**<br><a href="docs/screenshots/tetris.jpg"><img src="docs/screenshots/tetris.jpg" width="240" alt="方块消消乐游戏画面"></a><br>在竖屏棋盘中移动、旋转下落方块，拼满一行即可消除。 | **数学游乐岛**<br><a href="docs/screenshots/math.jpg"><img src="docs/screenshots/math.jpg" width="360" alt="数学游乐岛游戏画面"></a><br>根据岛上的情景题选择答案，也能展开实物帮助数数。 |
-| **识字小岛**<br><a href="docs/screenshots/literacy.jpg"><img src="docs/screenshots/literacy.jpg" width="360" alt="识字小岛游戏画面"></a><br>看图认字、组词闯关，答题后会得到即时提示。 | **小小消防队**<br><a href="docs/screenshots/fire.jpg"><img src="docs/screenshots/fire.jpg" width="360" alt="小小消防队游戏画面"></a><br>在消防场景里判断情况，选择救援工具完成任务。 |
-| **神秘博物馆侦探**<br><a href="docs/screenshots/detective.jpg"><img src="docs/screenshots/detective.jpg" width="360" alt="神秘博物馆侦探游戏画面"></a><br>跟随线索与脚印，在博物馆里逐步找回展品。 | **太空种植园**<br><a href="docs/screenshots/farm.jpg"><img src="docs/screenshots/farm.jpg" width="360" alt="太空种植园游戏画面"></a><br>调整光照、水分和温度，让星球植物成长。 |
+| **识字小岛**<br><a href="docs/screenshots/literacy.jpg"><img src="docs/screenshots/literacy.jpg" width="360" alt="识字小岛游戏画面"></a><br>看图认字、组词闯关，答题后会得到即时提示。 | **小小消防队**<br><a href="docs/screenshots/fire-live-v2.png"><img src="docs/screenshots/fire-live-v2.png" width="360" alt="小小消防队实机画面"></a><br>判断火场情况，选工具、绕开路障，把小猫送到安全区。 |
+| **神秘博物馆侦探**<br><a href="docs/screenshots/detective-live-v2.png"><img src="docs/screenshots/detective-live-v2.png" width="360" alt="神秘博物馆侦探实机画面"></a><br>跟随脚印和羽毛线索，在博物馆里找回展品。 | **太空种植园**<br><a href="docs/screenshots/farm-live-v2.png"><img src="docs/screenshots/farm-live-v2.png" width="360" alt="太空种植园实机画面"></a><br>照顾太空番茄，浇水、观察成熟颜色并制作补给。 |
 | **彩虹钢琴派对**<br><a href="docs/screenshots/piano.jpg"><img src="docs/screenshots/piano.jpg" width="360" alt="彩虹钢琴派对游戏画面"></a><br>看着彩色音符落到琴键，跟着节奏弹奏。 | **迷你坦克大战**<br><a href="docs/screenshots/tank.jpg"><img src="docs/screenshots/tank.jpg" width="360" alt="迷你坦克大战游戏画面"></a><br>在砖墙迷宫中移动、躲避炮弹并守住基地。 |
 | **彩虹泡泡岛**<br><a href="docs/screenshots/bubble.jpg"><img src="docs/screenshots/bubble.jpg" width="360" alt="彩虹泡泡岛游戏画面"></a><br>沿着瞄准线发射泡泡，连接同色泡泡将它们消除。 | **泡泡爆破王**<br><a href="docs/screenshots/bomber.jpg"><img src="docs/screenshots/bomber.jpg" width="360" alt="泡泡爆破王游戏画面"></a><br>在方格迷宫中放下水泡，避开水柱并追击怪物。 |
 | **水果忍者派对**<br><a href="docs/screenshots/fruit.jpg"><img src="docs/screenshots/fruit.jpg" width="360" alt="水果忍者派对游戏画面"></a><br>划开飞起的水果获取分数，小心混在其中的炸弹。 | **口袋大富翁**<br><a href="docs/screenshots/fortune.jpg"><img src="docs/screenshots/fortune.jpg" width="360" alt="口袋大富翁游戏画面"></a><br>沿着彩色小镇棋盘掷骰前进，购买地块并建起房屋。 |
 | **水果转转乐**<br><a href="docs/screenshots/slots.jpg"><img src="docs/screenshots/slots.jpg" width="360" alt="水果转转乐游戏画面"></a><br>转动三列水果图案，按中间一行结算免费虚拟积分。 | **经典水果机**<br><a href="docs/screenshots/arcade.jpg"><img src="docs/screenshots/arcade.jpg" width="360" alt="经典水果机游戏画面"></a><br>在复古机柜上选择水果，看环形跑灯停在哪一格。 |
 | **捕鱼达人**<br><a href="docs/screenshots/fishing.jpg"><img src="docs/screenshots/fishing.jpg" width="360" alt="捕鱼达人游戏画面"></a><br>向游动的鱼群撒网，捕获不同鱼种获得金币。 | **小熊寻蜜**<br><a href="docs/screenshots/honey.jpg"><img src="docs/screenshots/honey.jpg" width="360" alt="小熊寻蜜游戏画面"></a><br>等摇摆抓钩对准蜂蜜罐，再放下抓钩把蜂蜜带回小熊身边。 |
+| **星球快递员**<br><a href="docs/screenshots/space-courier-live.png"><img src="docs/screenshots/space-courier-live.png" width="360" alt="星球快递员实机画面"></a><br>规划航线、管理燃料和工具，在三颗星球完成九个送货点并挑战终点包裹。 |  |
+
+磁力小岛的新版画面依据 [已确认的整体设计稿](designs/magnet-island-full-redesign-v2.png) 实现：云谷与双岛构成默认场景，机器人随实际位置移动，桥块由玩家实时搭建；右侧选择材料，底部编排指令。切换到立体视角后可旋转场景和编辑岛屿地形。
+
+云桥工程师依据 [已确认的设计稿](designs/cloud-bridge-redesign-v3.png) 实现：蓝天云海中展示双浮岛、机器人、木桥和星星目标；顶部显示六岛进度与本关目标，右侧选择材料，底部编排并运行指令。前五关要收集星晶并抵达终点，完成后才解锁下一岛；第六关改为自由搭建挑战，至少搭 10 块积木并使用 3 种材料。进度和星级会保存在本机。
+
+### 星际飞行队
+
+<a href="docs/screenshots/sky.png"><img src="docs/screenshots/sky.png" width="260" alt="星际飞行队普通战斗实际画面"></a> <a href="docs/screenshots/sky-boss.png"><img src="docs/screenshots/sky-boss.png" width="260" alt="星际飞行队首领战实际画面"></a>
+
+左图为普通战斗，右图为首领战。竖屏驾驶战机左右移动，能量炮自动开火；击落敌机、避开陨石并迎战首领母舰。顶部显示星区、得分、连击和护盾，左上角可返回游戏库，底部提供重来、移动与暂停按钮。桌面端可用 A / D 或左右方向键移动。开发时可设置 `MAGNET_START_GAME=sky` 直接进入。
 
 游戏库还有这些入口；目前项目中没有它们的现成实机截图：
 
 - **云桥工程师**：在云海间放置方块，用指令引导机器人过桥。
 - **小小动物餐厅**：在方块世界里布置餐桌、厨房和食材区。
-- **自由搭建工坊**：使用十种磁力方块自由搭建，作品保存在本机档案。
+- **自由搭建工坊**：从空白浮岛开始，自由摆放草地、木头、石头和水晶；作品保存在本机档案。
 - **像素突击队**：横版奔跑、跳跃和射击，抵挡机械小怪。
 - **蘑菇跳跳岛**：踩小怪、收金币，跑到终点旗帜。
-- **星际飞行队**：驾驶战机左右移动，射击敌机并躲开陨石。
 - **中秋博饼会**：摇六颗骰子，收集本局的中秋福礼。
 - **贪吃蛇**：控制小蛇吃果实，避开边界和自己的身体。
 - **扫雷**：翻开安全格，并用旗帜标记可疑的地雷。
@@ -48,7 +60,7 @@ Rust + Bevy 制作的离线小游戏合集，以立体磁力方块编程世界�
 - 循环次数 1–8，可选择循环后再前进一步；运行、暂停、单步、复位。
 - 出错即停止并显示原因，高亮当前指令；复位恢复运行前的世界。
 - 五个引导关卡、一个带创作目标的家园场景，以及独立的自由搭建工坊。
-- 自由搭建工坊没有机器人、终点或任务目标；十种磁力方块可任意组合，17×11 格画布最高可搭 13 层，作品按本机档案自动保存。
+- 自由搭建工坊没有机器人、终点或任务目标；空白浮岛可直接搭建、拆除、撤销和清空，作品按本机档案自动保存。旋转后进入可转动的立体视角。
 - 小芽、小树两个独立本机档案。每个档案保留当前场景、程序和完成记录。
 - 编辑后自动保存，也可以点击保存。无需账号、网络或后台。
 
@@ -60,17 +72,17 @@ Rust + Bevy 制作的离线小游戏合集，以立体磁力方块编程世界�
 - 方块消消乐：竖屏俄罗斯方块玩法；下一个方块预览、消行计分、等级加速和快速下落都提供大号按键。棋盘、当前得分与最高分自动保存在本机，下次进入继续上一局；点“重来”才清空棋盘，最高分保留。
 - 贪吃蛇：果园街机版，蛇身平滑跟随转弯，红果加分、每四颗出现一枚三分金果；移动会随得分加快，撞墙或撞到身体后可以重新开局。支持屏幕方向键、WASD、空格暂停和触屏方向盘。
 - 蘑菇跳跳岛：原创横版跑跳关卡。左右调整站位、跳过砖块、踩掉小怪并收集金币，抵达 300 米处的终点旗帜；手机提供大号左右键与跳跃键，桌面端支持 A / D、方向键、W 或空格。
-- 方向控制统一：坦克、泡泡爆破等四向移动游戏使用同样的十字方向键；横版跑跳和飞行游戏使用相同样式的大号左右键与动作键，不再依赖拖动小摇杆或点屏幕边缘。
+- 方向控制：坦克与泡泡爆破使用左侧可拖动摇杆，按住连续移动，松开停止；横版跑跳和飞行游戏提供大号左右键与动作键。
 - 全部小游戏：点击操作会有轻提示音；开始、得分、切水果与危险/失败会使用不同的短音效。音效在运行时生成，无需联网或额外下载素材。
 - 捕鱼达人：点击水面发射渔网，网住附近鱼群获得分数和金币；金鱼奖励最高，等待鱼群靠近后一次撒网更划算。
 - 中秋博饼会：竖屏摇骰子小游戏，五次免费机会可收集桂花签、月兔灯和团圆章；所有福礼仅为本局离线趣味收藏，不含兑换、现实奖品或付费内容。可用 `MAGNET_START_GAME=moon` 预览。
 
 - 数学游乐岛：可直接点数字作答，也可摆实物；实物落入托盘、答对时小兔跳舞并飘彩纸。选错会显示提示，完成一轮保持当前难度。
 - 识字小岛：点汉字立即检查；图形浮动、小芽跳舞和彩纸反馈；保留不计时和错题复习。
-- 小小消防队、神秘博物馆侦探、太空种植园：每道题使用对应的选项，四步任务配有消防车与水流、放大镜与脚印、浇水与植物生长场景。选错给提示，完成后自己点下一步。
+- 小小消防队、神秘博物馆侦探、太空种植园：每款游戏有四步任务，逐关呈现对应的救援、寻物或种植场景。选错会给提示，答对后点“下一步”继续。
 - 彩虹钢琴派对：练习模式的音符慢慢下落并等待，不因超时跳过；目标琴键亮起，按键有颜色反馈。
 - 彩虹泡泡岛：方形棋盘统一显示和碰撞比例，按住看真实轨迹、松手发射；消除有散开碎粒。首关两种颜色且不会下压，后续连续八次未消除才下压，普通弹药选自场上颜色。
-- 泡泡爆破王：按住方向可连续走，角色平滑移动；水泡倒数三秒、危险格闪烁、水花扩散；五条命和复活护盾，准备好移动后敌人才开始行动。
+- 泡泡爆破王：按住方向可连续走，角色平滑移动；水泡约两秒（2.2 秒）后爆开、危险格闪烁、水花扩散；初始三条命和复活护盾，准备好移动后敌人才开始行动。
 
 动画截图预览可使用 `MAGNET_START_GAME=math|literacy|fire|detective|farm|piano|bubble|bomber` 配合下方的截图命令。`MAGNET_CAPTURE_MOTION=1` 会额外保存第 30 帧，`MAGNET_PREVIEW_SUCCESS=1` 可检查学习游戏的完成场景，`MAGNET_PREVIEW_HELP=1` 可检查暂停帮助页；预览时请指定独立的 `MAGNET_SAVE_DIR`。
 
@@ -84,7 +96,7 @@ Mac 版可用鼠标拖动，或按 A / D、左右方向键移动；点击棋盘�
 
 ## 花园守卫
 
-横屏五路花园防守小游戏，使用绘制的草地场景、植物和怪物素材。选择植物卡片后点草地种植，点击落下的阳光补充能量。向日葵生产阳光，豌豆射手攻击同路怪物，坚果拖住敌人，冰花减速，辣椒一次清理一条战线。先布置花园，再点“开始守卫”；共有三关，清空本关所有波次后可继续下一关。每条战线还有一次救场推车。第一关适合入门，后两关增加铁桶和巨兽，需要添置第二排射手或冰霜花。
+横屏五路花园防守小游戏，使用绘制的草地场景、植物和怪物素材。选择植物卡片后点草地种植，点击落下的阳光补充能量。向日葵生产阳光，豌豆射手攻击同路怪物，坚果拖住敌人，冰花减速，辣椒一次清理一条战线。先布置花园，再点“开始守卫”；共有八关，清空本关所有波次后可继续下一关，第八关后可重新开始。每条战线还有一次救场推车。第一关适合入门，后续逐步增加波次、铁桶和巨兽，需要添置第二排射手或冰霜花。
 
 Mac 版支持鼠标；数字 1–5 选择植物，空格开始或暂停，P 暂停，R 重来，S 切换铲子，Esc 退出铲子。手机可直接点卡片、草地和阳光。返回游戏库后重新进入会开新局，当前对局不保存到磁盘。可用 `MAGNET_START_GAME=garden` 直接进入；仅在截图预览中设置 `MAGNET_CAPTURE_GARDEN_DEMO=1` 才会填入中途战斗场景。
 
@@ -96,13 +108,29 @@ Mac 版支持鼠标；数字 1–5 选择植物，空格开始或暂停，P 暂�
 
 开发预览：`MAGNET_START_GAME=elements`。元素信息参考 [IUPAC 周期表](https://iupac.org/what-we-do/periodic-table-of-elements/)，配方参考 [PubChem](https://pubchem.ncbi.nlm.nih.gov/)。
 
+## 推箱子
+
+横屏仓库主题，包含六张不同的 8×8 地图，每关两个箱子。方向按钮或方向键/WASD 移动，只能推箱子，不能拉动或连续推两个箱子；撞墙不计步。撤销恢复上一步的人物、箱子和步数，重来重置当前关。全部箱子到位后启用“下一关”，第六关完成后返回选关；右侧选关面板可直接选择任意一关，已完成标记在本次运行期间保留。切换关卡会重新开始所选关卡。
+
+确认稿位于 `designs/sokoban-approved-v1.png`。运行时从确认稿图集采样绘制独立的地板、墙、箱子、角色和目标格，动态更新位置、计数及操作区域。可用 `MAGNET_START_GAME=sokoban` 进入；调试截图支持 `MAGNET_CAPTURE_SOKOBAN_STATE=playing|selection|win|last`（仅在设置 `MAGNET_CAPTURE` 时生效）。
+
 ## 数独乐园
 
 游戏库中的竖屏数独小游戏。可选 4×4 入门和 9×9 经典；点格子再点数字填写，同行、同列和同一个小方宫会一起高亮，错误数字会显示红色。提供清除、提示、重来当前题和换一题。每道题都有确定解，换题会变换数字与棋盘排列；未完成的棋盘自动保存在本机，返回游戏库后也能接着玩。开发预览可使用 `MAGNET_START_GAME=sudoku`。
 
+## 扫雷
+
+按 [已确认的森林探险设计稿](designs/minesweeper-approved-v1.png) 还原，手机和桌面均使用横屏，整幅场景等比显示。顶部显示 10 颗地雷、旗帜数量和安全格进度；木框内为 8×8 叶片棋盘，右侧提供规则、探索/标记切换和重开。格子、旗帜、木牌、纸张及开关纹理从确认稿资源采样，数字与状态随实际对局更新。保留首开安全、自动展开空白区域和翻开全部安全格获胜的规则。
+
+预览：`MAGNET_START_GAME=mines MAGNET_PHONE_PREVIEW=1`。截图验收可配合 `MAGNET_CAPTURE_MINES_STATE=playing|flag|win|lost` 与 `MAGNET_CAPTURE`，并使用独立的 `MAGNET_SAVE_DIR`。
+
 ## 光路小侦探
 
-游戏库中的竖屏镜面益智关卡。点击四块镜片切换斜面方向，光束会按镜面反射规律重新计算并沿实际路线逐段传播；碰到棋盘边缘会停止，只有抵达水晶才会触发点亮动画。可用 `MAGNET_START_GAME=lightpath` 直接预览。
+游戏库中的竖屏镜面益智游戏，共 12 个不同谜题：前两关为两面镜子，第 3–6 关为四面，第 7–12 关为六面。点击镜片切换斜面，光束按真实反射路线逐段传播，只有抵达水晶后才通关和解锁下一关。每关均有唯一解，并需要使用全部镜片。
+
+界面沿用 [光学实验台设计稿](designs/lightpath-approved-v1.png)，进度和通关按钮按 [多关卡确认稿](designs/lightpath-levels-approved-v1.png) 实现。上方显示当前关卡；通关后可“再玩一次”或进入“下一关”，最后一关右侧改为“返回游戏库”。当前关卡、镜片方向和通关进度自动保存到 `lightpath-v1.json`，返回游戏库或重启后继续；重玩只重置当前谜题。
+
+可用 `MAGNET_START_GAME=lightpath MAGNET_PHONE_PREVIEW=1` 打开竖屏预览。`MAGNET_CAPTURE_LIGHTPATH_DEMO=1` 配合 `MAGNET_CAPTURE` 可自动演示解法，在光束实际到达水晶后保存 `.solved.png` 截图；`MAGNET_CAPTURE_LIGHTPATH_LEVEL=1..12` 可选择验收关卡。截图演示应指定独立的 `MAGNET_SAVE_DIR`，避免影响正常进度。
 
 ## 坦克大战开火规则
 
@@ -110,15 +138,21 @@ Mac 版支持鼠标；数字 1–5 选择植物，空格开始或暂停，P 暂�
 
 ## 坦克大战关卡
 
-共有 8 张地图，按顺序挑战：红砖峡谷、灌木通道、钢墙要塞、双路突围、十字街区、环城包抄、曲线走廊、星形堡垒。每关总计 10、12、14、14、16、16、18、20 辆敌军，同时在场上限分别为 2、3、3、3、4、4、4、4 辆。出现空位后每两秒补充一辆，出生点被占用或紧邻玩家时等待。全部敌军消灭后才过关，并补一格护甲（最多三格），第八关后循环地图。失败时可重试本关，补满护甲并保留得分。
+共有 12 张地图，按顺序挑战：红砖峡谷、灌木通道、钢墙要塞、双路突围、十字街区、环城包抄、曲线走廊、星形堡垒、风车岔路、曲径夹击、双翼包围、花环堡垒。每关总计 10、12、14、14、16、16、18、20、20、22、24、26 辆敌军，同时在场上限分别为 2、3、3、3、4、4、4、4、4、4、5、5 辆。出现空位后每两秒补充一辆，出生点被占用或紧邻玩家时等待。全部敌军消灭后才过关，并补一格护甲（最多三格），第十二关后循环地图。失败时可重试本关，补满护甲并保留得分。[新增四关的确认稿](designs/tank-levels-9-12-v1.md)记录了每格布局。
 
-使用 `MAGNET_START_GAME=tank MAGNET_TANK_MAP=3` 可预览第四关，地图编号为 0–7。
+使用 `MAGNET_START_GAME=tank MAGNET_TANK_MAP=3` 可预览第四关，地图编号为 0–11。
+
+Mac 版第四关界面按 [坦克大战设计稿](designs/tank-battle-concept.png) 实现：战场采用设计稿中的草地、沙路、砖墙、钢块和灌木纹理，左右两侧沿用设计稿场景边框，保留顶部战况、返回游戏库和底部移动、开火操作。可对照 [Mac 运行画面](docs/screenshots/tank-design-match.png)。
+
+手机横屏界面按 [20:9 设计稿](designs/tank-mobile-redesign-20x9-v1.png) 和 [16:9 设计稿](designs/tank-mobile-redesign-16x9-v1.png) 排布：中央完整显示 7×7 正方形战场，顶部实时显示关卡、得分、护甲和敌军数量，左右下角分别为可拖动摇杆和按住连发的开火键。可对照 [16:9 实际截图](output/remaining-games-check/tank/initial.png) 和 [20:9 实际截图](output/remaining-games-check-wide/tank/initial.png)。
+
+新增关卡的实机比例预览保存在 `output/tank-levels-9-12/`：每关分别有 `16x9/level-9.png` 至 `level-12.png` 和 `20x9/level-9.png` 至 `level-12.png`，可与确认稿逐格对照。
 
 ## 小镇地产赛（游戏库第 17 款）
 
-20 格彩色小镇棋盘，地图尺寸超出屏幕，按住棋盘拖动可查看各处。视角自动跟随当前角色，手动拖动后可点“回到角色”恢复跟随，下次掷骰也会恢复。中心小镇银行会显示当前阶段：掷骰、沿街前进、到站决策、交易结算或终局排名。玩家小兔与电脑小狐狸轮流掷骰。骰子点数滚动、角色逐格跳跃、买地与升级时房子升起、金币沿弧线飞动，胜利时飘彩纸；动画播放时不会重复接受掷骰或购买。
+40 格彩色小镇棋盘，地图尺寸超出屏幕，按住棋盘拖动可查看各处。视角自动跟随当前角色，手动拖动后可点“回到角色”恢复跟随，下次掷骰也会恢复。中心小镇银行会显示当前阶段：掷骰、沿街前进、到站决策、交易结算或终局排名。玩家小兔与电脑小狐狸、栗子熊、小企鹅轮流掷骰。骰子点数滚动、角色逐格跳跃、买地与升级时房子升起、金币沿弧线飞动，胜利时飘彩纸；动画播放时不会重复接受掷骰或购买。
 
-双方各有 1200 金币，可买地、升级两次并收租。经过起点获得 200 金币，幸运卡、奖金站和公园产生奖励或费用。每人行动 12 次后按“金币 + 房产购置与升级价值”比较总资产；金币耗尽则提前结束。小狐狸自动行动，玩家只需掷骰以及选择购买或跳过。“怎么玩”打开时暂停。当前对局不保存到磁盘，重新进入游戏会开新局。
+四位玩家各有 1200 金币，可买地、升级两次并收租。经过起点获得 200 金币，幸运卡、奖金站和公园产生奖励或费用。每人行动 12 次后按“金币 + 房产购置与升级价值”比较总资产；金币耗尽则提前结束。三位电脑玩家自动行动，玩家只需掷骰以及选择购买或跳过。“怎么玩”打开时暂停。当前对局不保存到磁盘，重新进入游戏会开新局。
 
 预览：`MAGNET_START_GAME=fortune`。仅在设置 `MAGNET_CAPTURE` 时，`MAGNET_FORTUNE_SCENE=choice|roll|build|finished|demo` 才启用样例房产与相应动画；`demo` 会自动演示双方操作。可用 `MAGNET_CAPTURE_SEQUENCE` 指定已存在的目录导出连续画面。
 
@@ -143,19 +177,21 @@ cargo run --locked --bin magnet-island
 
 ## 安卓打包
 
-需要 Rust 的 `aarch64-linux-android` 目标、`cargo-apk`、Android SDK/NDK 和 JDK。当前配置使用 NDK 27.1，支持 ARM64，最低 Android 8.0（API 26）。实际 GPU 兼容性仍需真机验证。
+需要 Rust 的 `aarch64-linux-android` 目标、`cargo-apk`、Android SDK/NDK、JDK 和 Python Pillow。当前配置使用 NDK 27.1，支持 ARM64，最低 Android 8.0（API 26）。实际 GPU 兼容性仍需真机验证。
 
 ```sh
 . ./scripts/env.sh
 rustup target add aarch64-linux-android
 cargo install cargo-apk --locked
-cargo apk build --lib
+sh scripts/android.sh
 ```
 
-开发 APK 位于 `target/debug/apk/magnet-island.apk`。这是开发签名，供个人测试；正式发布需单独配置发布签名并妥善保管密钥。
+优化后的 Release APK 位于 `output/magnet-island.apk`。0.1.8 版的安卓内部版本号为 `16777480`，包体为 **47.17 MiB（49,456,175 字节）**。打包时会剥离原生库调试符号、排除代码未引用的资源，并将 Android 运行图片按 WebP 质量 90 编码；仓库保留原始 PNG，桌面版仍使用 PNG。此图片方案经确认后用于减少离线资源包体积。APK 不纳入 Git，可用下方命令从当前源码重新生成。
+
+当前脚本使用本机 Android 调试密钥签名，便于个人安装测试；正式发布需配置独立的发布密钥并妥善保管。
 
 ```sh
-adb install -r target/debug/apk/magnet-island.apk
+adb install -r output/magnet-island.apk
 ```
 
 `scripts/env.sh` 的 SDK/NDK/JDK 默认路径对应当前 Mac；其他机器可通过环境变量覆盖。iOS 尚未配置和验证，不应把安卓构建成功视为 iOS 已经适配完成。
@@ -232,3 +268,7 @@ MAGNET_CAPTURE=output/preview.png MAGNET_SAVE_DIR=/tmp/magnet-preview cargo run 
 ## 开源协议
 
 项目代码与原创素材采用 [MIT License](LICENSE)。随项目提供的 Noto Sans SC 字体遵循 [SIL Open Font License 1.1](assets/fonts/OFL.txt)。
+
+## 其余游戏运行检查
+
+其余 24 款的实际截图、操作项目和待处理视觉问题见 `docs/remaining-games-verification.md`。星球快递员可点击左上角标题返回游戏库；搭建游戏从游戏库返回后可继续放置方块。检查工具仅用于桌面开发构建，使用独立存档，不改变正式游玩进度。

@@ -1,6 +1,6 @@
 [package]
 name = "magnet_island"
-version = "0.1.7"
+version = "0.1.8"
 edition = "2024"
 description = "小游戏中心 — 离线儿童小游戏合集"
 license = "MIT"
@@ -13,7 +13,7 @@ name = "magnet-island"
 path = "src/main.rs"
 
 [dependencies]
-bevy = { version = "=0.16.1", default-features = false, features = ["bevy_asset", "bevy_audio", "bevy_color", "bevy_core_pipeline", "bevy_pbr", "bevy_render", "bevy_text", "bevy_ui", "bevy_window", "bevy_winit", "multi_threaded", "png", "wav", "default_font", "android-native-activity", "android_shared_stdcxx"] }
+bevy = { version = "=0.16.1", default-features = false, features = ["bevy_asset", "bevy_audio", "bevy_color", "bevy_core_pipeline", "bevy_pbr", "bevy_render", "bevy_text", "bevy_ui", "bevy_window", "bevy_winit", "multi_threaded", "png", "webp", "wav", "default_font", "android-native-activity", "android_shared_stdcxx"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
@@ -30,6 +30,7 @@ opt-level = 2
 [profile.release]
 opt-level = 3
 lto = "thin"
+debug = 0
 strip = true
 
 [package.metadata.android]

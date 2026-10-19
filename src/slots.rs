@@ -23,6 +23,11 @@ pub(super) struct SlotsGame {
     seed: u64,
 }
 impl SlotsGame {
+    #[cfg(debug_assertions)]
+    pub(super) fn qa_state(&self) -> serde_json::Value {
+        serde_json::json!({"points": self.points, "bet": self.bet,
+            "spinning": self.spinning, "turns": self.turns, "prize": self.prize})
+    }
     pub(super) fn new() -> Self {
         Self {
             points: 1000,

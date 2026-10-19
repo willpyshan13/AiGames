@@ -18,6 +18,11 @@ pub(super) struct ArcadeGame {
     played: bool,
 }
 impl ArcadeGame {
+    #[cfg(debug_assertions)]
+    pub(super) fn qa_state(&self) -> serde_json::Value {
+        serde_json::json!({"points": self.points, "bets": self.bets,
+            "running": self.running, "played": self.played, "prize": self.prize})
+    }
     pub(super) fn new() -> Self {
         Self {
             points: 1000,

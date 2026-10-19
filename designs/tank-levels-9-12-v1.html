@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>迷你坦克大战 · 第 9–12 关设计稿</title>
+<style>
+*{box-sizing:border-box}html,body{margin:0}body{background:#0c2116;color:#f6f4db;font-family:system-ui,-apple-system,"PingFang SC",sans-serif;background-image:linear-gradient(#09251b9c,#09251bd6),url('../assets/tank/mobile-forest-20x9-v1.png');background-size:cover;background-position:center;padding:22px 24px 26px;min-width:760px}header{max-width:820px;margin:auto;display:flex;align-items:end;justify-content:space-between;gap:18px}small{color:#91e8b8;font-size:13px;letter-spacing:.12em;font-weight:800}.title{font-size:29px;font-weight:900;margin:5px 0 3px;color:#fff0b0;text-shadow:0 2px 10px #000}.sub{font-size:12px;color:#d3e6d0}.badge{padding:7px 11px;border:1px solid #b2a56d;border-radius:100px;background:#123c2ce0;color:#ffdf70;font-size:12px;font-weight:700;white-space:nowrap}.cards{max-width:820px;margin:15px auto 14px;display:grid;grid-template-columns:repeat(2,1fr);gap:14px}.card{padding:12px;border:1px solid #74ac7b77;border-radius:16px;background:#071c15e8;box-shadow:0 16px 30px #0010078f}.cardhead{display:flex;justify-content:space-between;align-items:center;gap:5px;margin-bottom:8px}.stage{font-weight:900;font-size:20px;color:#ffe182}.name{font-size:18px;font-weight:800}.stats{font-size:12px;color:#b4d9bf;white-space:nowrap;margin-bottom:7px}.board{width:100%;aspect-ratio:1;display:grid;grid-template-columns:repeat(7,minmax(0,1fr));grid-template-rows:repeat(7,minmax(0,1fr));overflow:hidden;border:3px solid #5c8e48;border-radius:5px;box-shadow:0 2px 14px #000b}.cell{position:relative;min-width:0;min-height:0;overflow:hidden;border:1px solid #163f2699;background:#538923}.cell svg{width:100%;height:100%;display:block}.cell .obj{position:absolute;inset:1%;width:98%;height:98%;filter:drop-shadow(0 3px 2px #001b15aa)}.cell .tank{position:absolute;width:115%;height:115%;top:-8%;left:-8%;background-image:url('../assets/tank/tank-sprites-v4.png');background-size:200% 100%;background-repeat:no-repeat;filter:drop-shadow(0 3px 4px #001507e0)}.cell .tank.red{background-position:100% 0;transform:rotate(180deg)}.cell .tank.blue{background-position:0 0}.note{font-size:12px;line-height:1.4;color:#d5e8c7;margin:9px 1px 2px;min-height:32px}footer{max-width:820px;margin:auto;display:flex;justify-content:space-between;gap:12px;border-top:1px solid #76a78166;padding-top:12px;color:#d8e7d4;font-size:11px}.legend{display:flex;gap:9px;flex-wrap:wrap}.legend b{color:#f9dc77}.footnote{white-space:nowrap}
+</style>
+</head>
+<body>
+<header><div><small>迷你坦克大战 · 新关卡设计稿 V1</small><div class="title">从 8 关扩展到 12 关</div><div class="sub">保持已确认的手机战场画风与 7×7 正方形棋盘；以下为第 9–12 关的初始布局。</div></div><div class="badge">待确认 · 尚未接入游戏</div></header>
+<main class="cards" id="cards"></main>
+<footer><div class="legend"><span><b>红砖</b> 可击碎</span><span><b>钢块</b> 不可击碎</span><span><b>灌木</b> 可穿过</span><span><b>蓝坦克</b> 玩家</span><span><b>橙坦克</b> 首批敌军</span></div><span class="footnote">第 12 关后按现有规则循环地图；关卡数字继续递增</span></footer>
+<script>
+const maps=[
+ {number:9,name:'风车岔路',total:20,active:4,note:'四条侧路绕开中轴钢块；先清两翼，再争夺中央通道。',rows:['.......','.#...#.','..#S#..','.B...B.','..#S#..','.#...#.','.......']},
+ {number:10,name:'曲径夹击',total:22,active:4,note:'中央直路易走，两侧砖墙形成射击掩体；注意侧翼包抄。',rows:['.......','S.#.#.S','..#.#..','B.....B','..#.#..','S.#.#.S','.......']},
+ {number:11,name:'双翼包围',total:24,active:5,note:'敌军首次同时上场五辆；利用灌木切换左右战线。',rows:['.......','.##.##.','.B.S.B.','.S...S.','.B.S.B.','.#...#.','.......']},
+ {number:12,name:'花环堡垒',total:26,active:5,note:'中央通道贯通全场，砖墙和钢块交错形成环形防线。',rows:['.......','.#S.S#.','.B...B.','..S.S..','.B...B.','.#S.S#.','.......']},
+];
+const source='../assets/tank/concept-reference.png';
+const rects={ground:[222,299,337,414],sand:[561,541,663,655],wall:[452,191,557,298],steel:[773,290,895,417],bush:[330,418,445,541]};
+function tile(key){const [x1,y1,x2,y2]=rects[key];return `<svg viewBox="${x1} ${y1} ${x2-x1} ${y2-y1}" preserveAspectRatio="none"><image href="${source}" width="1672" height="941"/></svg>`}
+const spawns=[[0,0],[3,0],[6,0],[0,2],[6,2]];
+function card(m){let cells='';for(let y=0;y<7;y++)for(let x=0;x<7;x++){let ch=m.rows[y][x],enemy=spawns.slice(0,m.active).some(([sx,sy])=>sx===x&&sy===y);cells+=`<div class="cell">${tile(x===3?'sand':'ground')}${ch==='.'?'':`<div class="obj">${tile(ch==='#'?'wall':ch==='S'?'steel':'bush')}</div>`}${enemy?'<div class="tank red"></div>':''}${x===3&&y===6?'<div class="tank blue"></div>':''}</div>`}return `<section class="card"><div class="cardhead"><span class="stage">第 ${m.number} 关</span><span class="name">${m.name}</span></div><div class="stats">敌军 ${m.total} 辆 · 同时上场 ${m.active} 辆</div><div class="board">${cells}</div><div class="note">${m.note}</div></section>`}
+const pair=new URLSearchParams(location.search).get('pair');
+document.getElementById('cards').innerHTML=(pair==='first'?maps.slice(0,2):pair==='last'?maps.slice(2):maps).map(card).join('');
+</script>
+</body>
+</html>

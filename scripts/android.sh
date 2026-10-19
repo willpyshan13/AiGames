@@ -16,21 +16,64 @@ native_lib="$CARGO_TARGET_DIR/aarch64-linux-android/release/libmagnet_island.so"
 "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-strip" --strip-unneeded \
   -o "$package_tmp/libmagnet_island.so" "$native_lib"
 python3 - "$CARGO_TARGET_DIR/release/apk/magnet-island-unaligned.apk" "$package_tmp" <<'PYCODE'
-import sys, zipfile
+import io, re, sys, zipfile
 from pathlib import Path
+try:
+    from PIL import Image
+except ImportError as error:
+    raise SystemExit("Pillow is required to create the approved WebP assets") from error
+
 original, staging = Path(sys.argv[1]), Path(sys.argv[2])
+asset_root = Path("assets")
+referenced = set()
+for source in Path("src").rglob("*.rs"):
+    text = source.read_text(encoding="utf-8")
+    for match in re.findall(r"[\w./-]+\.(?:png|webp|wav|ogg|mp3|otf|ttf|json)", text):
+        path = asset_root / match
+        if path.is_file():
+            relative = path.as_posix().removeprefix("assets/")
+            referenced.add(relative)
+            if path.suffix == ".png":
+                referenced.add(path.with_suffix(".webp").as_posix().removeprefix("assets/"))
+        elif path.suffix == ".webp" and path.with_suffix(".png").is_file():
+            referenced.add(path.as_posix().removeprefix("assets/"))
+
+def encode_webp(content):
+    image = Image.open(io.BytesIO(content))
+    original_alpha = image.convert("RGBA").getchannel("A").tobytes()
+    output = io.BytesIO()
+    image.save(output, format="WEBP", quality=90, method=0)
+    encoded = output.getvalue()
+    check = Image.open(io.BytesIO(encoded)).convert("RGBA")
+    if check.size != image.size or check.getchannel("A").tobytes() != original_alpha:
+        raise RuntimeError("WebP encoding changed image size or transparency")
+    return encoded
+
+removed = []
+converted = 0
 with zipfile.ZipFile(original) as src, zipfile.ZipFile(staging / "unsigned.apk", "w") as dst:
     for entry in src.infolist():
         if entry.filename.startswith("META-INF/"):
             continue
-        # Keep the old concept image in the workspace, but not in the APK:
-        # the game loads honey-hunt-storybook-v2.png instead.
-        if entry.filename == "assets/honey/honey-hunt-storybook-v1.png":
-            continue
-        content = ((staging / "libmagnet_island.so").read_bytes()
-                   if entry.filename == "lib/arm64-v8a/libmagnet_island.so"
-                   else src.read(entry.filename))
+        if entry.filename.startswith("assets/"):
+            asset_path = entry.filename.removeprefix("assets/")
+            webp_path = Path(asset_path).with_suffix(".webp").as_posix()
+            if asset_path.endswith(".png") and webp_path in referenced:
+                dst.writestr(f"assets/{webp_path}", encode_webp(src.read(entry.filename)),
+                             compress_type=zipfile.ZIP_STORED)
+                converted += 1
+                continue
+            if asset_path not in referenced:
+                removed.append(asset_path)
+                continue
+            content = src.read(entry.filename)
+        elif entry.filename == "lib/arm64-v8a/libmagnet_island.so":
+            content = (staging / "libmagnet_island.so").read_bytes()
+        else:
+            content = src.read(entry.filename)
         dst.writestr(entry, content)
+print(f"Converted {converted} referenced PNG files to WebP")
+print(f"Excluded {len(removed)} unreferenced asset files")
 PYCODE
 build_tools=$(python3 - "$ANDROID_HOME/build-tools" <<'PYCODE'
 import sys

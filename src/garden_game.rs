@@ -1086,7 +1086,7 @@ mod garden_tests {
     }
 
     #[test]
-    fn economy_and_steady_reinforcements_can_finish_all_three_stages() {
+    fn economy_and_steady_reinforcements_can_finish_the_first_three_stages() {
         let mut game = GardenGame::new();
         for stage in 1..=3 {
             assert_eq!(game.stage, stage);
@@ -1168,8 +1168,41 @@ mod garden_tests {
             );
             game.next_stage();
         }
-        assert_eq!(game.stage, 1);
+        assert_eq!(game.stage, 4);
         assert!(game.ready);
+        assert_eq!(game.score, 15220);
+    }
+
+    #[test]
+    fn campaign_advances_through_eight_gardens_and_then_restarts() {
+        let mut game = GardenGame::new();
+        for stage in 1..=8 {
+            assert_eq!(game.stage, stage);
+            let initial_score = game.score;
+            game.next_stage();
+            assert_eq!(game.stage, stage, "an unfinished garden cannot be skipped");
+            game.start();
+            // Exercise the full spawn schedule and victory/next-stage flow.
+            // Combat and the opening economy are checked separately above.
+            for _ in 0..1800 {
+                for enemy in &mut game.enemies {
+                    enemy.hp = 0.;
+                }
+                game.advance(0.1);
+                if game.over {
+                    break;
+                }
+            }
+            assert!(game.won, "garden {stage} never finished its schedule");
+            assert_eq!(game.spawn_cursor, game.spawn_plan.len());
+            assert!(game.score > initial_score);
+            let completed_score = game.score;
+            game.next_stage();
+            assert!(game.ready);
+            assert!(!game.won);
+            assert_eq!(game.score, if stage == 8 { 0 } else { completed_score });
+        }
+        assert_eq!(game.stage, 1);
     }
 
     #[test]

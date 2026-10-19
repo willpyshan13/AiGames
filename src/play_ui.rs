@@ -501,8 +501,146 @@ fn mission_scene(p: &mut ChildSpawnerCommands, s: &Session, art: &Art) {
     });
 }
 
-pub(super) fn mission_ui(commands: &mut Commands, s: &Session, art: &Art) {
-    let task = mission_question(s.mode, s.mission_step);
+const MISSION_ART_W: f32 = 1672.;
+const MISSION_ART_H: f32 = 941.;
+
+fn mission_abs(rect: [f32; 4], scale: f32) -> Node {
+    Node {
+        position_type: PositionType::Absolute,
+        left: Val::Px(rect[0] * scale),
+        top: Val::Px(rect[1] * scale),
+        width: Val::Px(rect[2] * scale),
+        height: Val::Px(rect[3] * scale),
+        align_items: AlignItems::Center,
+        justify_content: JustifyContent::Center,
+        ..default()
+    }
+}
+
+fn mission_hotspot(parent: &mut ChildSpawnerCommands, action: Action, rect: [f32; 4], scale: f32) {
+    parent.spawn((
+        Button,
+        action,
+        mission_abs(rect, scale),
+        BackgroundColor(Color::srgba(0., 0., 0., 0.)),
+    ));
+}
+
+fn mission_image(
+    parent: &mut ChildSpawnerCommands,
+    image: Handle<Image>,
+    source: Option<[f32; 4]>,
+    rect: [f32; 4],
+    scale: f32,
+) {
+    let mut node = ImageNode::new(image);
+    node.image_mode = NodeImageMode::Stretch;
+    if let Some([left, top, right, bottom]) = source {
+        node.rect = Some(bevy::math::Rect::new(left, top, right, bottom));
+    }
+    parent.spawn((node, mission_abs(rect, scale), bevy::ui::FocusPolicy::Pass));
+}
+
+fn mission_overlay_label(
+    parent: &mut ChildSpawnerCommands,
+    art: &Art,
+    text: &str,
+    rect: [f32; 4],
+    scale: f32,
+    font_size: f32,
+    color: Color,
+    shadow: Color,
+) {
+    parent
+        .spawn((mission_abs(rect, scale), bevy::ui::FocusPolicy::Pass))
+        .with_children(|slot| {
+            slot.spawn((
+                Text::new(text),
+                TextFont {
+                    font: art.font.clone(),
+                    font_size: font_size * scale,
+                    ..default()
+                },
+                TextColor(color),
+                TextLayout::new_with_justify(JustifyText::Center),
+                TextShadow {
+                    offset: Vec2::splat(2. * scale),
+                    color: shadow,
+                },
+                bevy::ui::FocusPolicy::Pass,
+            ));
+        });
+}
+
+fn mission_success_headline(mode: GameMode, step: usize) -> &'static str {
+    match (mode, step) {
+        (GameMode::Firefighters, 0) => "答对了！云梯升起来了",
+        (GameMode::Firefighters, 1) => "答对了！水管接好了",
+        (GameMode::Firefighters, 2) => "答对了！安全绕开路障",
+        (GameMode::Firefighters, _) => "答对了！小猫安全到达",
+        (GameMode::Detective, 0) => "答对了！找到脚印了",
+        (GameMode::Detective, 1) => "答对了！蓝色展厅打开了",
+        (GameMode::Detective, 2) => "答对了！小鸟留下羽毛",
+        (GameMode::Detective, _) => "答对了！花瓶回到展柜",
+        (GameMode::SpaceFarm, 0) => "答对了！阳光照到小苗",
+        (GameMode::SpaceFarm, 1) => "答对了！小苗喝到水",
+        (GameMode::SpaceFarm, 2) => "答对了！番茄变红了",
+        _ => "答对了！补给制作完成",
+    }
+}
+
+pub(super) fn mission_ui(
+    commands: &mut Commands,
+    s: &Session,
+    art: &Art,
+    logical_width: f32,
+    logical_height: f32,
+) {
+    let scale = (logical_width / MISSION_ART_W)
+        .min(logical_height / MISSION_ART_H)
+        .max(0.1);
+    let (artwork, choice_rects, hint_rect) = match s.mode {
+        GameMode::Firefighters => (
+            if s.mission_step == 0 {
+                &art.mission_fire_approved
+            } else {
+                &art.mission_fire_steps[s.mission_step - 1]
+            },
+            [
+                [127., 723., 469., 163.],
+                [629., 722., 407., 164.],
+                [1070., 721., 469., 165.],
+            ],
+            [1202., 492., 335., 100.],
+        ),
+        GameMode::Detective => (
+            if s.mission_step == 0 {
+                &art.mission_detective_approved
+            } else {
+                &art.mission_detective_steps[s.mission_step - 1]
+            },
+            [
+                [99., 741., 458., 150.],
+                [601., 741., 465., 150.],
+                [1103., 741., 474., 150.],
+            ],
+            [1185., 531., 355., 99.],
+        ),
+        GameMode::SpaceFarm => (
+            if s.mission_step == 0 {
+                &art.mission_farm_approved
+            } else {
+                &art.mission_farm_steps[s.mission_step - 1]
+            },
+            [
+                [83., 732., 475., 157.],
+                [603., 732., 466., 157.],
+                [1105., 732., 490., 157.],
+            ],
+            [1203., 526., 333., 102.],
+        ),
+        _ => unreachable!(),
+    };
     commands
         .spawn((
             UiRoot,
@@ -511,104 +649,206 @@ pub(super) fn mission_ui(commands: &mut Commands, s: &Session, art: &Art) {
                 height: Val::Percent(100.),
                 align_items: AlignItems::Center,
                 justify_content: JustifyContent::Center,
+                overflow: Overflow::clip(),
                 ..default()
             },
-            BackgroundColor(Color::srgb(0.09, 0.18, 0.25)),
+            BackgroundColor(Color::srgb(0.06, 0.09, 0.16)),
         ))
         .with_children(|root| {
-            root.spawn((
-                Node {
-                    width: Val::Px(860.),
-                    max_width: Val::Percent(94.),
-                    padding: UiRect::all(Val::Px(16.)),
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    row_gap: Val::Px(6.),
-                    ..default()
-                },
-                BackgroundColor(PAPER),
-                BorderRadius::all(Val::Px(24.)),
-            ))
-            .with_children(|p| {
-                label(
-                    p,
-                    art,
-                    format!("{} · 任务 {}/4", s.mode.title(), s.mission_step + 1),
-                    24.,
-                    TEAL,
-                );
-                mission_scene(p, s, art);
-                label(p, art, task.prompt, 22., INK);
-                p.spawn(row()).with_children(|p| {
-                    if s.mission_done {
-                        button(
-                            p,
-                            art,
-                            if s.mission_step == 3 {
-                                "全部完成！再玩一次"
-                            } else {
-                                "下一步 →"
-                            },
-                            Action::MissionNext,
-                            260.,
-                            52.,
-                            MINT,
-                            NAVY,
-                        );
-                    } else {
-                        for (i, choice) in task.choices.iter().enumerate() {
-                            button(
-                                p,
-                                art,
-                                *choice,
-                                Action::MissionChoice(i),
-                                190.,
-                                52.,
-                                if s.mission_wrong == Some(i) {
-                                    Color::srgb(1., 0.85, 0.77)
-                                } else {
-                                    Color::srgb(0.80, 0.89, 0.97)
+            root.spawn(Node {
+                width: Val::Px(MISSION_ART_W * scale),
+                height: Val::Px(MISSION_ART_H * scale),
+                flex_shrink: 0.,
+                ..default()
+            })
+            .with_children(|stage| {
+                let mut background = ImageNode::new(artwork.clone());
+                background.image_mode = NodeImageMode::Stretch;
+                stage.spawn((
+                    background,
+                    Node {
+                        position_type: PositionType::Absolute,
+                        width: Val::Percent(100.),
+                        height: Val::Percent(100.),
+                        ..default()
+                    },
+                    bevy::ui::FocusPolicy::Pass,
+                ));
+
+                mission_hotspot(stage, Action::Help, [1530., 14., 140., 120.], scale);
+                if s.mission_done {
+                    let index = mission_index(s.mode).unwrap();
+                    let (
+                        banner_source,
+                        button_source,
+                        banner_rect,
+                        button_rect,
+                        title_rect,
+                        button_text_rect,
+                        title_color,
+                    ) = match s.mode {
+                        GameMode::Firefighters => (
+                            [330., 0., 1340., 410.],
+                            [430., 570., 1240., 941.],
+                            [506., 18., 660., 268.],
+                            [597., 690., 478., 219.],
+                            [560., 145., 552., 86.],
+                            [625., 745., 422., 92.],
+                            Color::srgb(0.42, 0.09, 0.05),
+                        ),
+                        GameMode::Detective => (
+                            [170., 0., 1500., 490.],
+                            [255., 545., 1410., 941.],
+                            [472., 14., 728., 268.],
+                            [566., 704., 540., 188.],
+                            [528., 143., 616., 89.],
+                            [624., 737., 424., 112.],
+                            Color::srgb(0.30, 0.10, 0.08),
+                        ),
+                        GameMode::SpaceFarm => (
+                            [270., 0., 1410., 410.],
+                            [390., 555., 1280., 941.],
+                            [506., 18., 660., 268.],
+                            [592., 690., 488., 218.],
+                            [560., 145., 552., 86.],
+                            [625., 745., 422., 92.],
+                            Color::srgb(0.05, 0.16, 0.42),
+                        ),
+                        _ => unreachable!(),
+                    };
+                    let overlay = art.mission_success_overlays[index].clone();
+                    mission_image(
+                        stage,
+                        overlay.clone(),
+                        Some(banner_source),
+                        banner_rect,
+                        scale,
+                    );
+                    mission_image(stage, overlay, Some(button_source), button_rect, scale);
+                    mission_overlay_label(
+                        stage,
+                        art,
+                        mission_success_headline(s.mode, s.mission_step),
+                        title_rect,
+                        scale,
+                        40.,
+                        title_color,
+                        Color::srgba(1., 0.85, 0.54, 0.95),
+                    );
+                    mission_overlay_label(
+                        stage,
+                        art,
+                        if s.mission_step == 3 {
+                            "再玩一次"
+                        } else {
+                            "下一步 →"
+                        },
+                        button_text_rect,
+                        scale,
+                        47.,
+                        Color::WHITE,
+                        Color::srgba(0.25, 0.06, 0.02, 0.90),
+                    );
+                    mission_hotspot(stage, Action::MissionNext, button_rect, scale);
+                } else {
+                    for (i, rect) in choice_rects.into_iter().enumerate() {
+                        mission_hotspot(stage, Action::MissionChoice(i), rect, scale);
+                        if s.mission_wrong == Some(i) {
+                            stage.spawn((
+                                Node {
+                                    border: UiRect::all(Val::Px(5. * scale)),
+                                    ..mission_abs(rect, scale)
                                 },
-                                NAVY,
-                            );
+                                BorderColor(Color::srgb(1., 0.27, 0.18)),
+                                BorderRadius::all(Val::Px(20. * scale)),
+                                bevy::ui::FocusPolicy::Pass,
+                            ));
                         }
                     }
-                });
-                p.spawn(row()).with_children(|p| {
-                    if !s.mission_done {
-                        button(
-                            p,
-                            art,
-                            "给我提示",
-                            Action::MissionHint,
-                            120.,
-                            44.,
-                            PAPER,
-                            TEAL,
-                        );
-                    }
-                    button(
-                        p,
-                        art,
-                        "怎么玩 / 暂停",
-                        Action::Help,
-                        150.,
-                        44.,
-                        PAPER,
-                        TEAL,
-                    );
-                });
-                label(
-                    p,
-                    art,
-                    if s.mission_feedback.is_empty() {
-                        "不限时 · 选错也没关系，会给你提示"
-                    } else {
-                        &s.mission_feedback
-                    },
-                    16.,
-                    TEAL,
+                    mission_hotspot(stage, Action::MissionHint, hint_rect, scale);
+                }
+                if !s.mission_done && !s.mission_feedback.is_empty() {
+                    stage.spawn((
+                        mission_abs([684., 31., 485., 85.], scale),
+                        BackgroundColor(Color::srgba(0.10, 0.10, 0.20, 0.90)),
+                        BorderRadius::all(Val::Px(22. * scale)),
+                        bevy::ui::FocusPolicy::Pass,
+                    ));
+                    stage
+                        .spawn((
+                            mission_abs([699., 41., 455., 65.], scale),
+                            bevy::ui::FocusPolicy::Pass,
+                        ))
+                        .with_children(|p| {
+                            label(p, art, &s.mission_feedback, 25. * scale, Color::WHITE);
+                        });
+                }
+            });
+        });
+}
+
+pub(super) fn mission_pause_panel(
+    commands: &mut Commands,
+    s: &Session,
+    art: &Art,
+    logical_width: f32,
+    logical_height: f32,
+) {
+    let scale = (logical_width / MISSION_ART_W)
+        .min(logical_height / MISSION_ART_H)
+        .max(0.1);
+    let index = mission_index(s.mode).unwrap();
+    let (panel_rect, continue_rect, library_rect) = match s.mode {
+        GameMode::Firefighters => (
+            [251., 141., 1170., 659.],
+            [509., 540., 321., 121.],
+            [838., 540., 328., 121.],
+        ),
+        GameMode::Detective => (
+            [356., 170., 960., 600.],
+            [521., 531., 316., 129.],
+            [838., 531., 316., 129.],
+        ),
+        GameMode::SpaceFarm => (
+            [311., 170., 1050., 600.],
+            [492., 530., 344., 132.],
+            [837., 530., 344., 132.],
+        ),
+        _ => unreachable!(),
+    };
+    commands
+        .spawn((
+            UiRoot,
+            GlobalZIndex(200),
+            Node {
+                position_type: PositionType::Absolute,
+                width: Val::Percent(100.),
+                height: Val::Percent(100.),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
+                overflow: Overflow::clip(),
+                ..default()
+            },
+            BackgroundColor(Color::srgba(0.03, 0.06, 0.10, 0.62)),
+            bevy::ui::FocusPolicy::Block,
+        ))
+        .with_children(|root| {
+            root.spawn(Node {
+                width: Val::Px(MISSION_ART_W * scale),
+                height: Val::Px(MISSION_ART_H * scale),
+                flex_shrink: 0.,
+                ..default()
+            })
+            .with_children(|stage| {
+                mission_image(
+                    stage,
+                    art.mission_pause_overlays[index].clone(),
+                    None,
+                    panel_rect,
+                    scale,
                 );
+                mission_hotspot(stage, Action::CloseHelp, continue_rect, scale);
+                mission_hotspot(stage, Action::Library, library_rect, scale);
             });
         });
 }
@@ -728,6 +968,10 @@ mod tests {
 
 pub(super) fn help_panel(commands: &mut Commands, s: &Session, art: &Art) {
     let (instruction, reminder) = match s.mode {
+        GameMode::CloudBridge => (
+            "1  选材料，在缺口处铺好桥面\n2  切到编程，添加「放木块」和「前进」指令\n3  运行机器人，收集本关全部星晶后抵达终点星",
+            "云桥冒险共 6 座岛。完成本关后点右上角「›」继续；最后一关要搭至少 10 块积木并使用 3 种材料。",
+        ),
         GameMode::FruitArcade => (
             "1  点击下方水果，每次增加 10 点，可选多种\n2  点击启动，看亮灯绕圈减速\n3  停中已选水果，获得该水果投入 × 倍率",
             "20 个格子等概率停留，每种图案各 4 格。奖励含投入；未选中不返还。清空可重新分配，积分可免费补充。",
@@ -761,14 +1005,14 @@ pub(super) fn help_panel(commands: &mut Commands, s: &Session, art: &Art) {
         GameMode::BubbleIsland => (
             "1  按住棋盘，看看白色瞄准线
 2  松手发射，连成三个同色就消除
-3  也可以点「帮我瞄准」再点「发射」",
-            "第一关不会下压。瞄准辅助只帮你选路线，不会自动发射。",
+3  利用两侧墙壁反弹，清空后进入下一关",
+            "第一关不会下压。宽窗口还有瞄准辅助和发射按钮。",
         ),
         GameMode::BubbleBomber => (
-            "1  点身边的亮格走动，或按住方向键
-2  点「放水泡」，看三秒倒计时
-3  离开黄色危险格，躲过水花",
-            "有五条命，复活后有护盾。看说明时，小怪和倒计时都会暂停。",
+            "1  拖左侧摇杆移动，松开即停
+2  点右侧水泡，约两秒后爆开
+3  避开十字水柱，击败小怪闯关",
+            "初始三条命，复活后有护盾。看说明时，小怪和倒计时都会暂停。",
         ),
         GameMode::FruitNinja => (
             "1  按住屏幕，划过飞起来的水果
