@@ -186,12 +186,12 @@ cargo install cargo-apk --locked
 sh scripts/android.sh
 ```
 
-优化后的 Release APK 位于 `output/magnet-island.apk`。0.1.8 版的安卓内部版本号为 `16777480`，包体为 **47.17 MiB（49,456,175 字节）**。打包时会剥离原生库调试符号、排除代码未引用的资源，并将 Android 运行图片按 WebP 质量 90 编码；仓库保留原始 PNG，桌面版仍使用 PNG。此图片方案经确认后用于减少离线资源包体积。APK 不纳入 Git，可用下方命令从当前源码重新生成。
+优化后的 Release APK 位于 `output/magnet-island-0.1.8.apk`。0.1.8 版的安卓内部版本号为 `16777480`，包体为 **47.17 MiB（49,456,175 字节）**。打包时会剥离原生库调试符号、排除代码未引用的资源，并将 Android 运行图片按 WebP 质量 90 编码；仓库保留原始 PNG，桌面版仍使用 PNG。此图片方案经确认后用于减少离线资源包体积。脚本按版本命名 APK，并在成功打包后清理旧版 APK 和打包中间产物；APK 不纳入 Git，可用下方命令从当前源码重新生成。
 
 当前脚本使用本机 Android 调试密钥签名，便于个人安装测试；正式发布需配置独立的发布密钥并妥善保管。
 
 ```sh
-adb install -r output/magnet-island.apk
+adb install -r output/magnet-island-0.1.8.apk
 ```
 
 `scripts/env.sh` 的 SDK/NDK/JDK 默认路径对应当前 Mac；其他机器可通过环境变量覆盖。iOS 尚未配置和验证，不应把安卓构建成功视为 iOS 已经适配完成。

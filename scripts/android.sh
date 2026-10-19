@@ -89,5 +89,17 @@ mkdir -p output
   --out "$package_tmp/signed.apk" "$package_tmp/aligned.apk"
 "$build_tools/apksigner" verify "$package_tmp/signed.apk"
 "$build_tools/zipalign" -c -P 16 4 "$package_tmp/signed.apk"
-cp "$package_tmp/signed.apk" output/magnet-island.apk
-echo "APK: $PWD/output/magnet-island.apk"
+version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' Cargo.toml | head -n 1)
+[ -n "$version" ]
+final_apk="output/magnet-island-$version.apk"
+cp "$package_tmp/signed.apk" "$final_apk"
+# Keep only the current installable package; cargo-apk's intermediate APKs are
+# much larger and should not remain beside the release build.
+for old_apk in output/magnet-island.apk output/magnet-island-[0-9]*.apk; do
+    if [ -f "$old_apk" ] && [ "$old_apk" != "$final_apk" ]; then
+        rm "$old_apk"
+    fi
+done
+rm -f "$CARGO_TARGET_DIR"/debug/apk/magnet-island*.apk \
+    "$CARGO_TARGET_DIR"/release/apk/magnet-island*.apk
+echo "APK: $PWD/$final_apk"
