@@ -13,7 +13,9 @@ OUT = ROOT / ("output/remaining-games-check-wide" if os.environ.get("MAGNET_QA_S
 GAMES = ["island", "cloudbridge", "freebuild", "ball", "tetris", "fire",
          "detective", "farm", "tank", "sky", "bubble", "bomber", "fruit",
          "fortune", "slots", "arcade", "fishing", "honey", "snake", "mines",
-         "sokoban", "lightpath", "garden", "courier"]
+         "sokoban", "lightpath", "garden", "courier", "restaurant", "math",
+         "literacy", "piano", "shooter", "mushroom", "moon", "classic2048",
+         "klotski", "sudoku", "breakout", "elements", "rabbit"]
 
 
 def run(game):
@@ -25,6 +27,7 @@ def run(game):
     env = os.environ.copy()
     env.update(MAGNET_START_GAME=game, MAGNET_PHONE_PREVIEW="1", MAGNET_QA="1",
                MAGNET_CAPTURE=str(folder / "capture.png"), MAGNET_SAVE_DIR=str(saved))
+    began_wall = time.time()
     began = time.monotonic()
     with (folder / "run.log").open("w") as log:
         process = subprocess.Popen([str(ROOT / "target/debug/magnet-island")],
@@ -40,9 +43,14 @@ def run(game):
                 process.wait()
             code = "timeout"
     report = folder / "result.json"
-    data = json.loads(report.read_text()) if report.exists() else {}
+    # A crash must not inherit a successful report from an earlier run.
+    fresh_report = report.exists() and report.stat().st_mtime >= began_wall
+    try:
+        data = json.loads(report.read_text()) if fresh_report else {}
+    except (OSError, json.JSONDecodeError):
+        data = {}
     png = folder / "initial.png"
-    dimensions = struct.unpack(">II", png.read_bytes()[16:24]) if png.exists() else None
+    dimensions = struct.unpack(">II", png.read_bytes()[16:24]) if png.exists() and png.stat().st_mtime >= began_wall else None
     aspect_ok = True
     if os.environ.get("MAGNET_QA_SIZE"):
         width, height = map(int, os.environ["MAGNET_QA_SIZE"].split("x"))

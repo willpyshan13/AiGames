@@ -17,7 +17,7 @@ impl Plugin for QaPlugin {
             "QA requires an isolated save directory"
         );
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
-            std::time::Duration::from_secs_f64(1. / 30.),
+            std::time::Duration::from_secs_f64(if std::env::var_os("MAGNET_RABBIT_LONG_QA").is_some() {1. / 20.} else {1. / 30.}),
         ))
         .init_resource::<Qa>()
         .add_systems(
@@ -63,6 +63,8 @@ enum QaStep {
     Click(Action),
     Optional(Action),
     Point(Area, Vec2, Vec2, u32),
+    Keys(Vec<KeyCode>, u32),
+    RabbitRunUntil(f32),
     BuildCell,
     FruitSlice,
     Wait(u32),
@@ -315,6 +317,11 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             });
         }
         GameMode::Fishing => {
+            click(&mut p, Help);
+            check(&mut p, "说明按钮不会误撒网扣币", |s| {
+                s.help_open && s.fishing.coins == 60
+            });
+            click(&mut p, CloseHelp);
             p.push_back(QaStep::Point(
                 Area::Window,
                 Vec2::new(0.45, 0.3),
@@ -331,6 +338,11 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             });
         }
         GameMode::HoneyHunt => {
+            click(&mut p, Help);
+            check(&mut p, "说明按钮不会误发射抓钩", |s| {
+                s.help_open && s.honey.qa_state()["flying"] == false
+            });
+            click(&mut p, CloseHelp);
             p.push_back(QaStep::Point(
                 Area::Window,
                 Vec2::splat(0.5),
@@ -506,7 +518,176 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
                 s.courier.chapter == 2 && s.courier.delivered.iter().all(|v| !*v)
             });
         }
-        _ => panic!("use the existing storybook verification for this game"),
+        GameMode::Math => {
+            click(&mut p, MathAnswer(6));
+            check(&mut p, "答错可重试", |s| {
+                s.math.wrong == Some(6) && !s.math.solved
+            });
+            click(&mut p, MathHint);
+            check(&mut p, "提示可用", |s| s.math.hinted);
+            click(&mut p, MathAnswer(5));
+            check(&mut p, "直接答题成功", |s| {
+                s.math.solved && s.math.correct_total == 1
+            });
+            click(&mut p, MathNext);
+            check(&mut p, "下一题保留难度", |s| {
+                s.math.index == 1 && !s.math.solved && s.math.level == 0
+            });
+        }
+        GameMode::Literacy => {
+            click(&mut p, LiteracyStart(0));
+            click(&mut p, LiteracyNext);
+            click(&mut p, LiteracySelect(1));
+            check(&mut p, "识字错误可修改", |s| {
+                s.literacy.checked && !s.literacy.correct
+            });
+            click(&mut p, LiteracySelect(0));
+            check(&mut p, "改选立即答对", |s| {
+                s.literacy.checked && s.literacy.correct
+            });
+            click(&mut p, LiteracyNext);
+            check(&mut p, "进入下一练习", |s| {
+                s.literacy.stage == 2 && !s.literacy.checked
+            });
+        }
+        GameMode::MusicFactory => {
+            click(&mut p, PianoKey((s.piano.target() + 1) % 7));
+            check(&mut p, "错音不跳过目标", |s| {
+                s.piano.step == 0 && s.piano.score == 0
+            });
+            for note in PIANO_NOTES.iter().take(4) {
+                click(&mut p, PianoKey(*note));
+            }
+            check(&mut p, "连续正确弹奏", |s| {
+                s.piano.step == 4 && s.piano.combo == 4
+            });
+            click(&mut p, PianoReset);
+            check(&mut p, "重新练习", |s| {
+                s.piano.step == 0 && s.piano.score == 0
+            });
+        }
+        GameMode::PixelAssault => {
+            click(&mut p, AssaultRight);
+            check(&mut p, "向右移动", |s| s.assault.player_x > 0.18);
+            click(&mut p, AssaultJump);
+            check(&mut p, "跳跃", |s| s.assault.jump > 0.);
+            click(&mut p, AssaultFire);
+            check(&mut p, "开火命中或子弹在飞行", |s| {
+                !s.assault.bullets.is_empty() || s.assault.score > 0
+            });
+            click(&mut p, AssaultReset);
+            check(&mut p, "重新开始", |s| {
+                s.assault.lives == 3 && s.assault.score == 0
+            });
+        }
+        GameMode::MushroomRun => {
+            click(&mut p, PlatformRight);
+            check(&mut p, "按住前进", |s| s.platform.distance > 0.);
+            click(&mut p, PlatformJump);
+            check(&mut p, "跳跃离地", |s| s.platform.player_y > 0.);
+            click(&mut p, PlatformReset);
+            check(&mut p, "重新开始", |s| {
+                s.platform.distance == 0. && s.platform.lives == 3
+            });
+        }
+        GameMode::MoonFestival => {
+            click(&mut p, MoonShake);
+            check(&mut p, "开始摇骰子", |s| s.moon.rolling);
+            p.push_back(QaStep::Wait(30));
+            check(&mut p, "完成一次结算", |s| {
+                !s.moon.rolling && s.moon.rolls_left == 4 && s.moon.score > 0
+            });
+            click(&mut p, MoonReset);
+            check(&mut p, "免费重开", |s| {
+                s.moon.rolls_left == 5 && s.moon.score == 0
+            });
+        }
+        GameMode::Classic2048 => {
+            for (dx, dy) in [(-1, 0), (0, -1), (1, 0), (0, 1)] {
+                click(&mut p, ClassicMove(dx, dy));
+            }
+            check(&mut p, "方向移动可用", |s| s.classic_2048.moves > 0);
+            click(&mut p, ClassicReset);
+            check(&mut p, "重置棋盘", |s| {
+                s.classic_2048.moves == 0
+                    && s.classic_2048.cells.iter().filter(|v| **v != 0).count() == 2
+            });
+        }
+        GameMode::Klotski => {
+            click(&mut p, KlotskiSelect(6));
+            click(&mut p, KlotskiMove(0, 1));
+            check(&mut p, "选中棋子下移", |s| s.klotski.pieces[6].y == 4);
+            click(&mut p, KlotskiMove(0, 1));
+            check(&mut p, "不能移出边界", |s| s.klotski.pieces[6].y == 4);
+            click(&mut p, KlotskiReset);
+            check(&mut p, "重置布局", |s| s.klotski.pieces[6].y == 3);
+        }
+        GameMode::Sudoku => {
+            click(&mut p, SudokuSize(4));
+            click(&mut p, SudokuSelect(1));
+            click(&mut p, SudokuDigit(1));
+            check(&mut p, "错误标记", |s| {
+                s.sudoku.is_wrong(1) && s.sudoku.mistakes == 1
+            });
+            click(&mut p, SudokuClear);
+            check(&mut p, "清除错误", |s| {
+                s.sudoku.cells[1] == 0 && s.sudoku.mistakes == 0
+            });
+            click(&mut p, SudokuHint);
+            check(&mut p, "提示填入正确数字", |s| {
+                s.sudoku.cells[1] == 2 && !s.sudoku.is_wrong(1)
+            });
+            click(&mut p, SudokuNew);
+            check(&mut p, "更换题目", |s| {
+                s.sudoku.variant == 1 && s.sudoku.size == 4
+            });
+        }
+        GameMode::Breakout => {
+            click(&mut p, BreakoutLaunch);
+            check(&mut p, "发球开始", |s| {
+                !s.breakout.ready && !s.breakout.over
+            });
+            click(&mut p, BreakoutToggle);
+            check(&mut p, "暂停", |s| s.breakout.paused);
+            click(&mut p, BreakoutReset);
+            check(&mut p, "重新开始", |s| {
+                s.breakout.ready && s.breakout.lives == 3
+            });
+        }
+        GameMode::ElementLab => {
+            click(&mut p, ElementPick(2));
+            check(&mut p, "错误元素不消耗进度", |s| {
+                s.elements.picked.is_empty() && !s.elements.complete
+            });
+            for atom in [1, 1, 8] {
+                click(&mut p, ElementPick(atom));
+            }
+            check(&mut p, "水分子配方完成", |s| {
+                s.elements.complete && s.elements.score > 0
+            });
+            click(&mut p, ElementNext);
+            check(&mut p, "下一实验", |s| {
+                s.elements.stage == 1 && !s.elements.complete
+            });
+        }
+        GameMode::CrystalGarden => {
+            click(&mut p, Material(crate::game::Material::Stone));
+            p.push_back(QaStep::BuildCell);
+            check(&mut p, "餐厅搭建", |s| !s.undo.is_empty());
+            click(&mut p, Undo);
+            check(&mut p, "撤销搭建", |s| s.undo.is_empty());
+            click(&mut p, RestaurantCheck);
+            check(&mut p, "检查布置进度", |s| s.message.contains("餐厅"));
+        }
+        GameMode::RabbitHome => {
+            for (target,shot) in [(45.,"start"),(186.,"river"),(600.,"forest"),(740.,"birch"),(1050.,"roots"),(1460.,"pine"),(1775.,"hollow-tree"),(2050.,"cottage"),(2085.,"finished")] {
+                p.push_back(QaStep::RabbitRunUntil(target));
+                check(&mut p,"长地图镜头与无伤行程",|s| s.rabbit_home.lives()==3 && s.rabbit_home.qa_camera()>=0.);
+                p.push_back(QaStep::Shot(shot));
+            }
+            check(&mut p,"21屏完整通关",|s|s.rabbit_home.outcome()==Some(true) && s.rabbit_home.progress()==1. && s.rabbit_home.combo()==10);
+
+        }
     }
     p.push_back(QaStep::Shot("checked"));
     p.push_back(QaStep::Help);
@@ -520,7 +701,7 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
     p.push_back(QaStep::Shot("returned"));
     if matches!(
         s.mode,
-        GameMode::Island | GameMode::CloudBridge | GameMode::FreeBuild
+        GameMode::Island | GameMode::CloudBridge | GameMode::FreeBuild | GameMode::CrystalGarden
     ) {
         p.push_back(QaStep::BuildCell);
         check(&mut p, "游戏库返回后仍可搭建", |s| {
@@ -560,8 +741,13 @@ fn input(
     cards: Query<(&ComputedNode, &GlobalTransform), With<LibraryCards>>,
     mut wheels: EventWriter<MouseWheel>,
     mut mouse: ResMut<ButtonInput<MouseButton>>,
+    mut keys: ResMut<ButtonInput<KeyCode>>,
 ) {
     qa.frame += 1;
+    for key in [KeyCode::ArrowRight, KeyCode::ArrowLeft, KeyCode::Space] {
+        let wanted = matches!(&qa.active, Some(QaStep::Keys(held, _)) if qa.remaining > 0 && held.contains(&key));
+        if !wanted { keys.release(key); }
+    }
     if qa.remaining <= 5
         || !matches!(
             qa.active,
@@ -594,6 +780,13 @@ fn input(
     if qa.remaining > 0 {
         qa.remaining -= 1;
         match qa.active.clone() {
+            Some(QaStep::RabbitRunUntil(target)) => {
+                if s.rabbit_home.qa_position()>=target || s.rabbit_home.outcome().is_some() {qa.remaining=0;}
+                else {keys.press(KeyCode::ArrowRight);if s.rabbit_home.qa_should_jump(){keys.press(KeyCode::Space);}}
+            }
+            Some(QaStep::Keys(held, _)) => {
+                for key in held { keys.press(key); }
+            }
             Some(QaStep::Click(a)) | Some(QaStep::Optional(a)) if qa.remaining >= 5 => {
                 if let Some(pos) = action_point(&surfaces, &window, a) {
                     window.set_cursor_position(Some(pos));
@@ -639,6 +832,13 @@ fn input(
         }
         QaStep::Point(.., frames) => {
             qa.remaining = frames + 5;
+            qa.active = Some(step);
+        }
+        QaStep::RabbitRunUntil(_) => {
+            qa.remaining=20000;qa.active=Some(step);
+        }
+        QaStep::Keys(_, frames) => {
+            qa.remaining = frames;
             qa.active = Some(step);
         }
         QaStep::BuildCell => {
@@ -755,7 +955,10 @@ fn input(
                         .push_front(QaStep::Click(Action::SelectGame(wanted)));
                 } else if matches!(
                     wanted,
-                    GameMode::Island | GameMode::CloudBridge | GameMode::FreeBuild
+                    GameMode::Island
+                        | GameMode::CloudBridge
+                        | GameMode::FreeBuild
+                        | GameMode::CrystalGarden
                 ) && s.library_open
                     && available(Action::SelectGame(GameMode::Island))
                 {
@@ -883,7 +1086,10 @@ fn observe(
 fn snapshot(s: &Session) -> serde_json::Value {
     use serde_json::json;
     match s.mode {
-        GameMode::Island | GameMode::CloudBridge | GameMode::FreeBuild => {
+        GameMode::Island
+        | GameMode::CloudBridge
+        | GameMode::FreeBuild
+        | GameMode::CrystalGarden => {
             json!({"blocks": s.work.world.blocks.len(), "undo": s.undo.len(), "message": s.message, "level": s.work.level})
         }
         GameMode::Ball2048 => {
@@ -898,6 +1104,8 @@ fn snapshot(s: &Session) -> serde_json::Value {
         GameMode::TankBattle => {
             json!({"player": s.tank.player, "bullets": s.tank.bullets.len(), "wave": s.tank.wave})
         }
+        GameMode::PixelAssault => json!({"x": s.assault.player_x, "camera": s.assault.camera_x,
+            "score": s.assault.score, "bullets": s.assault.bullets.len(), "feedback": s.assault.feedback}),
         GameMode::SkyRaid => json!({"x": s.sky.x, "score": s.sky.score, "lives": s.sky.lives}),
         GameMode::BubbleIsland => {
             json!({"shots": s.bubble.shot_count, "score": s.bubble.score, "aim": [s.bubble.aim.x, s.bubble.aim.y]})
@@ -921,6 +1129,15 @@ fn snapshot(s: &Session) -> serde_json::Value {
             json!({"level": s.sokoban.level, "moves": s.sokoban.moves, "won": s.sokoban.won})
         }
         GameMode::LightPath => s.light_path.qa_state(),
+        GameMode::RabbitHome => json!({
+            "progress": s.rabbit_home.progress(),
+            "world_position": s.rabbit_home.qa_position(),
+            "camera_position": s.rabbit_home.qa_camera(),
+            "hearts": s.rabbit_home.lives(),
+            "carrots": s.rabbit_home.collected_count(),
+            "combo": s.rabbit_home.combo(),
+            "outcome": s.rabbit_home.outcome(),
+        }),
         GameMode::GardenDefense => {
             json!({"stage": s.garden.stage, "plants": s.garden.plants.len(), "ready": s.garden.ready, "paused": s.garden.paused})
         }

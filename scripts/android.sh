@@ -4,6 +4,14 @@ cd "$(dirname "$0")/.."
 . ./scripts/env.sh
 # Keep a separate target tree so desktop and Android builds do not block each other.
 export CARGO_TARGET_DIR="$PWD/target/android"
+# Start every APK build from a clean Android build cache while retaining the
+# project-local toolchain, downloaded dependencies, saves, and last verified APK.
+# Older cargo-apk versions created this dedicated build directory without its
+# cache marker. Cargo now requires the marker before cleaning it.
+if [ -d "$CARGO_TARGET_DIR" ] && [ ! -f "$CARGO_TARGET_DIR/CACHEDIR.TAG" ]; then
+  printf '%s\n' 'Signature: 8a477f597d28d172789f06886806bc55' > "$CARGO_TARGET_DIR/CACHEDIR.TAG"
+fi
+cargo clean --target-dir "$CARGO_TARGET_DIR"
 # Use the local debug key only for the test build. A real release key should be
 # supplied through these same environment variables by the release pipeline.
 export CARGO_APK_RELEASE_KEYSTORE="$HOME/.android/debug.keystore"
@@ -12,6 +20,7 @@ cargo apk build --lib --release
 # Strip a copy: a second cargo build would restore the unstripped library.
 package_tmp=$(mktemp -d)
 trap 'rm -rf "$package_tmp"' EXIT
+sh scripts/compile_webview.sh "$package_tmp/webview"
 native_lib="$CARGO_TARGET_DIR/aarch64-linux-android/release/libmagnet_island.so"
 "$ANDROID_NDK_ROOT/toolchains/llvm/prebuilt/darwin-x86_64/bin/llvm-strip" --strip-unneeded \
   -o "$package_tmp/libmagnet_island.so" "$native_lib"
@@ -52,6 +61,9 @@ def encode_webp(content):
 removed = []
 converted = 0
 with zipfile.ZipFile(original) as src, zipfile.ZipFile(staging / "unsigned.apk", "w") as dst:
+    if any(entry.filename.endswith(".dex") for entry in src.infolist()):
+        raise RuntimeError("Unexpected existing DEX files: merge Java code before packaging")
+    dst.write(staging / "webview/dex/classes.dex", "classes.dex", compress_type=zipfile.ZIP_DEFLATED)
     for entry in src.infolist():
         if entry.filename.startswith("META-INF/"):
             continue

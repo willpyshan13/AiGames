@@ -2,6 +2,7 @@ mod app;
 pub mod game;
 mod literacy;
 mod math;
+mod web_game;
 
 pub fn run() {
     app::run();

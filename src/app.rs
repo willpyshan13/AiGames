@@ -43,6 +43,9 @@ use garden_game::*;
 #[path = "garden_ui.rs"]
 mod garden_ui;
 use garden_ui::*;
+#[path = "rabbit_home.rs"]
+mod rabbit_home;
+use rabbit_home::*;
 #[path = "courier.rs"]
 mod courier;
 use courier::*;
@@ -114,6 +117,7 @@ enum GameMode {
     LightPath,
     GardenDefense,
     SpaceCourier,
+    RabbitHome,
 }
 
 impl GameMode {
@@ -155,6 +159,7 @@ impl GameMode {
             Self::LightPath => "光路小侦探",
             Self::GardenDefense => "花园守卫",
             Self::SpaceCourier => "星球快递员",
+            Self::RabbitHome => "小兔回家",
         }
     }
 
@@ -196,6 +201,7 @@ impl GameMode {
             Self::LightPath => "旋转镜片，让光束真正反射到水晶",
             Self::GardenDefense => "收集阳光、种下伙伴，守住五条花园战线",
             Self::SpaceCourier => "规划航线、送完九件包裹、破解终点谜题",
+            Self::RabbitHome => "穿越21屏森林长路，收集胡萝卜，跑跳回家",
         }
     }
 
@@ -239,6 +245,9 @@ impl GameMode {
                 "先点植物卡片，再点草地种下。向日葵产生阳光，豌豆和冰花自动射击，坚果挡住怪物，辣椒清理整条战线。点阳光补充能量，准备好后开始进攻。"
             }
             Self::SpaceCourier => "选择星球和航线，管理燃料，完成九个送货点与终点挑战。",
+            Self::RabbitHome => {
+                "小兔自动前进，镜头沿21屏长地图跟随。方向键或A/D控制跑速，右键或Shift加速，W、↑、空格跳跃；沿途收集胡萝卜、越过河流和障碍，最后到达兔屋。每关约3至6分钟，限时8分钟；点击左上标题返回游戏库。"
+            }
         }
     }
 }
@@ -996,7 +1005,7 @@ impl AssaultGame {
             .drain(..)
             .enumerate()
             .filter_map(|(index, bullet)| {
-                (!used_bullets[index] && bullet.x < 1.1).then_some(bullet)
+                (!used_bullets[index] && bullet.x < self.camera_x + 1.1).then_some(bullet)
             })
             .collect();
         defeated.sort_unstable();
@@ -1527,12 +1536,30 @@ impl TankGame {
                 vec![(2, 3), (3, 3), (4, 3), (0, 3), (6, 3)],
             ),
             8 => (
-                vec![(1, 1), (5, 1), (2, 2), (4, 2), (2, 4), (4, 4), (1, 5), (5, 5)],
+                vec![
+                    (1, 1),
+                    (5, 1),
+                    (2, 2),
+                    (4, 2),
+                    (2, 4),
+                    (4, 4),
+                    (1, 5),
+                    (5, 5),
+                ],
                 vec![(3, 2), (3, 4)],
                 vec![(1, 3), (5, 3)],
             ),
             9 => (
-                vec![(2, 1), (4, 1), (2, 2), (4, 2), (2, 4), (4, 4), (2, 5), (4, 5)],
+                vec![
+                    (2, 1),
+                    (4, 1),
+                    (2, 2),
+                    (4, 2),
+                    (2, 4),
+                    (4, 4),
+                    (2, 5),
+                    (4, 5),
+                ],
                 vec![(0, 1), (6, 1), (0, 5), (6, 5)],
                 vec![(0, 3), (6, 3)],
             ),
@@ -2691,6 +2718,7 @@ impl BomberGame {
         .collect();
         self.player = (2, 8);
         self.visual_player = Vec2::new(2., 8.);
+        self.started = false;
         self.invulnerable = 2.;
         self.enemy_clock = 1.2;
         self.remaining = (156. - self.round.saturating_sub(1) as f32 * 5.).max(105.);
@@ -2724,9 +2752,12 @@ impl BomberGame {
         if self.failed || self.paused || self.won {
             return;
         }
-        self.started = true;
+        if dx.abs() + dy.abs() != 1 {
+            return;
+        }
         let next = (self.player.0 + dx, self.player.1 + dy);
         if !self.solid(next.0, next.1) && !self.bombs.iter().any(|bomb| (bomb.x, bomb.y) == next) {
+            self.started = true;
             self.player = next;
             self.collect_pickup();
         }
@@ -2795,6 +2826,7 @@ impl BomberGame {
                 if self.bricks.contains(&point)
                     || self.pots.contains(&point)
                     || self.bushes.contains(&point)
+                    || self.bombs.iter().any(|other| (other.x, other.y) == point)
                 {
                     break;
                 }
@@ -2824,14 +2856,15 @@ impl BomberGame {
         let pots_destroyed = destroyed_pots.len();
         self.pots.retain(|pot| !cells.contains(pot));
         for (x, y) in destroyed_pots {
-            if (i16::from(x) * 3 + i16::from(y) + self.round as i16).rem_euclid(2) == 0 {
-                let kind = match self.round % 3 {
-                    1 => BomberPickupKind::Range,
-                    2 => BomberPickupKind::Capacity,
-                    _ => BomberPickupKind::Heart,
-                };
-                self.pickups.push(BomberPickup { x, y, kind });
-            }
+            // Every pot rewards exploration; hearts help a struggling player.
+            let kind = if self.lives < 3 {
+                BomberPickupKind::Heart
+            } else if (i16::from(x) + i16::from(y) + self.round as i16) % 2 == 0 {
+                BomberPickupKind::Range
+            } else {
+                BomberPickupKind::Capacity
+            };
+            self.pickups.push(BomberPickup { x, y, kind });
         }
         let defeated: Vec<_> = self
             .enemies
@@ -2851,6 +2884,64 @@ impl BomberGame {
         );
         if !defeated.is_empty() {
             self.feedback = format!("水花击中 {} 个小怪！", defeated.len());
+        }
+    }
+    fn move_enemies(&mut self) {
+        // Flood-fill the walkable maze so pursuit can turn away from the
+        // player temporarily to get around a wall instead of freezing there.
+        let mut distance = [[u16::MAX; BOMBER_COLUMNS as usize]; BOMBER_ROWS as usize];
+        distance[self.player.1 as usize][self.player.0 as usize] = 0;
+        let mut queue = vec![self.player];
+        let mut cursor = 0;
+        while cursor < queue.len() {
+            let (x, y) = queue[cursor];
+            cursor += 1;
+            for (dx, dy) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
+                let point = (x + dx, y + dy);
+                if self.solid(point.0, point.1)
+                    || self.bombs.iter().any(|bomb| (bomb.x, bomb.y) == point)
+                {
+                    continue;
+                }
+                let next = distance[y as usize][x as usize] + 1;
+                let value = &mut distance[point.1 as usize][point.0 as usize];
+                if *value == u16::MAX {
+                    *value = next;
+                    queue.push(point);
+                }
+            }
+        }
+        for index in 0..self.enemies.len() {
+            let enemy = &self.enemies[index];
+            let origin = (enemy.x, enemy.y);
+            if origin == self.player {
+                continue;
+            }
+            let rotation = enemy.step as usize % 4;
+            let directions = [(1, 0), (0, 1), (-1, 0), (0, -1)];
+            let mut options = Vec::new();
+            for offset in 0..4 {
+                let (dx, dy) = directions[(offset + rotation) % 4];
+                let point = (origin.0 + dx, origin.1 + dy);
+                if !self.solid(point.0, point.1)
+                    && !self.bombs.iter().any(|bomb| (bomb.x, bomb.y) == point)
+                    && !self
+                        .enemies
+                        .iter()
+                        .enumerate()
+                        .any(|(other, enemy)| other != index && (enemy.x, enemy.y) == point)
+                {
+                    options.push(point);
+                }
+            }
+            options.sort_by_key(|(x, y)| distance[*y as usize][*x as usize]);
+            let enemy = &mut self.enemies[index];
+            if let Some(&(x, y)) = options.first() {
+                enemy.x = x;
+                enemy.y = y;
+            }
+            // Disconnected monsters patrol rather than becoming stuck.
+            enemy.step = enemy.step.wrapping_add(1);
         }
     }
     fn lose_life(&mut self) {
@@ -2915,37 +3006,22 @@ impl BomberGame {
         }
         self.enemy_clock -= dt;
         if self.enemy_clock <= 0. {
-            self.enemy_clock = (1.15 - self.round as f32 * 0.065).max(0.48);
-            let bricks = self.bricks.clone();
-            let bushes = self.bushes.clone();
-            let pots = self.pots.clone();
-            let bombs: Vec<_> = self.bombs.iter().map(|bomb| (bomb.x, bomb.y)).collect();
-            for enemy in &mut self.enemies {
-                let dx = (self.player.0 - enemy.x).signum();
-                let dy = (self.player.1 - enemy.y).signum();
-                let options = if enemy.step % 2 == 0 {
-                    [(dx, 0), (0, dy)]
-                } else {
-                    [(0, dy), (dx, 0)]
-                };
-                for (mx, my) in options {
-                    let point = (enemy.x + mx, enemy.y + my);
-                    if (mx != 0 || my != 0)
-                        && (0..BOMBER_COLUMNS).contains(&point.0)
-                        && (0..BOMBER_ROWS).contains(&point.1)
-                        && !(point.0 % 2 == 1 && point.1 % 2 == 1)
-                        && !bricks.contains(&point)
-                        && !bushes.contains(&point)
-                        && !pots.contains(&point)
-                        && !bombs.contains(&point)
-                    {
-                        enemy.x = point.0;
-                        enemy.y = point.1;
-                        break;
-                    }
-                }
-                enemy.step = enemy.step.wrapping_add(1);
-            }
+            self.enemy_clock = (1.30 - self.round as f32 * 0.065).max(0.65);
+            self.move_enemies();
+        }
+        // Water remains dangerous for its entire visible lifetime, including
+        // to monsters that enter after the original detonation.
+        let before = self.enemies.len();
+        self.enemies.retain(|enemy| {
+            !self
+                .blasts
+                .iter()
+                .any(|blast| (blast.x, blast.y) == (enemy.x, enemy.y))
+        });
+        let defeated = before - self.enemies.len();
+        if defeated > 0 {
+            self.score += defeated as u32 * 60;
+            self.feedback = format!("水花击中 {} 个小怪！", defeated);
         }
         if self
             .enemies
@@ -3264,6 +3340,7 @@ struct Session {
     light_path: LightPathGame,
     garden: GardenGame,
     courier: CourierGame,
+    rabbit_home: RabbitHomeGame,
     mission_step: usize,
     mission_done: bool,
     mission_wrong: Option<usize>,
@@ -3433,6 +3510,7 @@ impl Session {
             light_path: LightPathGame::new(),
             garden: GardenGame::new(),
             courier: CourierGame::load(),
+            rabbit_home: RabbitHomeGame::new(),
             mission_step: 0,
             mission_done: false,
             mission_wrong: None,
@@ -3494,6 +3572,9 @@ impl Session {
         }
         if std::env::var("MAGNET_START_GAME").as_deref() == Ok("lightpath") {
             select_game(&mut session, GameMode::LightPath);
+        }
+        if std::env::var("MAGNET_START_GAME").as_deref() == Ok("rabbit") {
+            select_game(&mut session, GameMode::RabbitHome);
         }
         if std::env::var("MAGNET_START_GAME").as_deref() == Ok("tetris") {
             select_game(&mut session, GameMode::Tetris);
@@ -3876,6 +3957,22 @@ fn free_build_base_intact(work: &Work) -> bool {
         .all(|block| work.world.material(block.pos) == Some(Material::Grass))
 }
 
+// User-facing selection opens the requested online version of Tank Battle.
+// Keep select_game for the native game models and development scenarios.
+fn launch_game(s: &mut Session, mode: GameMode) {
+    if mode == GameMode::TankBattle {
+        s.library_open = true;
+        s.help_open = false;
+        s.ui_dirty = true;
+        s.message = match crate::web_game::open() {
+            Ok(()) => "已打开坦克大战网页，返回后可继续选择游戏。".into(),
+            Err(error) => format!("网页打开失败：{error}"),
+        };
+        return;
+    }
+    select_game(s, mode);
+}
+
 fn select_game(s: &mut Session, mode: GameMode) {
     s.help_open = false;
     s.magnet_modes_open = false;
@@ -3956,7 +4053,8 @@ fn select_game(s: &mut Session, mode: GameMode) {
             | GameMode::Classic2048
             | GameMode::Klotski
             | GameMode::Sokoban
-            | GameMode::Sudoku => Work::default(),
+            | GameMode::Sudoku
+            | GameMode::RabbitHome => Work::default(),
             GameMode::Breakout => Work::default(),
             GameMode::ElementLab => Work::default(),
             GameMode::LightPath => Work::default(),
@@ -4237,6 +4335,9 @@ enum Action {
     GardenNext,
     GardenShovel,
     GardenCollectAll,
+    RabbitMove(i8),
+    RabbitJump,
+    RabbitNext,
     Material(Material),
     LibraryReturn,
     Erase,
@@ -4461,6 +4562,10 @@ struct Art {
     courier_parcel_slot: Handle<Image>,
     courier_empty_slot: Handle<Image>,
     courier_gift: Handle<Image>,
+    rabbit_home_scene: Handle<Image>,
+    rabbit_home_sprite: Handle<Image>,
+    rabbit_home_props: Handle<Image>,
+    rabbit_home_ui: Handle<Image>,
     bubble_story: Handle<Image>,
     sky_backdrop: Handle<Image>,
     sky_player: Handle<Image>,
@@ -4472,6 +4577,7 @@ struct Art {
     fruit_extras: Handle<Image>,
     bomber_tiles: Handle<Image>,
     bomber_backdrop: Handle<Image>,
+    bomber_retro_wood: Handle<Image>,
     bomber_monsters: Handle<Image>,
     bomber_extra_monsters: Handle<Image>,
     bomber_action_bubble: Handle<Image>,
@@ -4801,8 +4907,7 @@ pub fn run() {
         Ok("fire") | Ok("detective") | Ok("farm")
     );
     let mut app = App::new();
-    app
-        .insert_resource(ClearColor(Color::srgb(0.79, 0.88, 0.91)))
+    app.insert_resource(ClearColor(Color::srgb(0.79, 0.88, 0.91)))
         .insert_resource(AmbientLight {
             color: Color::WHITE,
             brightness: 550.,
@@ -4871,6 +4976,7 @@ pub fn run() {
                     breakout_key_input,
                     garden_key_input,
                     courier_key_input,
+                    rabbit_runner_input,
                 )
                     .chain(),
                 (
@@ -4914,6 +5020,7 @@ pub fn run() {
                 (
                     animate_tank_stick,
                     animate_play_ui,
+                    rabbit_home_animation,
                     fortune_camera,
                     animate_fortune,
                     animate_slots,
@@ -5279,6 +5386,30 @@ fn setup(
         courier_parcel_slot: assets.load(image_asset_path("courier/parcel-slot-v1.png")),
         courier_empty_slot: assets.load(image_asset_path("courier/empty-slot-v1.png")),
         courier_gift: assets.load(image_asset_path("courier/gift-v1.png")),
+        rabbit_home_scene: assets.load_with_settings(
+            image_asset_path("rabbit/rabbit-long-course-atlas-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        rabbit_home_sprite: assets.load_with_settings(
+            image_asset_path("rabbit/rabbit-motion-v2-atlas.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        rabbit_home_props: assets.load_with_settings(
+            image_asset_path("rabbit/rabbit-sprint-props-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        rabbit_home_ui: assets.load_with_settings(
+            image_asset_path("rabbit/rabbit-sprint-ui-v2.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
         lightpath_level_plates: assets.load_with_settings(
             image_asset_path("lightpath/level-screen-plates-v1.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
@@ -5302,6 +5433,7 @@ fn setup(
         fruit_extras: assets.load(image_asset_path("fruit/fruit-extras-v1.png")),
         bomber_tiles: assets.load(image_asset_path("bomber/maze-atlas-v1.png")),
         bomber_backdrop: assets.load(image_asset_path("bomber/arena-backdrop-v1.png")),
+        bomber_retro_wood: assets.load(image_asset_path("bomber/retro-wood-arena-v1.png")),
         bomber_monsters: assets.load(image_asset_path("bomber/monster-atlas-v1.png")),
         bomber_extra_monsters: assets
             .load(image_asset_path("bomber/monster-atlas-v2-additions.png")),
@@ -6920,6 +7052,12 @@ fn tick(time: Res<Time>, mut s: ResMut<Session>) {
     if s.mode == GameMode::Math || s.mode == GameMode::Literacy || mission_index(s.mode).is_some() {
         return;
     }
+    if s.mode == GameMode::RabbitHome {
+        if s.rabbit_home.advance(time.delta_secs()) {
+            s.ui_dirty = true;
+        }
+        return;
+    }
     if s.mode == GameMode::FruitArcade {
         if s.arcade.advance(time.delta_secs()) {
             s.ui_dirty = true;
@@ -7080,6 +7218,76 @@ fn piano_key_input(keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
     }
 }
 
+fn rabbit_runner_input(
+    time: Res<Time>,
+    keys: Res<ButtonInput<KeyCode>>,
+    mouse: Res<ButtonInput<MouseButton>>,
+    touches: Res<Touches>,
+    windows: Query<&Window, With<PrimaryWindow>>,
+    buttons: Query<(&Action, &ComputedNode, &GlobalTransform), With<Button>>,
+    mut s: ResMut<Session>,
+) {
+    if s.library_open || s.help_open || s.mode != GameMode::RabbitHome {
+        return;
+    }
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let factor = window.scale_factor();
+    let physical = |point: Vec2| point * factor;
+    let held_points: Vec<Vec2> = touches
+        .iter()
+        .map(|touch| physical(touch.position()))
+        .chain(
+            mouse
+                .pressed(MouseButton::Left)
+                .then(|| window.cursor_position())
+                .flatten()
+                .map(physical),
+        )
+        .collect();
+    let mut left = false;
+    let mut right = false;
+    let mut jump_tap = false;
+    for (action, node, transform) in &buttons {
+        let rect = Rect::from_center_size(transform.translation().truncate(), node.size());
+        match action {
+            Action::RabbitMove(-1) => {
+                left |= held_points.iter().any(|point| rect.contains(*point));
+            }
+            Action::RabbitMove(1) => {
+                right |= held_points.iter().any(|point| rect.contains(*point));
+            }
+            Action::RabbitJump => {
+                let touch_pressed = touches
+                    .iter_just_pressed()
+                    .any(|touch| rect.contains(physical(touch.position())));
+                let mouse_pressed = mouse
+                    .just_pressed(MouseButton::Left)
+                    .then(|| window.cursor_position())
+                    .flatten()
+                    .is_some_and(|point| rect.contains(physical(point)));
+                jump_tap |= touch_pressed || mouse_pressed;
+            }
+            _ => {}
+        }
+    }
+    left |= keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft);
+    right |= keys.pressed(KeyCode::KeyD) || keys.pressed(KeyCode::ArrowRight)
+        || keys.pressed(KeyCode::ShiftLeft) || keys.pressed(KeyCode::ShiftRight)
+        || mouse.pressed(MouseButton::Right);
+    let direction = if right == left { 0 } else if right { 1 } else { -1 };
+    let jump_key = keys.just_pressed(KeyCode::Space) || keys.just_pressed(KeyCode::KeyJ)
+        || keys.just_pressed(KeyCode::KeyW) || keys.just_pressed(KeyCode::ArrowUp);
+    if jump_key || jump_tap {
+        s.rabbit_home.jump();
+    }
+    let moved = s.rabbit_home.move_player(direction, time.delta_secs());
+    if moved {
+        s.ui_dirty = true;
+    }
+}
+
 fn tetris_key_input(keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
     if s.library_open || s.help_open || s.mode != GameMode::Tetris {
         return;
@@ -7168,7 +7376,7 @@ fn tetris_hold_input(
 }
 
 fn assault_key_input(time: Res<Time>, keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
-    if s.library_open || s.mode != GameMode::PixelAssault {
+    if s.library_open || s.help_open || s.mode != GameMode::PixelAssault {
         return;
     }
     let left = keys.pressed(KeyCode::KeyA) || keys.pressed(KeyCode::ArrowLeft);
@@ -7298,7 +7506,7 @@ fn assault_touch_hold(
     controls: Query<(&Action, &ComputedNode, &GlobalTransform), With<Button>>,
     mut s: ResMut<Session>,
 ) {
-    if s.library_open || s.mode != GameMode::PixelAssault {
+    if s.library_open || s.help_open || s.mode != GameMode::PixelAssault {
         return;
     }
     let Ok(window) = windows.single() else {
@@ -7350,7 +7558,7 @@ fn assault_touch_hold(
 }
 
 fn tank_key_input(keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
-    if s.library_open || s.mode != GameMode::TankBattle {
+    if s.library_open || s.help_open || s.mode != GameMode::TankBattle {
         return;
     }
     let mut moved = false;
@@ -7475,7 +7683,7 @@ fn animate_tank_stick(hold: Res<TankHold>, mut knobs: Query<&mut Node, With<Tank
 }
 
 fn sky_key_input(keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
-    if s.library_open || s.mode != GameMode::SkyRaid {
+    if s.library_open || s.help_open || s.mode != GameMode::SkyRaid {
         return;
     }
     let mut changed = false;
@@ -7503,7 +7711,7 @@ fn sky_screen_input(
     mut hold: ResMut<SkyHold>,
     mut s: ResMut<Session>,
 ) {
-    if s.library_open || s.mode != GameMode::SkyRaid || s.sky.failed {
+    if s.library_open || s.help_open || s.mode != GameMode::SkyRaid || s.sky.failed {
         hold.repeat_in = 0.;
         return;
     }
@@ -7635,6 +7843,31 @@ fn bomber_key_input(keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
     }
 }
 
+fn bomber_keyboard_direction(
+    keys: &ButtonInput<KeyCode>,
+    previous: Option<(i8, i8)>,
+) -> Option<(i8, i8)> {
+    let directions = [
+        (KeyCode::ArrowUp, KeyCode::KeyW, (0, -1)),
+        (KeyCode::ArrowDown, KeyCode::KeyS, (0, 1)),
+        (KeyCode::ArrowLeft, KeyCode::KeyA, (-1, 0)),
+        (KeyCode::ArrowRight, KeyCode::KeyD, (1, 0)),
+    ];
+    directions
+        .iter()
+        .find_map(|(a, b, d)| (keys.just_pressed(*a) || keys.just_pressed(*b)).then_some(*d))
+        .or_else(|| {
+            directions.iter().find_map(|(a, b, d)| {
+                (Some(*d) == previous && (keys.pressed(*a) || keys.pressed(*b))).then_some(*d)
+            })
+        })
+        .or_else(|| {
+            directions
+                .iter()
+                .find_map(|(a, b, d)| (keys.pressed(*a) || keys.pressed(*b)).then_some(*d))
+        })
+}
+
 fn bomber_hold_input(
     time: Res<Time>,
     keys: Res<ButtonInput<KeyCode>>,
@@ -7659,14 +7892,7 @@ fn bomber_hold_input(
     if !pads.is_empty() {
         return;
     }
-    let mut direction = [
-        (KeyCode::ArrowUp, KeyCode::KeyW, (0, -1)),
-        (KeyCode::ArrowDown, KeyCode::KeyS, (0, 1)),
-        (KeyCode::ArrowLeft, KeyCode::KeyA, (-1, 0)),
-        (KeyCode::ArrowRight, KeyCode::KeyD, (1, 0)),
-    ]
-    .into_iter()
-    .find_map(|(a, b, delta)| (keys.pressed(a) || keys.pressed(b)).then_some(delta));
+    let mut direction = bomber_keyboard_direction(&keys, hold.direction);
     if let Ok(window) = windows.single() {
         let point = touches.iter().next().map(|t| t.position()).or_else(|| {
             mouse
@@ -7689,7 +7915,27 @@ fn bomber_hold_input(
     }
     if direction != hold.direction {
         hold.direction = direction;
-        hold.remaining = 0.22;
+        hold.remaining = 0.16;
+        if let Some((dx, dy)) = direction {
+            if bomber_keyboard_direction(&keys, hold.direction).is_some()
+                && !keys.get_just_pressed().any(|key| {
+                    matches!(
+                        key,
+                        KeyCode::ArrowUp
+                            | KeyCode::ArrowDown
+                            | KeyCode::ArrowLeft
+                            | KeyCode::ArrowRight
+                            | KeyCode::KeyW
+                            | KeyCode::KeyA
+                            | KeyCode::KeyS
+                            | KeyCode::KeyD
+                    )
+                })
+            {
+                s.bomber.move_player(dx, dy);
+                s.ui_dirty = true;
+            }
+        }
     } else if let Some((dx, dy)) = direction {
         hold.remaining -= time.delta_secs();
         if hold.remaining <= 0. {
@@ -7769,16 +8015,8 @@ fn bomber_joystick_input(
         knob.left = Val::Percent(27. + visual.x);
         knob.top = Val::Percent(27. + visual.y);
     }
-    let direction = bomber_joystick_direction(offset, radius).or_else(|| {
-        [
-            (KeyCode::ArrowUp, KeyCode::KeyW, (0, -1)),
-            (KeyCode::ArrowDown, KeyCode::KeyS, (0, 1)),
-            (KeyCode::ArrowLeft, KeyCode::KeyA, (-1, 0)),
-            (KeyCode::ArrowRight, KeyCode::KeyD, (1, 0)),
-        ]
-        .into_iter()
-        .find_map(|(a, b, d)| (keys.pressed(a) || keys.pressed(b)).then_some(d))
-    });
+    let direction = bomber_joystick_direction(offset, radius)
+        .or_else(|| bomber_keyboard_direction(&keys, hold.direction));
     if direction != hold.direction {
         hold.direction = direction;
         hold.remaining = 0.;
@@ -7950,22 +8188,37 @@ fn honey_screen_input(
     windows: Query<&Window, With<PrimaryWindow>>,
     mouse: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
+    controls: Query<(&ComputedNode, &GlobalTransform), With<Button>>,
     mut s: ResMut<Session>,
 ) {
     if s.library_open || s.help_open || s.mode != GameMode::HoneyHunt {
         return;
     }
-    let tapped = touches.iter_just_pressed().next().is_some()
-        || (mouse.just_pressed(MouseButton::Left)
-            && windows
-                .single()
-                .ok()
-                .and_then(|window| window.cursor_position())
-                .is_some());
-    if tapped {
-        s.honey.launch();
-        s.ui_dirty = true;
+    let Ok(window) = windows.single() else {
+        return;
+    };
+    let point = touches
+        .iter_just_pressed()
+        .next()
+        .map(|touch| touch.position())
+        .or_else(|| {
+            mouse
+                .just_pressed(MouseButton::Left)
+                .then(|| window.cursor_position())
+                .flatten()
+        });
+    let Some(point) = point else {
+        return;
+    };
+    // Buttons handle their own actions. A menu tap must not also launch a hook.
+    let physical = point * window.scale_factor();
+    if controls.iter().any(|(node, transform)| {
+        Rect::from_center_size(transform.translation().truncate(), node.size()).contains(physical)
+    }) {
+        return;
     }
+    s.honey.launch();
+    s.ui_dirty = true;
 }
 
 fn button_feedback(
@@ -8319,7 +8572,7 @@ fn buttons(
                     s.build = true;
                 }
             }
-            Action::SelectGame(mode) => select_game(&mut s, mode),
+            Action::SelectGame(mode) => launch_game(&mut s, mode),
             Action::BallLeft => {
                 if s.mode == GameMode::Ball2048 && move_ball_lane(&mut s.ball, -1) {
                     s.message = "向左换道。".into();
@@ -8586,6 +8839,17 @@ fn buttons(
             Action::GardenCollectAll => {
                 if s.mode == GameMode::GardenDefense {
                     s.garden.collect_all();
+                }
+            }
+            Action::RabbitMove(_) => {}
+            Action::RabbitJump => {
+                if s.mode == GameMode::RabbitHome {
+                    s.rabbit_home.jump();
+                }
+            }
+            Action::RabbitNext => {
+                if s.mode == GameMode::RabbitHome {
+                    s.rabbit_home.next();
                 }
             }
             Action::Material(m) => {
@@ -9911,6 +10175,16 @@ fn rebuild_ui(
             &s,
             &art,
             layout.compact,
+            layout.width / ui_scale.0,
+            layout.height / ui_scale.0,
+        );
+        return;
+    }
+    if s.mode == GameMode::RabbitHome {
+        rabbit_home_ui(
+            &mut commands,
+            &s,
+            &art,
             layout.width / ui_scale.0,
             layout.height / ui_scale.0,
         );
@@ -12694,7 +12968,10 @@ mod tests {
         tank.failed = true;
         tank.lives = 0;
         tank.retry_level();
-        assert_eq!((tank.wave, tank.map, tank.score, tank.lives), (12, 11, 1200, 3));
+        assert_eq!(
+            (tank.wave, tank.map, tank.score, tank.lives),
+            (12, 11, 1200, 3)
+        );
         assert_eq!((tank.enemies.len(), tank.reserves), (5, 21));
         assert!(!tank.failed);
     }
@@ -12702,10 +12979,18 @@ mod tests {
     #[test]
     fn new_tank_maps_match_the_approved_grids_and_enemy_counts() {
         let layouts = [
-            [".......", ".#...#.", "..#S#..", ".B...B.", "..#S#..", ".#...#.", "......."],
-            [".......", "S.#.#.S", "..#.#..", "B.....B", "..#.#..", "S.#.#.S", "......."],
-            [".......", ".##.##.", ".B.S.B.", ".S...S.", ".B.S.B.", ".#...#.", "......."],
-            [".......", ".#S.S#.", ".B...B.", "..S.S..", ".B...B.", ".#S.S#.", "......."],
+            [
+                ".......", ".#...#.", "..#S#..", ".B...B.", "..#S#..", ".#...#.", ".......",
+            ],
+            [
+                ".......", "S.#.#.S", "..#.#..", "B.....B", "..#.#..", "S.#.#.S", ".......",
+            ],
+            [
+                ".......", ".##.##.", ".B.S.B.", ".S...S.", ".B.S.B.", ".#...#.", ".......",
+            ],
+            [
+                ".......", ".#S.S#.", ".B...B.", "..S.S..", ".B...B.", ".#S.S#.", ".......",
+            ],
         ];
         let names = ["风车岔路", "曲径夹击", "双翼包围", "花环堡垒"];
         let totals = [20, 22, 24, 26];
@@ -12942,6 +13227,163 @@ mod tests {
             kind: BubbleKind::Coral,
         });
         assert!(g.cells.iter().any(|cell| cell.col == 0 && cell.row == 0));
+    }
+
+    #[test]
+    fn assault_shots_follow_the_camera_in_later_stages() {
+        let mut g = AssaultGame::new();
+        g.move_player(1., 8.);
+        assert!(g.camera_x > 2.);
+        g.enemies.clear();
+        g.spawn_clock = 10.;
+        g.fire();
+        g.advance(0.03);
+        assert_eq!(
+            g.bullets.len(),
+            1,
+            "late-stage shots must remain in the visible world"
+        );
+        g.enemies.push(AssaultEnemy {
+            lane: g.lane,
+            x: g.bullets[0].x + 0.04,
+            hp: 1,
+            heavy: false,
+        });
+        g.advance(0.03);
+        assert!(g.enemies.is_empty());
+        assert!(g.score > 0);
+    }
+
+    #[test]
+    fn help_blocks_arcade_keyboard_movement_and_firing() {
+        for mode in [
+            GameMode::PixelAssault,
+            GameMode::TankBattle,
+            GameMode::SkyRaid,
+        ] {
+            let mut app = App::new();
+            let mut time = Time::<()>::default();
+            time.advance_by(std::time::Duration::from_secs_f32(0.1));
+            let mut keys = ButtonInput::<KeyCode>::default();
+            keys.press(KeyCode::KeyD);
+            keys.press(KeyCode::Space);
+            app.insert_resource(time).insert_resource(keys);
+            let mut s = Session::new();
+            s.mode = mode;
+            s.help_open = true;
+            s.library_open = false;
+            let player = s.tank.player;
+            let x = s.sky.x;
+            app.insert_resource(s).add_systems(
+                Update,
+                (assault_key_input, tank_key_input, sky_key_input).chain(),
+            );
+            app.update();
+            let s = app.world().resource::<Session>();
+            assert_eq!(s.assault.player_x, 0.18);
+            assert!(s.assault.bullets.is_empty());
+            assert_eq!(s.tank.player, player);
+            assert!(s.tank.bullets.is_empty());
+            assert_eq!(s.sky.x, x);
+        }
+    }
+
+    #[test]
+    fn bomber_enemies_route_around_walls_without_stacking() {
+        let mut g = BomberGame::new();
+        g.bricks.clear();
+        g.bushes.clear();
+        g.pots.clear();
+        g.player = (2, 1);
+        g.enemies.truncate(2);
+        g.enemies[0].x = 0;
+        g.enemies[0].y = 1;
+        g.enemies[1].x = 0;
+        g.enemies[1].y = 2;
+        // Direct pursuit hits the permanent pillar at (1, 1).
+        for _ in 0..4 {
+            g.move_enemies();
+            assert_ne!(
+                (g.enemies[0].x, g.enemies[0].y),
+                (g.enemies[1].x, g.enemies[1].y)
+            );
+        }
+        assert!(g.enemies.iter().any(|enemy| (enemy.x, enemy.y) == g.player));
+    }
+
+    #[test]
+    fn bomber_lingering_water_defeats_monsters_and_scores_once() {
+        let mut g = BomberGame::new();
+        g.started = true;
+        g.enemy_clock = 10.;
+        let enemy = (g.enemies[0].x, g.enemies[0].y);
+        let count = g.enemies.len();
+        g.blasts.push(WaterBlast {
+            x: enemy.0,
+            y: enemy.1,
+            life: 0.4,
+        });
+        g.advance(0.02);
+        assert_eq!(g.enemies.len(), count - 1);
+        assert_eq!(g.score, 60);
+        g.advance(0.02);
+        assert_eq!(g.score, 60);
+    }
+
+    #[test]
+    fn bomber_blocked_input_and_new_round_wait_for_valid_movement() {
+        let mut g = BomberGame::new();
+        g.move_player(0, 1);
+        g.advance(0.05);
+        assert!(!g.started);
+        assert_eq!(g.remaining, 156.);
+        g.move_player(1, 0);
+        g.enemies.clear();
+        g.advance(0.02);
+        assert_eq!(g.round, 2);
+        assert!(!g.started);
+        let remaining = g.remaining;
+        g.advance(0.05);
+        assert_eq!(g.remaining, remaining);
+    }
+
+    #[test]
+    fn bomber_pots_always_reward_and_help_recover_health() {
+        let mut g = BomberGame::new();
+        g.bricks.clear();
+        g.bushes.clear();
+        g.pots = vec![(4, 2)];
+        g.lives = 2;
+        g.explode(WaterBomb {
+            x: 2,
+            y: 2,
+            range: 2,
+            fuse: 0.,
+        });
+        assert_eq!(g.pickups.len(), 1);
+        assert!(g.pickups[0].kind == BomberPickupKind::Heart);
+        g.player = (4, 2);
+        g.collect_pickup();
+        assert_eq!(g.lives, 3);
+    }
+
+    #[test]
+    fn bomber_keyboard_turn_prioritizes_new_direction() {
+        let mut keys = ButtonInput::default();
+        keys.press(KeyCode::KeyW);
+        keys.clear();
+        keys.press(KeyCode::KeyD);
+        assert_eq!(
+            bomber_keyboard_direction(&keys, Some((0, -1))),
+            Some((1, 0))
+        );
+        keys.clear();
+        assert_eq!(bomber_keyboard_direction(&keys, Some((1, 0))), Some((1, 0)));
+        keys.release(KeyCode::KeyD);
+        assert_eq!(
+            bomber_keyboard_direction(&keys, Some((1, 0))),
+            Some((0, -1))
+        );
     }
 
     #[test]
@@ -18842,11 +19284,12 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
     let g = &s.bomber;
     let sx = width / 1672.;
     let sy = height / 941.;
-    // Reserve a clear HUD strip, then fit all nine rows into the remaining
-    // play area so the top row stays visible without shrinking the board.
-    let board_top = 100. * sy;
-    let board_height = (height - board_top).max(1.);
-    let cell_w = width / BOMBER_COLUMNS as f32;
+    // Leave a dedicated right rail for the compact retro status panel.
+    let board_left = width * 0.035;
+    let board_top = height * 0.095;
+    let board_width = width * 0.755;
+    let board_height = height * 0.80;
+    let cell_w = board_width / BOMBER_COLUMNS as f32;
     let cell_h = board_height / BOMBER_ROWS as f32;
     let rating = if g.remaining >= 100. {
         3
@@ -18868,7 +19311,7 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
         .with_children(|root| {
             // Full-bleed arena art: controls and the live board float over the whole scene.
             root.spawn((
-                ImageNode::new(art.bomber_backdrop.clone()),
+                ImageNode::new(art.bomber_retro_wood.clone()),
                 Node {
                     position_type: PositionType::Absolute,
                     width: Val::Percent(100.),
@@ -18879,8 +19322,9 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
+                    left: Val::Px(board_left),
                     top: Val::Px(board_top),
-                    width: Val::Percent(100.),
+                    width: Val::Px(board_width),
                     height: Val::Px(board_height),
                     ..default()
                 },
@@ -19095,21 +19539,22 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
                 }
             });
 
-            let hud = Color::srgba(0.025, 0.10, 0.20, 0.91);
+            let hud = Color::srgba(0.015, 0.20, 0.47, 0.97);
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(506. * sx),
-                    top: Val::Px(12. * sy),
-                    width: Val::Px(370. * sx),
-                    height: Val::Px(82. * sy),
+                    left: Val::Px(width * 0.80),
+                    top: Val::Px(height * 0.07),
+                    width: Val::Px(width * 0.18),
+                    height: Val::Px(height * 0.16),
                     padding: UiRect::horizontal(Val::Px(18. * sx)),
                     align_items: AlignItems::Center,
                     column_gap: Val::Px(16. * sx),
                     ..row()
                 },
                 BackgroundColor(hud),
-                BorderRadius::all(Val::Px(22. * sy)),
+                BorderColor(Color::srgb(0.20, 0.72, 1.)),
+                BorderRadius::all(Val::Px(12. * sy)),
                 ZIndex(6),
             ))
             .with_children(|stats| {
@@ -19140,17 +19585,18 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(925. * sx),
-                    top: Val::Px(12. * sy),
-                    width: Val::Px(258. * sx),
-                    height: Val::Px(82. * sy),
+                    left: Val::Px(width * 0.80),
+                    top: Val::Px(height * 0.26),
+                    width: Val::Px(width * 0.18),
+                    height: Val::Px(height * 0.10),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
                     column_gap: Val::Px(12. * sx),
                     ..row()
                 },
                 BackgroundColor(hud),
-                BorderRadius::all(Val::Px(22. * sy)),
+                BorderColor(Color::srgb(0.20, 0.72, 1.)),
+                BorderRadius::all(Val::Px(12. * sy)),
                 ZIndex(6),
             ))
             .with_children(|timer| {
@@ -19170,10 +19616,10 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(1220. * sx),
-                    top: Val::Px(12. * sy),
-                    width: Val::Px(205. * sx),
-                    height: Val::Px(82. * sy),
+                    left: Val::Px(width * 0.80),
+                    top: Val::Px(height * 0.39),
+                    width: Val::Px(width * 0.18),
+                    height: Val::Px(height * 0.16),
                     flex_direction: FlexDirection::Column,
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
@@ -19181,7 +19627,8 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
                     ..default()
                 },
                 BackgroundColor(hud),
-                BorderRadius::all(Val::Px(22. * sy)),
+                BorderColor(Color::srgb(0.20, 0.72, 1.)),
+                BorderRadius::all(Val::Px(12. * sy)),
                 ZIndex(6),
             ))
             .with_children(|level| {
@@ -19215,8 +19662,8 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    right: Val::Px(24. * sx),
-                    top: Val::Px(10. * sy),
+                    right: Val::Px(width * 0.015),
+                    top: Val::Px(height * 0.70),
                     ..row()
                 },
                 ZIndex(7),
@@ -19227,10 +19674,10 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(20. * sx),
-                    bottom: Val::Px(35. * sy),
-                    width: Val::Px(270. * sx),
-                    height: Val::Px(260. * sy),
+                    left: Val::Px(width * 0.02),
+                    bottom: Val::Px(height * 0.035),
+                    width: Val::Px(width * 0.20),
+                    height: Val::Px(height * 0.28),
                     align_items: AlignItems::Center,
                     justify_content: JustifyContent::Center,
                     ..default()
@@ -19298,8 +19745,8 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    right: Val::Px(25. * sx),
-                    bottom: Val::Px(28. * sy),
+                    right: Val::Px(width * 0.015),
+                    bottom: Val::Px(height * 0.035),
                     ..default()
                 },
                 ZIndex(8),
@@ -19310,9 +19757,9 @@ fn bomber_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Px(310. * sx),
-                    right: Val::Px(300. * sx),
-                    bottom: Val::Px(20. * sy),
+                    left: Val::Px(width * 0.24),
+                    right: Val::Px(width * 0.22),
+                    bottom: Val::Px(height * 0.02),
                     justify_content: JustifyContent::Center,
                     ..row()
                 },
@@ -20713,7 +21160,7 @@ fn library_scroll_input(
                 s.magnet_modes_open = true;
                 s.ui_dirty = true;
             } else {
-                select_game(&mut s, mode);
+                launch_game(&mut s, mode);
             }
         }
     }
@@ -21115,6 +21562,7 @@ fn library_ui(commands: &mut Commands, _s: &Session, art: &Art, compact: bool) {
                         (GameMode::Breakout, Color::srgb(0.18, 0.57, 0.72)),
                         (GameMode::ElementLab, Color::srgb(0.22, 0.54, 0.57)),
                         (GameMode::LightPath, Color::srgb(0.16, 0.50, 0.72)),
+                        (GameMode::RabbitHome, Color::srgb(0.39, 0.60, 0.28)),
                         (GameMode::Tetris, Color::srgb(0.34, 0.38, 0.82)),
                         (GameMode::Math, Color::srgb(0.32, 0.38, 0.78)),
                         (GameMode::Literacy, Color::srgb(0.23, 0.63, 0.39)),

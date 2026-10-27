@@ -1,6 +1,6 @@
 [package]
 name = "magnet_island"
-version = "0.1.8"
+version = "0.1.9"
 edition = "2024"
 description = "小游戏中心 — 离线儿童小游戏合集"
 license = "MIT"
@@ -38,6 +38,9 @@ package = "com.aigames.magnetisland"
 apk_name = "magnet-island"
 assets = "assets"
 build_targets = ["aarch64-linux-android"]
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
 
 [package.metadata.android.sdk]
 min_sdk_version = 26
