@@ -1,6 +1,6 @@
 [package]
 name = "magnet_island"
-version = "0.1.9"
+version = "0.1.10"
 edition = "2024"
 description = "小游戏中心 — 离线儿童小游戏合集"
 license = "MIT"

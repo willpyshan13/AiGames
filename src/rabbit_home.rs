@@ -74,20 +74,79 @@ const GROUND_PROFILE: &[(f32, f32)] = &[
     (2010., 71.),
     (2100., 76.),
 ];
-fn ground_y(x: f32) -> f32 {
-    for points in GROUND_PROFILE.windows(2) {
+const ORCHARD_OBSTACLES: [(f32, RabbitObstacleKind); 11] = [
+    (160., RabbitObstacleKind::Hay),
+    (548., RabbitObstacleKind::Hay),
+    (590., RabbitObstacleKind::Branch),
+    (795., RabbitObstacleKind::Branch),
+    (1027., RabbitObstacleKind::Hay),
+    (1090., RabbitObstacleKind::Branch),
+    (1240., RabbitObstacleKind::Branch),
+    (1355., RabbitObstacleKind::Hay),
+    (1465., RabbitObstacleKind::Hay),
+    (1750., RabbitObstacleKind::Hay),
+    (1865., RabbitObstacleKind::Branch),
+];
+const ORCHARD_HAZARDS: [(f32, f32, f32); 12] = [
+    (156.5, 163.5, 7.),
+    (544.5, 551.5, 7.),
+    (586., 594., 6.5),
+    (791., 799., 6.5),
+    (878., 954., 1.),
+    (1023.5, 1030.5, 7.),
+    (1086., 1094., 6.5),
+    (1236., 1244., 6.5),
+    (1351.5, 1358.5, 7.),
+    (1461.5, 1468.5, 7.),
+    (1746.5, 1753.5, 7.),
+    (1861., 1869., 6.5),
+];
+const ORCHARD_GROUND: &[(f32, f32)] = &[
+    (0., 79.),
+    (170., 82.),
+    (290., 81.),
+    (320., 78.),
+    (345., 74.),
+    (380., 76.),
+    (415., 80.),
+    (550., 82.),
+    (700., 73.),
+    (780., 80.),
+    (860., 86.),
+    (878., 84.),
+    (954., 84.),
+    (1040., 85.),
+    (1170., 86.),
+    (1280., 68.),
+    (1360., 75.),
+    (1400., 77.),
+    (1450., 80.),
+    (1540., 84.),
+    (1650., 70.),
+    (1750., 66.),
+    (1815., 80.),
+    (1880., 84.),
+    (1970., 85.),
+    (2040., 76.),
+    (2100., 77.),
+];
+const MAX_HAZARDS: usize = 12;
+fn interpolate_ground(profile: &[(f32, f32)], x: f32) -> f32 {
+    for points in profile.windows(2) {
         if x <= points[1].0 {
             let u = ((x - points[0].0) / (points[1].0 - points[0].0)).clamp(0., 1.);
             return points[0].1 + (points[1].1 - points[0].1) * u;
         }
     }
-    GROUND_PROFILE.last().unwrap().1
+    profile.last().unwrap().1
 }
 
 #[derive(Clone, Copy)]
 enum RabbitObstacleKind {
     Log,
     Hedgehog,
+    Hay,
+    Branch,
 }
 
 pub(super) struct RabbitHomeGame {
@@ -97,9 +156,10 @@ pub(super) struct RabbitHomeGame {
     lives: u8,
     collected: [bool; CARROT_COUNT],
     combo: u8,
-    cleared: [bool; 10],
+    cleared: [bool; MAX_HAZARDS],
     jump_left: f32,
     jump_buffer: f32,
+    jump_forward_speed: f32,
     invulnerable: f32,
     outcome: Option<bool>,
     walk_clock: f32,
@@ -165,6 +225,15 @@ fn prop_frame(index: usize) -> Rect {
     Rect::from_corners(Vec2::new(left, top), Vec2::new(right, bottom))
 }
 
+fn orchard_prop_frame(index: usize) -> Rect {
+    let b = if index == 0 {
+        (65., 135., 984., 625.)
+    } else {
+        (1145., 276., 2096., 619.)
+    };
+    Rect::from_corners(Vec2::new(b.0, b.1), Vec2::new(b.2, b.3))
+}
+
 impl RabbitHomeGame {
     pub(super) fn new() -> Self {
         Self {
@@ -174,9 +243,10 @@ impl RabbitHomeGame {
             lives: 3,
             collected: [false; CARROT_COUNT],
             combo: 0,
-            cleared: [false; 10],
+            cleared: [false; MAX_HAZARDS],
             jump_left: 0.,
             jump_buffer: 0.,
+            jump_forward_speed: 18.,
             invulnerable: 0.,
             outcome: None,
             walk_clock: 0.,
@@ -187,7 +257,7 @@ impl RabbitHomeGame {
         if self.outcome.is_some() {
             return false;
         }
-        let stage_bonus = (self.level.saturating_sub(1) as f32 * 0.30).min(1.2);
+        let stage_bonus = ((self.level.saturating_sub(1) / 2) as f32 * 0.30).min(1.2);
         let ground_speed = match direction {
             -1 => 2.3,
             1 => 10.5,
@@ -196,7 +266,7 @@ impl RabbitHomeGame {
         // All platforms use the long course's river width and jump distance.
         // Touch users can clear it without holding a second acceleration button.
         let speed = if self.jump_left > 0. {
-            18.0 + stage_bonus
+            self.jump_forward_speed + stage_bonus
         } else {
             ground_speed
         };
@@ -213,10 +283,10 @@ impl RabbitHomeGame {
         let mut changed = false;
 
         let jump_height = self.jump_height();
-        for (index, &(left, right, clearance)) in HAZARDS.iter().enumerate() {
+        for (index, &(left, right, clearance)) in self.hazards().iter().enumerate() {
             if (left..=right).contains(&next) && jump_height < clearance {
                 if self.invulnerable > 0. {
-                    if index == 0 {
+                    if clearance <= 1. {
                         return false;
                     }
                     continue;
@@ -243,10 +313,11 @@ impl RabbitHomeGame {
         }
 
         self.position = next;
-        for (index, carrot_x) in CARROT_X.iter().enumerate() {
-            let feet = ground_y(self.position) - jump_height;
-            let within_height = ground_y(*carrot_x) - CARROT_Y[index] >= feet - 24.
-                && ground_y(*carrot_x) - CARROT_Y[index] <= feet + 3.;
+        for index in 0..CARROT_COUNT {
+            let carrot_x = self.carrot_x(index);
+            let feet = self.ground_y(self.position) - jump_height;
+            let within_height = self.ground_y(carrot_x) - self.carrot_height(index) >= feet - 24.
+                && self.ground_y(carrot_x) - self.carrot_height(index) <= feet + 3.;
             if !self.collected[index] && (self.position - carrot_x).abs() < 2.4 && within_height {
                 self.collected[index] = true;
                 changed = true;
@@ -264,6 +335,20 @@ impl RabbitHomeGame {
             return;
         }
         if self.jump_left <= LAND_TIME {
+            // A wide orchard creek uses its own takeoff impulse; the intact
+            // bridge is solid ground and never appears in the hazard list.
+            self.jump_forward_speed = self
+                .hazards()
+                .iter()
+                .find(|(left, right, clearance)| {
+                    self.map_index() == 1
+                        && *clearance <= 1.
+                        && *left >= self.position
+                        && *left - self.position <= 14.
+                        && *right > self.position
+                })
+                .map(|(left, right, _)| ((right - left + 16.) / 2.).max(18.))
+                .unwrap_or(18.);
             self.jump_left = LOAD_TIME + AIR_TIME + LAND_TIME;
             self.jump_buffer = 0.;
         } else {
@@ -377,10 +462,59 @@ impl RabbitHomeGame {
         Node {
             position_type: PositionType::Absolute,
             left: Val::Percent(self.screen_x() + (b[0] - b[2] + 0.24 * 181.) * unit_x * sx),
-            top: Val::Percent(ground_y(self.position) - lift - h),
+            top: Val::Percent(self.ground_y(self.position) - lift - h),
             width: Val::Percent(w),
             height: Val::Percent(h),
             ..default()
+        }
+    }
+
+    pub(super) fn map_index(&self) -> usize {
+        ((self.level.saturating_sub(1)) % 2) as usize
+    }
+    pub(super) fn map_name(&self) -> &'static str {
+        if self.map_index() == 0 {
+            "森林归途"
+        } else {
+            "溪谷果园"
+        }
+    }
+    fn hazards(&self) -> &'static [(f32, f32, f32)] {
+        if self.map_index() == 0 {
+            &HAZARDS
+        } else {
+            &ORCHARD_HAZARDS
+        }
+    }
+    fn obstacles(&self) -> &'static [(f32, RabbitObstacleKind)] {
+        if self.map_index() == 0 {
+            &OBSTACLES
+        } else {
+            &ORCHARD_OBSTACLES
+        }
+    }
+    fn ground_y(&self, x: f32) -> f32 {
+        interpolate_ground(
+            if self.map_index() == 0 {
+                GROUND_PROFILE
+            } else {
+                ORCHARD_GROUND
+            },
+            x,
+        )
+    }
+    fn carrot_x(&self, index: usize) -> f32 {
+        if self.map_index() == 0 {
+            CARROT_X[index]
+        } else {
+            24. + index as f32 * 16. + if index % 8 == 2 { 2. } else { 0. }
+        }
+    }
+    fn carrot_height(&self, index: usize) -> f32 {
+        if self.map_index() == 0 {
+            CARROT_Y[index]
+        } else {
+            [13., 15., 21., 13., 28., 15., 13.][index % 7]
         }
     }
 
@@ -403,7 +537,7 @@ impl RabbitHomeGame {
                 .is_some_and(|left| left - self.position <= 7. && left > self.position)
     }
     pub(super) fn qa_next_hazard(&self) -> Option<f32> {
-        HAZARDS
+        self.hazards()
             .iter()
             .find(|(_, right, _)| *right > self.position)
             .map(|(left, _, _)| *left)
@@ -449,16 +583,17 @@ impl RabbitHomeGame {
             return;
         }
         if self.outcome == Some(true) {
-            self.level = self.level.saturating_add(1).min(5);
+            self.level = self.level.saturating_add(1).min(10);
         }
         self.position = 10.;
         self.seconds_left = RUN_SECONDS;
         self.lives = 3;
         self.collected = [false; CARROT_COUNT];
         self.combo = 0;
-        self.cleared = [false; 10];
+        self.cleared = [false; MAX_HAZARDS];
         self.jump_left = 0.;
         self.jump_buffer = 0.;
+        self.jump_forward_speed = 18.;
         self.invulnerable = 0.;
         self.outcome = None;
         self.walk_clock = 0.;
@@ -472,7 +607,7 @@ mod tests {
     #[test]
     fn full_course_is_playable_at_every_speed_level() {
         for direction in [0, 1] {
-            for level in 1..=5 {
+            for level in 1..=10 {
                 let mut game = RabbitHomeGame::new();
                 game.level = level;
                 let mut elapsed = 0.;
@@ -498,17 +633,69 @@ mod tests {
                     Some(true),
                     "level={level} direction={direction}"
                 );
-                assert_eq!(game.combo, HAZARDS.len() as u8);
+                assert_eq!(game.combo, game.hazards().len() as u8);
                 eprintln!("LONG_COURSE level={level} direction={direction} seconds={elapsed:.1}");
                 assert!(game.collected_count() > 90);
-                assert!((150. ..380.).contains(&elapsed), "duration={elapsed}");
+                assert!((140. ..380.).contains(&elapsed), "duration={elapsed}");
                 assert_eq!(game.camera_x(), 2000.);
                 game.next();
-                assert_eq!(game.level, (level + 1).min(5));
+                assert_eq!(game.level, (level + 1).min(10));
                 assert_eq!(game.collected_count(), 0);
             }
         }
     }
+    #[test]
+    fn maps_change_on_winning_and_failure_retries_current_map() {
+        let mut game = RabbitHomeGame::new();
+        assert_eq!(game.map_name(), "森林归途");
+        game.outcome = Some(true);
+        game.next();
+        assert_eq!(game.level, 2);
+        assert_eq!(game.map_name(), "溪谷果园");
+        assert_eq!(game.hazards().len(), 12);
+        assert_eq!(game.obstacles().len(), 11);
+        assert_ne!(game.carrot_x(5), CARROT_X[5]);
+        game.outcome = Some(false);
+        game.position = 1000.;
+        game.next();
+        assert_eq!(game.level, 2);
+        assert_eq!(game.map_index(), 1);
+        assert_eq!(game.position, 10.);
+        game.outcome = Some(true);
+        game.next();
+        assert_eq!(game.level, 3);
+        assert_eq!(game.map_index(), 0);
+        game.level = 10;
+        game.outcome = Some(true);
+        game.next();
+        assert_eq!(game.level, 10);
+        assert_eq!(game.map_index(), 1);
+    }
+    #[test]
+    fn orchard_bridge_is_solid_and_creek_is_jumpable() {
+        let mut game = RabbitHomeGame::new();
+        game.level = 2;
+        game.position = 315.;
+        while game.position < 420. {
+            game.move_player(1, 1. / 60.);
+            game.advance(1. / 60.);
+            assert_eq!(game.lives, 3);
+        }
+        assert_eq!(game.combo, 0);
+        game.position = 871.;
+        game.jump();
+        assert!(game.jump_forward_speed > 40.);
+        for _ in 0..120 {
+            game.move_player(1, 1. / 60.);
+            game.advance(1. / 60.);
+            assert_eq!(game.lives, 3);
+            if game.position > 955. {
+                break;
+            }
+        }
+        assert!(game.position > 955.);
+    }
+
     #[test]
     fn camera_follows_only_after_start_and_stops_at_end() {
         let mut game = RabbitHomeGame::new();
@@ -569,6 +756,25 @@ mod tests {
             assert_eq!(game.lives, 3);
         }
     }
+    #[test]
+    fn retry_dialog_uses_current_run_values_and_preserves_difficulty() {
+        let mut game = RabbitHomeGame::new();
+        game.level = 4;
+        game.position = GOAL_X * 0.427;
+        for i in 0..36 {
+            game.collected[i] = true;
+        }
+        game.outcome = Some(false);
+        assert_eq!(retry_stats(&game), ("42%".into(), "36".into()));
+        game.next();
+        assert_eq!(game.level, 4);
+        assert_eq!(game.outcome, None);
+        assert_eq!(game.lives, 3);
+        assert_eq!(game.collected_count(), 0);
+        assert_eq!(game.seconds_left(), 480);
+        assert!(RETRY_BUTTON.3 < RETRY_LIBRARY.1);
+    }
+
     #[test]
     fn timeout_and_restart_preserve_level() {
         let mut game = RabbitHomeGame::new();
@@ -677,7 +883,7 @@ fn rabbit_effect(game: &RabbitHomeGame, index: usize) -> (Node, Color) {
     let (x, y, w, h, alpha) = if index == 0 {
         (
             game.screen_x() + 0.2,
-            ground_y(game.position) + 0.5,
+            game.ground_y(game.position) + 0.5,
             4.6 * (1. - lift / 41.6),
             0.8 * (1. - lift / 48.),
             0.15 * (1. - lift / 27.2),
@@ -688,7 +894,7 @@ fn rabbit_effect(game: &RabbitHomeGame, index: usize) -> (Node, Color) {
         let i = (index - 1) as f32;
         (
             game.screen_x() - 2. - i * 0.5 - u * 1.3,
-            ground_y(game.position) - 0.5 - i * 0.48 - u * 1.44,
+            game.ground_y(game.position) - 0.5 - i * 0.48 - u * 1.44,
             0.3 + u * 0.5,
             0.64 + u * 0.96,
             if active { (1. - u / 0.7) * 0.13 } else { 0. },
@@ -727,6 +933,73 @@ fn reference_node(bounds: (f32, f32, f32, f32)) -> Node {
     }
 }
 
+// Pixel bounds map the extracted artwork back to the approved 1586×992 mockup.
+const RETRY_BUTTON: (f32, f32, f32, f32) = (575., 674., 1014., 802.);
+const RETRY_LIBRARY: (f32, f32, f32, f32) = (670., 809., 917., 864.);
+fn retry_stats(game: &RabbitHomeGame) -> (String, String) {
+    (
+        format!("{:.0}%", (game.progress() * 100.).floor()),
+        game.collected_count().to_string(),
+    )
+}
+fn rabbit_retry_dialog(
+    root: &mut ChildSpawnerCommands,
+    game: &RabbitHomeGame,
+    art: &Art,
+    font_scale: f32,
+) {
+    root.spawn((
+        Button,
+        Node {
+            position_type: PositionType::Absolute,
+            width: Val::Percent(100.),
+            height: Val::Percent(100.),
+            ..default()
+        },
+        BackgroundColor(Color::srgba(0.025, 0.07, 0.035, 0.64)),
+        ZIndex(30),
+    ))
+    .with_children(|overlay| {
+        let mut artwork = ImageNode::new(art.rabbit_retry_dialog.clone());
+        // Crop the extracted panel's transparent padding; preserve its approved
+        // on-screen size instead of stretching the extraction to the viewport.
+        artwork.rect = Some(Rect::from_corners(
+            Vec2::new(301., 62.),
+            Vec2::new(1286., 966.),
+        ));
+        overlay.spawn((reference_node((374., 140., 1212., 900.)), artwork));
+        let (progress, carrots) = retry_stats(game);
+        for (bounds, text) in [
+            ((711., 591., 796., 642.), progress),
+            ((990., 591., 1051., 642.), carrots),
+        ] {
+            let mut node = reference_node(bounds);
+            node.align_items = AlignItems::Center;
+            node.justify_content = JustifyContent::Center;
+            overlay.spawn(node).with_children(|value| {
+                label(
+                    value,
+                    art,
+                    text,
+                    26. * font_scale,
+                    Color::srgb(0.27, 0.13, 0.045),
+                )
+            });
+        }
+        for (bounds, action) in [
+            (RETRY_BUTTON, Action::RabbitNext),
+            (RETRY_LIBRARY, Action::Library),
+        ] {
+            overlay.spawn((
+                Button,
+                action,
+                reference_node(bounds),
+                BackgroundColor(Color::NONE),
+            ));
+        }
+    });
+}
+
 pub(super) fn rabbit_home_ui(
     commands: &mut Commands,
     s: &Session,
@@ -750,7 +1023,11 @@ pub(super) fn rabbit_home_ui(
         .id();
     commands.entity(root).with_children(|root| {
         for chapter in 0..3 {
-            let mut image = ImageNode::new(art.rabbit_home_scene.clone());
+            let mut image = ImageNode::new(if game.map_index() == 0 {
+                art.rabbit_home_scene.clone()
+            } else {
+                art.rabbit_orchard_scene.clone()
+            });
             image.rect = Some(chapter_rect(chapter));
             root.spawn((
                 RabbitWorldItem(chapter as f32 * 700.),
@@ -868,16 +1145,17 @@ pub(super) fn rabbit_home_ui(
                 });
         });
 
-        for (index, x) in CARROT_X.iter().enumerate() {
+        for index in 0..CARROT_COUNT {
+            let x = game.carrot_x(index);
             let mut image = ImageNode::new(art.rabbit_home_props.clone());
             image.rect = Some(prop_frame(2));
             root.spawn((
                 RabbitCollectible(index),
-                RabbitWorldItem(*x - 2.25),
+                RabbitWorldItem(x - 2.25),
                 Node {
                     position_type: PositionType::Absolute,
-                    left: Val::Percent(*x - 2.25 - game.camera_x()),
-                    top: Val::Percent(ground_y(*x) - CARROT_Y[index] - 4.25),
+                    left: Val::Percent(x - 2.25 - game.camera_x()),
+                    top: Val::Percent(game.ground_y(x) - game.carrot_height(index) - 4.25),
                     width: Val::Percent(4.5),
                     height: Val::Percent(8.5),
                     ..default()
@@ -885,19 +1163,30 @@ pub(super) fn rabbit_home_ui(
                 image,
             ));
         }
-        for (x, kind) in OBSTACLES {
+        for &(x, kind) in game.obstacles() {
             let (frame, width, height) = match kind {
                 RabbitObstacleKind::Log => (0, 15., 11.5),
                 RabbitObstacleKind::Hedgehog => (1, 9., 10.5),
+                RabbitObstacleKind::Hay => (0, 13.5, 10.5),
+                RabbitObstacleKind::Branch => (1, 16., 9.5),
             };
-            let mut image = ImageNode::new(art.rabbit_home_props.clone());
-            image.rect = Some(prop_frame(frame));
+            let orchard_prop = matches!(kind, RabbitObstacleKind::Hay | RabbitObstacleKind::Branch);
+            let mut image = ImageNode::new(if orchard_prop {
+                art.rabbit_orchard_props.clone()
+            } else {
+                art.rabbit_home_props.clone()
+            });
+            image.rect = Some(if orchard_prop {
+                orchard_prop_frame(frame)
+            } else {
+                prop_frame(frame)
+            });
             root.spawn((
                 RabbitWorldItem(x - width / 2.),
                 Node {
                     position_type: PositionType::Absolute,
                     left: Val::Percent(x - width / 2. - game.camera_x()),
-                    top: Val::Percent(ground_y(x) - height),
+                    top: Val::Percent(game.ground_y(x) - height),
                     width: Val::Percent(width),
                     height: Val::Percent(height),
                     ..default()
@@ -942,7 +1231,9 @@ pub(super) fn rabbit_home_ui(
                 BackgroundColor(Color::NONE),
             ));
         }
-        if let Some(won) = game.outcome() {
+        if game.outcome() == Some(false) {
+            rabbit_retry_dialog(root, game, art, font_scale);
+        } else if let Some(won) = game.outcome() {
             root.spawn((
                 Node {
                     position_type: PositionType::Absolute,
@@ -976,8 +1267,9 @@ pub(super) fn rabbit_home_ui(
                     panel,
                     art,
                     format!(
-                        "第 {} 关 · 胡萝卜 {} · 连跳 x{}",
+                        "第 {} 关 · {} · 胡萝卜 {} · 连跳 x{}",
                         game.level(),
+                        game.map_name(),
                         game.collected_count(),
                         game.combo()
                     ),

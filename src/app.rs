@@ -201,7 +201,7 @@ impl GameMode {
             Self::LightPath => "旋转镜片，让光束真正反射到水晶",
             Self::GardenDefense => "收集阳光、种下伙伴，守住五条花园战线",
             Self::SpaceCourier => "规划航线、送完九件包裹、破解终点谜题",
-            Self::RabbitHome => "穿越21屏森林长路，收集胡萝卜，跑跳回家",
+            Self::RabbitHome => "穿越森林与果园两张长地图，收集胡萝卜，跑跳回家",
         }
     }
 
@@ -246,7 +246,7 @@ impl GameMode {
             }
             Self::SpaceCourier => "选择星球和航线，管理燃料，完成九个送货点与终点挑战。",
             Self::RabbitHome => {
-                "小兔自动前进，镜头沿21屏长地图跟随。方向键或A/D控制跑速，右键或Shift加速，W、↑、空格跳跃；沿途收集胡萝卜、越过河流和障碍，最后到达兔屋。每关约3至6分钟，限时8分钟；点击左上标题返回游戏库。"
+                "小兔自动前进，镜头沿长地图跟随。森林通关后进入独立的溪谷果园，每张地图约21屏，失败重试当前地图。方向键或A/D控制跑速，右键或Shift加速，W、↑、空格跳跃；沿途收集胡萝卜、越过河流和障碍，最后到达兔屋。每关约3至6分钟，限时8分钟；点击左上标题返回游戏库。"
             }
         }
     }
@@ -2564,6 +2564,13 @@ const BOMBER_COLUMNS: i8 = 17;
 const BOMBER_ROWS: i8 = 9;
 const BOMBER_MAX_ROUNDS: u32 = 10;
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum BomberBehavior {
+    Patrol,
+    Chase,
+    Flank,
+}
+
 #[derive(Clone)]
 struct BomberEnemy {
     visual: Vec2,
@@ -2624,6 +2631,14 @@ struct BomberGame {
     redraw: f32,
     feedback: String,
     failed: bool,
+    round_entry_score: u32,
+    round_pots: u8,
+    round_hits: u8,
+    round_best_blast: u8,
+    round_chains: u8,
+    clear_wait: f32,
+    total_stars: u8,
+    last_move: (i8, i8),
 }
 
 impl BomberGame {
@@ -2652,12 +2667,89 @@ impl BomberGame {
             redraw: 0.,
             feedback: "击败小怪闯关！炸开花盆找强化水泡，连锁爆破有额外奖励。".into(),
             failed: false,
+            round_entry_score: 0,
+            round_pots: 0,
+            round_hits: 0,
+            round_best_blast: 0,
+            round_chains: 0,
+            clear_wait: 0.,
+            total_stars: 0,
+            last_move: (1, 0),
         };
         game.load_round();
         game
     }
     fn reset(&mut self) {
-        *self = Self::new();
+        if self.failed {
+            // Retry the lost round rather than throwing away the whole run.
+            self.score = self.round_entry_score;
+            self.failed = false;
+            self.won = false;
+            self.lives = 3;
+            self.load_round();
+            self.feedback = format!("重试第 {} 关：{}", self.round, self.goal_text());
+        } else {
+            *self = Self::new();
+        }
+    }
+    fn goal_text(&self) -> &'static str {
+        match (self.round - 1) % 5 {
+            0 => "炸通路线，清空小怪",
+            1 => "奖励挑战：炸开两个花盆",
+            2 => "奖励挑战：触发一次连锁爆破",
+            3 => "奖励挑战：保持无伤通关",
+            _ => "奖励挑战：一次水花击中两个小怪",
+        }
+    }
+    fn goal_complete(&self) -> bool {
+        match (self.round - 1) % 5 {
+            0 => true,
+            1 => self.round_pots >= 2,
+            2 => self.round_chains > 0,
+            3 => self.round_hits == 0,
+            _ => self.round_best_blast >= 2,
+        }
+    }
+    fn behavior(&self, kind: u8) -> BomberBehavior {
+        if self.round == 1 {
+            return BomberBehavior::Patrol;
+        }
+        match kind % 3 {
+            0 => BomberBehavior::Patrol,
+            1 => BomberBehavior::Chase,
+            _ if self.round >= 3 => BomberBehavior::Flank,
+            _ => BomberBehavior::Patrol,
+        }
+    }
+    fn walk_distances(
+        &self,
+        target: (i8, i8),
+    ) -> [[u16; BOMBER_COLUMNS as usize]; BOMBER_ROWS as usize] {
+        let mut distances = [[u16::MAX; BOMBER_COLUMNS as usize]; BOMBER_ROWS as usize];
+        let target = if self.solid(target.0, target.1) {
+            self.player
+        } else {
+            target
+        };
+        distances[target.1 as usize][target.0 as usize] = 0;
+        let mut queue = vec![target];
+        let mut cursor = 0;
+        while cursor < queue.len() {
+            let (x, y) = queue[cursor];
+            cursor += 1;
+            for (dx, dy) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
+                let point = (x + dx, y + dy);
+                if self.solid(point.0, point.1) || self.bombs.iter().any(|b| (b.x, b.y) == point) {
+                    continue;
+                }
+                if distances[point.1 as usize][point.0 as usize] == u16::MAX {
+                    distances[point.1 as usize][point.0 as usize] =
+                        distances[y as usize][x as usize] + 1;
+                    queue.push(point);
+                }
+            }
+        }
+        distances
     }
     fn solid(&self, x: i8, y: i8) -> bool {
         !(0..BOMBER_COLUMNS).contains(&x)
@@ -2668,6 +2760,14 @@ impl BomberGame {
             || self.pots.contains(&(x, y))
     }
     fn load_round(&mut self) {
+        self.round_entry_score = self.score;
+        self.round_pots = 0;
+        self.round_hits = 0;
+        self.round_best_blast = 0;
+        self.round_chains = 0;
+        self.clear_wait = 0.;
+        self.last_move = (1, 0);
+        self.feedback = format!("第 {} 关：{}", self.round, self.goal_text());
         self.bushes.clear();
         self.pots.clear();
         self.bricks.clear();
@@ -2749,7 +2849,7 @@ impl BomberGame {
             .collect();
     }
     fn move_player(&mut self, dx: i8, dy: i8) {
-        if self.failed || self.paused || self.won {
+        if self.failed || self.paused || self.won || self.clear_wait > 0. {
             return;
         }
         if dx.abs() + dy.abs() != 1 {
@@ -2758,6 +2858,7 @@ impl BomberGame {
         let next = (self.player.0 + dx, self.player.1 + dy);
         if !self.solid(next.0, next.1) && !self.bombs.iter().any(|bomb| (bomb.x, bomb.y) == next) {
             self.started = true;
+            self.last_move = (dx, dy);
             self.player = next;
             self.collect_pickup();
         }
@@ -2794,6 +2895,7 @@ impl BomberGame {
         if self.failed
             || self.paused
             || self.won
+            || self.clear_wait > 0.
             || self.bombs.len() >= self.bomb_capacity
             || self
                 .bombs
@@ -2854,6 +2956,7 @@ impl BomberGame {
             .filter(|cell| self.pots.contains(cell))
             .collect();
         let pots_destroyed = destroyed_pots.len();
+        self.round_pots = self.round_pots.saturating_add(pots_destroyed as u8);
         self.pots.retain(|pot| !cells.contains(pot));
         for (x, y) in destroyed_pots {
             // Every pot rewards exploration; hearts help a struggling player.
@@ -2872,6 +2975,7 @@ impl BomberGame {
             .enumerate()
             .filter_map(|(index, enemy)| cells.contains(&(enemy.x, enemy.y)).then_some(index))
             .collect();
+        self.round_best_blast = self.round_best_blast.max(defeated.len() as u8);
         for index in defeated.iter().rev() {
             self.enemies.remove(*index);
         }
@@ -2887,67 +2991,69 @@ impl BomberGame {
         }
     }
     fn move_enemies(&mut self) {
-        // Flood-fill the walkable maze so pursuit can turn away from the
-        // player temporarily to get around a wall instead of freezing there.
-        let mut distance = [[u16::MAX; BOMBER_COLUMNS as usize]; BOMBER_ROWS as usize];
-        distance[self.player.1 as usize][self.player.0 as usize] = 0;
-        let mut queue = vec![self.player];
-        let mut cursor = 0;
-        while cursor < queue.len() {
-            let (x, y) = queue[cursor];
-            cursor += 1;
-            for (dx, dy) in [(1, 0), (0, 1), (-1, 0), (0, -1)] {
-                let point = (x + dx, y + dy);
-                if self.solid(point.0, point.1)
-                    || self.bombs.iter().any(|bomb| (bomb.x, bomb.y) == point)
-                {
-                    continue;
-                }
-                let next = distance[y as usize][x as usize] + 1;
-                let value = &mut distance[point.1 as usize][point.0 as usize];
-                if *value == u16::MAX {
-                    *value = next;
-                    queue.push(point);
-                }
-            }
-        }
+        let chase_distance = self.walk_distances(self.player);
+        let flank_target = (
+            self.player.0 + self.last_move.0 * 2,
+            self.player.1 + self.last_move.1 * 2,
+        );
+        let flank_distance = self.walk_distances(flank_target);
+        let danger: Vec<_> = self
+            .bombs
+            .iter()
+            .filter(|b| b.fuse <= 0.65)
+            .flat_map(|b| self.blast_cells(b))
+            .collect();
         for index in 0..self.enemies.len() {
             let enemy = &self.enemies[index];
             let origin = (enemy.x, enemy.y);
             if origin == self.player {
                 continue;
             }
-            let rotation = enemy.step as usize % 4;
+            let behavior = self.behavior(enemy.kind);
+            let heading = enemy.step as usize % 4;
             let directions = [(1, 0), (0, 1), (-1, 0), (0, -1)];
             let mut options = Vec::new();
-            for offset in 0..4 {
-                let (dx, dy) = directions[(offset + rotation) % 4];
+            for turn in [0, 1, 3, 2] {
+                let heading = (heading + turn) % 4;
+                let (dx, dy) = directions[heading];
                 let point = (origin.0 + dx, origin.1 + dy);
                 if !self.solid(point.0, point.1)
-                    && !self.bombs.iter().any(|bomb| (bomb.x, bomb.y) == point)
+                    && !self.bombs.iter().any(|b| (b.x, b.y) == point)
                     && !self
                         .enemies
                         .iter()
                         .enumerate()
-                        .any(|(other, enemy)| other != index && (enemy.x, enemy.y) == point)
+                        .any(|(other, e)| other != index && (e.x, e.y) == point)
+                    && !self.blasts.iter().any(|b| (b.x, b.y) == point)
                 {
-                    options.push(point);
+                    options.push((point, heading));
                 }
             }
-            options.sort_by_key(|(x, y)| distance[*y as usize][*x as usize]);
-            let enemy = &mut self.enemies[index];
-            if let Some(&(x, y)) = options.first() {
+            if self.round >= 5
+                && behavior == BomberBehavior::Flank
+                && options.iter().any(|(p, _)| !danger.contains(p))
+            {
+                options.retain(|(p, _)| !danger.contains(p));
+            }
+            let near = (origin.0 - self.player.0).abs() + (origin.1 - self.player.1).abs() <= 6;
+            if behavior == BomberBehavior::Chase && near {
+                options.sort_by_key(|((x, y), _)| chase_distance[*y as usize][*x as usize]);
+            } else if behavior == BomberBehavior::Flank {
+                options.sort_by_key(|((x, y), _)| flank_distance[*y as usize][*x as usize]);
+            }
+            if let Some(&((x, y), heading)) = options.first() {
+                let enemy = &mut self.enemies[index];
                 enemy.x = x;
                 enemy.y = y;
+                enemy.step = heading as u8;
             }
-            // Disconnected monsters patrol rather than becoming stuck.
-            enemy.step = enemy.step.wrapping_add(1);
         }
     }
     fn lose_life(&mut self) {
         if self.invulnerable > 0. || self.failed {
             return;
         }
+        self.round_hits = self.round_hits.saturating_add(1);
         self.invulnerable = 2.5;
         self.lives = self.lives.saturating_sub(1);
         self.player = (2, 8);
@@ -2964,6 +3070,14 @@ impl BomberGame {
             return false;
         }
         let dt = dt.min(0.05);
+        if self.clear_wait > 0. {
+            self.clear_wait = (self.clear_wait - dt).max(0.);
+            if self.clear_wait == 0. {
+                self.round += 1;
+                self.load_round();
+            }
+            return true;
+        }
         self.remaining = (self.remaining - dt).max(0.);
         if self.remaining == 0. {
             self.failed = true;
@@ -2988,6 +3102,15 @@ impl BomberGame {
             detonations += 1;
         }
         if detonations > 1 {
+            self.round_chains = self.round_chains.saturating_add(1);
+            // The first chain each round rewards planning with a free upgrade.
+            if self.round_chains == 1 {
+                if self.blast_range < 4 {
+                    self.blast_range += 1;
+                } else if self.bomb_capacity < 4 {
+                    self.bomb_capacity += 1;
+                }
+            }
             let bonus = (detonations as u32 - 1) * 100;
             self.score += bonus;
             self.feedback = format!("连锁爆破 ×{}！额外奖励 +{} 分", detonations, bonus);
@@ -3020,6 +3143,7 @@ impl BomberGame {
         });
         let defeated = before - self.enemies.len();
         if defeated > 0 {
+            self.round_best_blast = self.round_best_blast.max(defeated as u8);
             self.score += defeated as u32 * 60;
             self.feedback = format!("水花击中 {} 个小怪！", defeated);
         }
@@ -3031,13 +3155,21 @@ impl BomberGame {
             self.lose_life();
         }
         if self.enemies.is_empty() && !self.failed {
+            let stars = 1 + u8::from(self.lives >= 2) + u8::from(self.goal_complete());
+            self.total_stars = self.total_stars.saturating_add(stars);
+            self.score += u32::from(stars) * 100;
+            self.lives = (self.lives + 1).min(3);
+            self.bombs.clear();
+            self.blasts.clear();
             if self.round >= BOMBER_MAX_ROUNDS {
                 self.won = true;
-                self.feedback = "太棒了！三星闯关成功！".into();
+                self.feedback = format!("十关通关！共拿到 {} 颗星！", self.total_stars);
             } else {
-                self.round += 1;
-                self.load_round();
-                self.feedback = format!("第 {} 关，迷宫里的小怪更多了！", self.round);
+                self.clear_wait = 1.1;
+                self.feedback = format!(
+                    "第 {} 关完成 · {} 星！补充爱心，准备下一关",
+                    self.round, stars
+                );
             }
         }
         self.redraw += dt;
@@ -4563,9 +4695,12 @@ struct Art {
     courier_empty_slot: Handle<Image>,
     courier_gift: Handle<Image>,
     rabbit_home_scene: Handle<Image>,
+    rabbit_orchard_scene: Handle<Image>,
+    rabbit_orchard_props: Handle<Image>,
     rabbit_home_sprite: Handle<Image>,
     rabbit_home_props: Handle<Image>,
     rabbit_home_ui: Handle<Image>,
+    rabbit_retry_dialog: Handle<Image>,
     bubble_story: Handle<Image>,
     sky_backdrop: Handle<Image>,
     sky_player: Handle<Image>,
@@ -5392,6 +5527,14 @@ fn setup(
                 settings.sampler = bevy::image::ImageSampler::linear();
             },
         ),
+        rabbit_orchard_scene: assets.load_with_settings(
+            image_asset_path("rabbit/rabbit-orchard-atlas-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {settings.sampler = bevy::image::ImageSampler::linear();},
+        ),
+        rabbit_orchard_props: assets.load_with_settings(
+            image_asset_path("rabbit/rabbit-orchard-props-v1.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {settings.sampler = bevy::image::ImageSampler::linear();},
+        ),
         rabbit_home_sprite: assets.load_with_settings(
             image_asset_path("rabbit/rabbit-motion-v2-atlas.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
@@ -5406,6 +5549,12 @@ fn setup(
         ),
         rabbit_home_ui: assets.load_with_settings(
             image_asset_path("rabbit/rabbit-sprint-ui-v2.png"),
+            |settings: &mut bevy::image::ImageLoaderSettings| {
+                settings.sampler = bevy::image::ImageSampler::linear();
+            },
+        ),
+        rabbit_retry_dialog: assets.load_with_settings(
+            image_asset_path("rabbit/rabbit-retry-dialog-v1.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
                 settings.sampler = bevy::image::ImageSampler::linear();
             },
@@ -13295,7 +13444,9 @@ mod tests {
         g.bushes.clear();
         g.pots.clear();
         g.player = (2, 1);
+        g.round=3;
         g.enemies.truncate(2);
+        for enemy in &mut g.enemies {enemy.kind=1;}
         g.enemies[0].x = 0;
         g.enemies[0].y = 1;
         g.enemies[1].x = 0;
@@ -13340,6 +13491,9 @@ mod tests {
         g.move_player(1, 0);
         g.enemies.clear();
         g.advance(0.02);
+        assert_eq!(g.round,1);
+        assert!(g.clear_wait>0.);
+        for _ in 0..60 {g.advance(0.02);}
         assert_eq!(g.round, 2);
         assert!(!g.started);
         let remaining = g.remaining;
@@ -22149,5 +22303,153 @@ mod bomber_multitouch_tests {
             app.world().get::<Node>(knob).unwrap().left,
             Val::Percent(27.)
         );
+    }
+}
+
+#[cfg(test)]
+mod bomber_gameplay_tests {
+    use super::*;
+    fn empty_arena() -> BomberGame {
+        let mut g = BomberGame::new();
+        g.bricks.clear();
+        g.bushes.clear();
+        g.pots.clear();
+        g.enemies.clear();
+        g
+    }
+    fn enemy(x: i8, y: i8, kind: u8) -> BomberEnemy {
+        BomberEnemy {
+            x,
+            y,
+            kind,
+            step: 0,
+            visual: Vec2::new(x as f32, y as f32),
+        }
+    }
+    #[test]
+    fn retry_keeps_round_and_upgrades_without_farming_score() {
+        let mut g = BomberGame::new();
+        g.round = 7;
+        g.score = 900;
+        g.load_round();
+        g.score = 1300;
+        g.blast_range = 4;
+        g.bomb_capacity = 3;
+        g.failed = true;
+        g.lives = 0;
+        g.reset();
+        assert_eq!(g.round, 7);
+        assert_eq!(g.score, 900);
+        assert_eq!(g.lives, 3);
+        assert_eq!(g.blast_range, 4);
+        assert_eq!(g.bomb_capacity, 3);
+        assert!(!g.started);
+        assert!(!g.failed);
+        assert!(!g.enemies.is_empty());
+    }
+    #[test]
+    fn patrol_chase_and_flank_choose_different_routes() {
+        let mut g = empty_arena();
+        g.round = 3;
+        g.player = (4, 4);
+        g.last_move = (1, 0);
+        g.enemies = vec![enemy(6, 4, 0)];
+        g.move_enemies();
+        assert_eq!((g.enemies[0].x, g.enemies[0].y), (7, 4));
+        g.enemies = vec![enemy(6, 4, 1)];
+        g.move_enemies();
+        assert_eq!((g.enemies[0].x, g.enemies[0].y), (5, 4));
+        g.enemies = vec![enemy(4, 2, 1)];
+        g.move_enemies();
+        assert_eq!((g.enemies[0].x, g.enemies[0].y), (4, 3));
+        g.enemies = vec![enemy(4, 2, 2)];
+        g.move_enemies();
+        assert_eq!((g.enemies[0].x, g.enemies[0].y), (5, 2));
+        g.round = 1;
+        assert!(g.behavior(1) == BomberBehavior::Patrol);
+        g.round = 2;
+        assert!(g.behavior(2) == BomberBehavior::Patrol);
+    }
+    #[test]
+    fn chain_reward_upgrades_only_once_per_round() {
+        let mut g = empty_arena();
+        g.started = true;
+        g.enemy_clock = 10.;
+        g.invulnerable = 10.;
+        g.enemies = vec![enemy(16, 8, 0)];
+        for expected_chains in 1..=2 {
+            g.bombs = vec![
+                WaterBomb {
+                    x: 2,
+                    y: 0,
+                    fuse: 0.,
+                    range: 2,
+                },
+                WaterBomb {
+                    x: 4,
+                    y: 0,
+                    fuse: 2.,
+                    range: 2,
+                },
+            ];
+            g.advance(0.02);
+            assert_eq!(g.round_chains, expected_chains);
+            assert_eq!(g.blast_range, 3);
+        }
+    }
+    #[test]
+    fn round_clear_awards_once_pauses_then_waits_for_next_input() {
+        let mut g = empty_arena();
+        g.started = true;
+        g.lives = 2;
+        g.advance(0.02);
+        assert_eq!(g.round, 1);
+        assert_eq!(g.total_stars, 3);
+        assert_eq!(g.lives, 3);
+        let score = g.score;
+        let time = g.remaining;
+        let player = g.player;
+        g.move_player(1, 0);
+        g.place_bomb();
+        assert_eq!(g.player, player);
+        assert!(g.bombs.is_empty());
+        for _ in 0..10 {
+            g.advance(0.02);
+        }
+        assert_eq!(g.remaining, time);
+        assert_eq!(g.score, score);
+        for _ in 0..60 {
+            g.advance(0.02);
+        }
+        assert_eq!(g.round, 2);
+        assert!(!g.started);
+        assert_eq!(g.total_stars, 3);
+        assert_eq!(g.score, score);
+    }
+    #[test]
+    fn optional_goals_are_attainable_and_do_not_block_clearing() {
+        for round in [2, 7] {
+            let mut g = BomberGame::new();
+            g.round = round;
+            g.load_round();
+            assert!(g.pots.len() >= 2);
+        }
+        let mut g = empty_arena();
+        g.round = 2;
+        g.pots = vec![(2, 0), (4, 0)];
+        g.explode(WaterBomb {
+            x: 3,
+            y: 0,
+            fuse: 0.,
+            range: 1,
+        });
+        assert_eq!(g.round_pots, 2);
+        assert!(g.goal_complete());
+        g.round = 3;
+        g.round_chains = 0;
+        g.started = true;
+        g.advance(0.02);
+        assert!(g.clear_wait > 0.);
+        assert_eq!(g.total_stars, 2);
     }
 }

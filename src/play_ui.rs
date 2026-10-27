@@ -1011,8 +1011,8 @@ pub(super) fn help_panel(commands: &mut Commands, s: &Session, art: &Art) {
         GameMode::BubbleBomber => (
             "1  拖左侧摇杆移动，松开即停
 2  点右侧水泡，约两秒后爆开
-3  避开十字水柱，击败小怪闯关",
-            "初始三条命，复活后有护盾。看说明时，小怪和倒计时都会暂停。",
+3  堵路引怪、连锁爆破，清空小怪过关",
+            "小怪会巡逻、追击和绕路。完成奖励目标可拿三星；过关补血，失败重试当前关。看说明时暂停。",
         ),
         GameMode::FruitNinja => (
             "1  按住屏幕，划过飞起来的水果

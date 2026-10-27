@@ -1131,6 +1131,8 @@ fn snapshot(s: &Session) -> serde_json::Value {
         GameMode::LightPath => s.light_path.qa_state(),
         GameMode::RabbitHome => json!({
             "progress": s.rabbit_home.progress(),
+            "map": s.rabbit_home.map_name(),
+            "stage": s.rabbit_home.level(),
             "world_position": s.rabbit_home.qa_position(),
             "camera_position": s.rabbit_home.qa_camera(),
             "hearts": s.rabbit_home.lives(),
