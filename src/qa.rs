@@ -17,7 +17,7 @@ impl Plugin for QaPlugin {
             "QA requires an isolated save directory"
         );
         app.insert_resource(bevy::time::TimeUpdateStrategy::ManualDuration(
-            std::time::Duration::from_secs_f64(if std::env::var_os("MAGNET_RABBIT_LONG_QA").is_some() {1. / 20.} else {1. / 30.}),
+            std::time::Duration::from_secs_f64(if std::env::var("MAGNET_START_GAME").as_deref()==Ok("train") {1. / 10.} else if std::env::var_os("MAGNET_RABBIT_LONG_QA").is_some() {1. / 20.} else {1. / 30.}),
         ))
         .init_resource::<Qa>()
         .add_systems(
@@ -33,12 +33,16 @@ impl Plugin for QaPlugin {
         .add_systems(Update, observe.after(capture_preview));
     }
 }
-fn resize(mut windows: Query<&mut Window, With<PrimaryWindow>>) {
+fn resize(s: Res<Session>, mut windows: Query<&mut Window, With<PrimaryWindow>>) {
     if let Ok(size) = std::env::var("MAGNET_QA_SIZE") {
-        if let Some((w, h)) = size
+        if let Some((mut w, mut h)) = size
             .split_once('x')
             .and_then(|(w, h)| Some((w.parse::<f32>().ok()?, h.parse::<f32>().ok()?)))
         {
+            // A portrait game still returns to the landscape library on device.
+            if s.library_open && h > w {
+                std::mem::swap(&mut w, &mut h);
+            }
             if let Ok(mut window) = windows.single_mut() {
                 if (window.width() - w).abs() > 0.5 || (window.height() - h).abs() > 0.5 {
                     window.resolution.set(w, h);
@@ -51,6 +55,7 @@ fn resize(mut windows: Query<&mut Window, With<PrimaryWindow>>) {
 #[derive(Clone, Copy)]
 enum Area {
     Window,
+    Forest,
     Bomber,
     BomberFire,
     Tank,
@@ -60,15 +65,21 @@ enum Area {
 }
 #[derive(Clone)]
 enum QaStep {
+    WindowSize(f32,f32),
+    VisualFit,
     Click(Action),
+    Hold(Action,u32),
     Optional(Action),
     Point(Area, Vec2, Vec2, u32),
     Keys(Vec<KeyCode>, u32),
     RabbitRunUntil(f32),
     BuildCell,
+    BuilderPlace([i32;3]),
+    CloudPlace(usize),
     FruitSlice,
     Wait(u32),
     Check(&'static str, fn(&Session) -> bool),
+    ForestCheck(&'static str, fn(&ForestTrain) -> bool),
     Shot(&'static str),
     Help,
     Library,
@@ -97,9 +108,64 @@ fn check(steps: &mut VecDeque<QaStep>, name: &'static str, f: fn(&Session) -> bo
 }
 fn scenario(s: &Session) -> VecDeque<QaStep> {
     use Action::*;
+    if s.mode==GameMode::ForestTrain{return forest_scenario();}
+    if s.mode==GameMode::CloudBridge{return cloud_walk_scenario(s);}
+    if builder_mode(s) {return puzzle_scenario(s);}
     let mut p = VecDeque::from([QaStep::Wait(35), QaStep::Shot("initial")]);
+    if matches!(s.mode,GameMode::CloudBridge|GameMode::FruitArcade|GameMode::SpaceCourier|GameMode::BubbleBomber|GameMode::Snake) {p.push_back(QaStep::VisualFit);}
     match s.mode {
+        GameMode::ForestTrain => unreachable!(),
+        GameMode::GoldRunner => {
+            p.push_back(QaStep::Keys(vec![KeyCode::KeyX],1));
+            check(&mut p,"向右挖坑",|s|s.gold_runner.qa_holes()==1);
+            p.push_back(QaStep::Shot("digging"));
+            p.push_back(QaStep::Keys(vec![KeyCode::ArrowRight],16));
+            p.push_back(QaStep::Wait(24));
+            check(&mut p,"进入挖开的坑后自然下落",|s|s.gold_runner.qa_position().y>740.);
+            p.push_back(QaStep::Keys(vec![KeyCode::KeyR],1));
+            p.push_back(QaStep::Keys(vec![KeyCode::ArrowLeft],21));
+            p.push_back(QaStep::Keys(vec![KeyCode::ArrowUp],28));
+            check(&mut p,"梯子向上爬到上一层",|s|s.gold_runner.qa_position().y<530.);
+            p.push_back(QaStep::Shot("climbed"));
+            p.push_back(QaStep::Keys(vec![KeyCode::KeyR],1));
+            p.push_back(QaStep::Point(Area::Window,Vec2::new(0.155,0.865),Vec2::new(0.155,0.865),15));
+            check(&mut p,"长按屏幕方向键",|s|s.gold_runner.qa_position().x>710.);
+            p.push_back(QaStep::Point(Area::Window,Vec2::new(0.84,0.89),Vec2::new(0.84,0.89),1));
+            check(&mut p,"屏幕左挖按钮",|s|s.gold_runner.qa_holes()==1);
+            click(&mut p,GoldToggle);
+            check(&mut p,"暂停",|s|s.gold_runner.state==GoldState::Paused);
+            p.push_back(QaStep::Shot("paused"));
+            click(&mut p,GoldToggle);
+            click(&mut p,GoldToggle);
+            click(&mut p,GoldReset);
+            check(&mut p,"重开复位",|s|s.gold_runner.lives==3&&s.gold_runner.collected==0&&s.gold_runner.qa_holes()==0);
+            click(&mut p,GoldToggle);
+        }
+        GameMode::Descent => {
+            click(&mut p, DescentStart);
+            check(&mut p, "开始挑战", |s| s.descent.state == DescentState::Playing);
+            p.push_back(QaStep::Keys(vec![KeyCode::ArrowRight], 20));
+            check(&mut p, "键盘向右移动", |s| s.descent.qa_x() > 550.);
+            p.push_back(QaStep::Shot("playing"));
+            click(&mut p, DescentToggle);
+            check(&mut p, "暂停", |s| s.descent.state == DescentState::Paused);
+            p.push_back(QaStep::Shot("paused"));
+            click(&mut p, DescentToggle);
+            p.push_back(QaStep::Point(Area::Window, Vec2::new(0.137,0.915),Vec2::new(0.137,0.915),20));
+            check(&mut p, "按住屏幕左方向键", |s|s.descent.qa_x()<500.);
+            p.push_back(QaStep::Keys(vec![KeyCode::KeyR],1));
+            check(&mut p, "重新开局", |s|s.descent.floor==1&&s.descent.state==DescentState::Playing);
+            p.push_back(QaStep::Wait(180));
+            check(&mut p, "顶部尖刺结束与纪录保存", |s|s.descent.state==DescentState::Over&&save_directory().join("descent-best.txt").exists());
+            p.push_back(QaStep::Shot("over"));
+            click(&mut p,DescentStart);
+            click(&mut p,DescentToggle);
+        }
         GameMode::Island | GameMode::CloudBridge | GameMode::FreeBuild => {
+            if builder_mode(s) {
+                click(&mut p,Build);
+                p.push_back(QaStep::Shot("building"));
+            }
             click(&mut p, Material(crate::game::Material::Stone));
             check(&mut p, "材料切换", |s| {
                 s.material == crate::game::Material::Stone
@@ -111,6 +177,9 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             check(&mut p, "撤销搭建", |s| s.undo.is_empty());
             if s.mode == GameMode::CloudBridge {
                 click(&mut p, Code);
+                for _ in 0..16 {click(&mut p, Add(Instruction::Forward));}
+                p.push_back(QaStep::VisualFit);
+                p.push_back(QaStep::Shot("full-program"));
                 click(&mut p, Run);
                 check(&mut p, "运行指令", |s| s.runner.is_some());
                 click(&mut p, Build);
@@ -119,6 +188,22 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
                 check(&mut p, "自动保存", |s| {
                     s.work.world.validate() && save_directory().join("island-v1.json").exists()
                 });
+                if s.mode==GameMode::Island {
+                    click(&mut p,Code);
+                    p.push_back(QaStep::Shot("programming"));
+                    click(&mut p,Clear);
+                    for _ in 0..16 {click(&mut p,Add(Instruction::Forward));}
+                    check(&mut p,"16条指令完整编排",|s|s.work.program.len()==16&&s.work.valid());
+                    p.push_back(QaStep::VisualFit);
+                    p.push_back(QaStep::Shot("full-program"));
+                    click(&mut p,Remove(15));
+                    check(&mut p,"删除第16条指令",|s|s.work.program.len()==15);
+                    click(&mut p,RepeatDelta(1));
+                    check(&mut p,"增加重复次数",|s|s.work.repeat==6);
+                    click(&mut p,RepeatDelta(-1));
+                    check(&mut p,"减少重复次数",|s|s.work.repeat==5);
+                    click(&mut p,Build);
+                }
             }
         }
         GameMode::Ball2048 => {
@@ -177,6 +262,15 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             });
         }
         GameMode::TankBattle => {
+            p.push_back(QaStep::Keys(vec![KeyCode::KeyA], 14));
+            check(&mut p, "键盘长按连续移动", |s| s.tank.player == (0, 6));
+            p.push_back(QaStep::Keys(vec![KeyCode::KeyD, KeyCode::Space], 14));
+            check(&mut p, "键盘边走边连发", |s| {
+                s.tank.player == (3, 6) && s.tank.bullets.iter().any(|b| b.friendly && b.dx == 1.)
+            });
+            p.push_back(QaStep::Wait(12));
+            check(&mut p, "松开方向键停止", |s| s.tank.player == (3, 6));
+            click(&mut p, TankReset);
             p.push_back(QaStep::Point(
                 Area::Tank,
                 Vec2::new(0.5, 0.2),
@@ -300,11 +394,13 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             });
         }
         GameMode::FruitArcade => {
+            click(&mut p,ArcadeRefill);
+            check(&mut p,"完整显示的免费补充按钮可用",|s|s.arcade.qa_state()["points"]==2000);
             click(&mut p, ArcadeBet(0));
             click(&mut p, ArcadeBet(1));
             click(&mut p, ArcadeSpin);
             check(&mut p, "跑灯启动并扣分", |s| {
-                s.arcade.qa_state()["running"] == true && s.arcade.qa_state()["points"] == 980
+                s.arcade.qa_state()["running"] == true && s.arcade.qa_state()["points"] == 1980
             });
             p.push_back(QaStep::Wait(160));
             check(&mut p, "跑灯停下结算", |s| {
@@ -364,13 +460,19 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
         }
         GameMode::Snake => {
             check(&mut p, "新局等待开始", |s| {
-                !s.snake.running && s.snake.body[0] == (5, 6)
+                !s.snake.running && s.snake.body[0] == (8,12)
             });
             click(&mut p, SnakeMove(1, 0));
-            p.push_back(QaStep::Wait(12));
+            p.push_back(QaStep::Wait(28));
             check(&mut p, "吃果实增长", |s| {
                 s.snake.score == 1 && s.snake.body.len() == 4
             });
+            p.push_back(QaStep::Wait(180));
+            check(&mut p,"穿越边界后继续游戏",|s|s.snake.running&&!s.snake.over);
+            click(&mut p,SnakeMove(0,-1));
+            p.push_back(QaStep::Wait(12));
+            check(&mut p,"转向向上",|s|s.snake.body[0].1<12);
+            p.push_back(QaStep::Shot("turning"));
             click(&mut p, SnakeToggle);
             check(&mut p, "暂停", |s| !s.snake.running && !s.snake.over);
             p.push_back(QaStep::Shot("played"));
@@ -378,6 +480,12 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             check(&mut p, "重新开始", |s| {
                 s.snake.score == 0 && s.snake.body.len() == 3 && !s.snake.running
             });
+            if std::env::var_os("MAGNET_QA_SNAKE_RESIZE").is_some() {
+                for (w,h,name) in [(1280.,800.,"wide"),(900.,900.,"square"),(540.,900.,"portrait-return")] {
+                    p.push_back(QaStep::WindowSize(w,h));p.push_back(QaStep::VisualFit);p.push_back(QaStep::Shot(name));
+                }
+            }
+
         }
         GameMode::Minesweeper => {
             click(&mut p, MineReveal(2));
@@ -690,7 +798,7 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
         }
     }
     p.push_back(QaStep::Shot("checked"));
-    p.push_back(QaStep::Help);
+    if !matches!(s.mode,GameMode::Descent|GameMode::GoldRunner) { p.push_back(QaStep::Help); }
     p.push_back(QaStep::Library);
     p.push_back(QaStep::Wait(15));
     check(&mut p, "返回游戏库", |s| s.library_open);
@@ -708,10 +816,170 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             !s.undo.is_empty()
         });
     }
-    p.push_back(QaStep::Library);
-    p.push_back(QaStep::Wait(15));
-    p.push_back(QaStep::SelectFromLibrary);
-    p.push_back(QaStep::Shot("reentered"));
+    // The tank library card launches the online game. Native controls use the
+    // development entry and the return-to-current-game button tested above.
+    if s.mode != GameMode::TankBattle {
+        p.push_back(QaStep::Library);
+        p.push_back(QaStep::Wait(15));
+        p.push_back(QaStep::SelectFromLibrary);
+        p.push_back(QaStep::Shot("reentered"));
+    }
+    p
+}
+
+fn cloud_qa_route(p:&mut VecDeque<QaStep>,g:&mut crate::cloud_walk_game::CloudWalk,target:usize,keyboard:bool){
+ let mut from=vec![None;g.map.cells.len()];let mut queue=VecDeque::from([g.robot]);from[g.robot]=Some(g.robot);
+ while let Some(id)=queue.pop_front(){if id==target{break;}let [x,z]=g.map.cells[id].at;for(dx,dz)in [(-1,0),(1,0),(0,-1),(0,1)]{if let Some(n)=g.map.id([x+dx,z+dz]){if from[n].is_none()&&g.passable(n){from[n]=Some(id);queue.push_back(n);}}}}
+ let mut route=vec![];let mut n=target;while n!=g.robot{route.push(n);n=from[n].expect("reference route");}route.reverse();
+ for n in route{let a=g.map.cells[g.robot].at;let b=g.map.cells[n].at;let(dx,dz)=(b[0]-a[0],b[1]-a[1]);
+  if keyboard{p.push_back(QaStep::Keys(vec![if dx>0{KeyCode::KeyD}else if dx<0{KeyCode::KeyA}else if dz>0{KeyCode::KeyS}else{KeyCode::KeyW}],1));}else{p.push_back(QaStep::Click(Action::CloudWalk(CloudAction::Move(dx,dz))));}g.move_dir(dx,dz);
+ }
+}
+fn cloud_walk_scenario(_s:&Session)->VecDeque<QaStep>{
+ use crate::cloud_walk_game::CloudWalk;
+ use CloudAction::*;
+ let mut p=VecDeque::from([QaStep::Wait(35),QaStep::Shot("initial")]);
+ let click=|p:&mut VecDeque<QaStep>,a|p.push_back(QaStep::Click(Action::CloudWalk(a)));
+ if std::env::var_os("MAGNET_QA_PUZZLE_RELOAD").is_some(){check(&mut p,"新地图存档独立恢复",|s|s.cloud_walk.snapshot().valid()&&s.cloud_walk.progress.stars.iter().all(|n|*n==3)&&!s.cloud_walk.plan.bridges.is_empty());p.push_back(QaStep::Shot("restored"));return p;}
+ for stage in 0..6{
+  let mut g=CloudWalk::default();g.choose(stage);let plan=g.verification_plan().unwrap();
+  click(&mut p,Stage(stage));click(&mut p,Restart);
+  if stage==0{
+   click(&mut p,Enter);p.push_back(QaStep::Keys(vec![KeyCode::KeyD],1));p.push_back(QaStep::Keys(vec![KeyCode::KeyD],1));
+   check(&mut p,"缺桥停在岸边",|s|s.cloud_walk.map.cells[s.cloud_walk.robot].at==[1,0]&&!s.cloud_walk.won);
+   click(&mut p,Back);
+   let id=*plan.bridges.keys().next().unwrap();p.push_back(QaStep::CloudPlace(id));click(&mut p,Erase);p.push_back(QaStep::CloudPlace(id));
+   check(&mut p,"拆除退回材料",|s|s.cloud_walk.plan.bridges.is_empty());click(&mut p,Undo);
+   check(&mut p,"撤销恢复桥块",|s|s.cloud_walk.plan.bridges.len()==1);click(&mut p,Restart);
+  }
+  for (&id,&b) in &plan.bridges{click(&mut p,Material(b));p.push_back(QaStep::CloudPlace(id));}
+  check(&mut p,"地图桥梁与材料合法",|s|s.cloud_walk.snapshot().valid()&&!s.cloud_walk.plan.bridges.is_empty());
+  p.push_back(QaStep::VisualFit);p.push_back(QaStep::Shot(["map-1-plan","map-2-plan","map-3-plan","map-4-plan","map-5-plan","map-6-plan"][stage]));
+  click(&mut p,Enter);p.push_back(QaStep::Wait(45));
+  check(&mut p,"进入过桥后等待不会自动移动",|s|s.cloud_walk.walking&&s.cloud_walk.robot==s.cloud_walk.map.start&&!s.cloud_walk.won);
+  p.push_back(QaStep::VisualFit);g.plan=plan;g.enter();
+  if stage==0{
+   p.push_back(QaStep::Keys(vec![KeyCode::KeyD],24));check(&mut p,"键盘长按连续移动且松开停止",|s|s.cloud_walk.map.cells[s.cloud_walk.robot].at==[4,0]);
+   g.move_dir(1,0);g.move_dir(1,0);g.move_dir(1,0);g.move_dir(1,0);
+   p.push_back(QaStep::Wait(20));check(&mut p,"松开不会继续前进",|s|s.cloud_walk.map.cells[s.cloud_walk.robot].at==[4,0]);
+  }
+  if stage==0{
+   p.push_back(QaStep::Hold(Action::CloudWalk(Move(-1,0)),24));p.push_back(QaStep::Wait(20));check(&mut p,"长按屏幕方向键并松开停在起点",|s|s.cloud_walk.robot==s.cloud_walk.map.start);
+   for _ in 0..4{g.move_dir(-1,0);}
+  }
+  if stage==5{let goal=g.map.goal;cloud_qa_route(&mut p,&mut g,goal,false);check(&mut p,"终点会挡住尚未取星晶的玩家",|s|!s.cloud_walk.won&&!s.cloud_walk.gem_taken&&s.cloud_walk.robot!=s.cloud_walk.map.goal);p.push_back(QaStep::Shot("required-crystal-blocked"));}
+  let targets=g.map.gem.into_iter().chain(std::iter::once(g.map.goal)).collect::<Vec<_>>();
+  for target in targets{cloud_qa_route(&mut p,&mut g,target,stage==0);}
+  p.push_back(QaStep::Wait(12));check(&mut p,"真实手动输入到达终点并收集星晶",|s|s.cloud_walk.won&&s.cloud_walk.progress.stars[s.cloud_walk.stage]==3);
+  p.push_back(QaStep::Shot(["map-1-won","map-2-won","map-3-won","map-4-won","map-5-won","map-6-won"][stage]));
+  click(&mut p,Back);check(&mut p,"返回搭桥回起点且保留桥梁",|s|!s.cloud_walk.walking&&s.cloud_walk.robot==s.cloud_walk.map.start&&!s.cloud_walk.plan.bridges.is_empty());
+ }
+ check(&mut p,"六张独立地图全部完成",|s|s.cloud_walk.progress.stars.iter().all(|n|*n==3));p.push_back(QaStep::Help);p.push_back(QaStep::Library);p.push_back(QaStep::SelectFromLibrary);check(&mut p,"重新进入保留新地图进度",|s|s.cloud_walk.progress.stars.iter().all(|n|*n==3));p
+}
+fn puzzle_scenario(s:&Session)->VecDeque<QaStep> {
+    use crate::puzzle_game::{Bridge,Op};
+    use PuzzleAction::*;
+    let mut p=VecDeque::from([QaStep::Wait(35),QaStep::Shot("initial")]);
+    let click=|p:&mut VecDeque<QaStep>,a|p.push_back(QaStep::Click(Action::Puzzle(a)));
+    if std::env::var_os("MAGNET_QA_PUZZLE_RELOAD").is_some() {
+        check(&mut p,"重新启动后读取桥梁、指令和星级",|s|{let g=&s.builder_puzzles[puzzle_index(s)];g.snapshot().valid(g.kind)&&g.progress.stars.iter().any(|n|*n>0)&&!g.plan.bridges.is_empty()});
+        p.push_back(QaStep::Shot("restored"));p.push_back(QaStep::Library);return p;
+    }
+    let fill=|p:&mut VecDeque<QaStep>,nodes:&[usize],material|{click(p,Material(material));for &n in nodes{click(p,Cell(n));}};
+    let guide=|p:&mut VecDeque<QaStep>,stage|{
+        click(p,Build(false));click(p,Clear);
+        if stage==5{click(p,Add(Op::Right));click(p,Repeat);}
+        click(p,Add(Op::Forward));click(p,Repeat);click(p,Repeat);
+        if stage==4 {
+            for (op,repeats) in [(Op::Right,1),(Op::Forward,1),(Op::Left,1),(Op::Forward,3),(Op::Right,1),(Op::Forward,1)] {
+                click(p,Add(op));for _ in 1..repeats{click(p,Repeat);}
+            }
+        } else if matches!(stage,1|2|5) {click(p,Add(Op::Right));click(p,Add(Op::Forward));click(p,Repeat);click(p,Add(Op::Left));click(p,Add(Op::Forward));click(p,Repeat);click(p,Repeat);}
+    };
+    if std::env::var_os("MAGNET_QA_PUZZLE_CAMPAIGN").is_some()||std::env::var_os("MAGNET_QA_PUZZLE_ADDED").is_some() {
+        let stages:Vec<usize>=if std::env::var_os("MAGNET_QA_PUZZLE_ADDED").is_some(){vec![3,4,5]}else{(1..=crate::puzzle_game::LEVEL_COUNT).map(|n|crate::puzzle_game::Level::index_for_number(if s.mode==GameMode::CloudBridge{PuzzleKind::Cloud}else{PuzzleKind::Robot},n).unwrap()).collect()};
+        for stage in stages {
+            click(&mut p,Stage(stage));if s.mode==GameMode::CloudBridge {click(&mut p,Restart);}
+            if s.mode==GameMode::CloudBridge {
+                if stage<=3 {fill(&mut p,&[2,4],Bridge::Wood);fill(&mut p,&[3],if matches!(stage,2|3){Bridge::Stone}else{Bridge::Wood});}
+                else {let stone=if stage==4{8}else{10};for node in [8,9,10,11,15,16,17]{fill(&mut p,&[node],if node==stone{Bridge::Stone}else{Bridge::Wood});}}
+            } else {
+                click(&mut p,Build(true));fill(&mut p,if matches!(stage,0|3){&[1,2]}else if stage==4{&[1,2,9,10]}else{&[1,2,6]},Bridge::Wood);guide(&mut p,stage);
+            }
+            check(&mut p,"关卡库存与指令容量合法",|s|{let g=&s.builder_puzzles[puzzle_index(s)];g.snapshot().valid(g.kind)});
+            p.push_back(QaStep::VisualFit);p.push_back(QaStep::Shot(["stage-1-plan","stage-2-plan","stage-3-plan","added-a-plan","added-b-plan","added-c-plan"][stage]));
+            click(&mut p,Run);p.push_back(QaStep::Wait(450));
+            check(&mut p,"关卡通过真实搭桥与指令操作通关",|s|{let g=&s.builder_puzzles[puzzle_index(s)];g.won&&g.progress.stars[g.stage]>0});
+            p.push_back(QaStep::Shot(["stage-1-won","stage-2-won","stage-3-won","added-a-won","added-b-won","added-c-won"][stage]));
+            if stage==1 {
+                if s.mode==GameMode::CloudBridge {click(&mut p,Restart);fill(&mut p,&[8,9,10,11,15,16,17],Bridge::Wood);}
+                else {
+                    click(&mut p,Build(true));click(&mut p,Erase);click(&mut p,Cell(6));fill(&mut p,&[9,10],Bridge::Wood);
+                    click(&mut p,Build(false));click(&mut p,Clear);
+                    for (op,repeats) in [(Op::Forward,3),(Op::Right,1),(Op::Forward,1),(Op::Left,1),(Op::Forward,3),(Op::Right,1),(Op::Forward,1)] {
+                        click(&mut p,Add(op));for _ in 1..repeats{click(&mut p,Repeat);}
+                    }
+                }
+                click(&mut p,Run);p.push_back(QaStep::Wait(600));check(&mut p,"分支关第二条路线也可通关并收集星晶",|s|{let g=&s.builder_puzzles[puzzle_index(s)];g.won&&g.bonus});
+                p.push_back(QaStep::Shot("branch-alternative-won"));
+            }
+        }
+    } else if s.mode==GameMode::CloudBridge {
+        click(&mut p,Stage(2));click(&mut p,Restart);p.push_back(QaStep::VisualFit);p.push_back(QaStep::Shot("confirmed-cloud"));
+        fill(&mut p,&[2,3,4],Bridge::Wood);click(&mut p,Run);p.push_back(QaStep::Wait(180));
+        check(&mut p,"木桥无法通过风口，保留搭建",|s|{let g=&s.builder_puzzles[0];!g.won&&g.robot==2&&g.plan.bridges.len()==3});
+        p.push_back(QaStep::Shot("wind-error"));fill(&mut p,&[3],Bridge::Stone);
+        check(&mut p,"替换石桥退回木桥",|s|s.builder_puzzles[0].remaining(Bridge::Wood)==5&&s.builder_puzzles[0].remaining(Bridge::Stone)==0);
+        click(&mut p,Undo);check(&mut p,"撤销恢复材料",|s|s.builder_puzzles[0].remaining(Bridge::Stone)==1);
+        fill(&mut p,&[3],Bridge::Stone);click(&mut p,Run);p.push_back(QaStep::Wait(400));
+        check(&mut p,"近路可以独立通关",|s|s.builder_puzzles[0].won&&!s.builder_puzzles[0].bonus);p.push_back(QaStep::Shot("direct-won"));
+        click(&mut p,Restart);fill(&mut p,&[8,9,10,11,15,16,17],Bridge::Wood);click(&mut p,Cell(2));
+        check(&mut p,"库存不足不能继续铺桥",|s|s.builder_puzzles[0].remaining(Bridge::Wood)==0&&s.builder_puzzles[0].plan.bridges.len()==7);
+        click(&mut p,Undo);check(&mut p,"耗尽材料后撤销退款",|s|s.builder_puzzles[0].remaining(Bridge::Wood)==1);click(&mut p,Cell(17));
+        click(&mut p,Run);p.push_back(QaStep::Wait(600));check(&mut p,"绕路通关并获得额外星晶",|s|s.builder_puzzles[0].won&&s.builder_puzzles[0].bonus);p.push_back(QaStep::Shot("detour-won"));
+    } else {
+        click(&mut p,Stage(2));click(&mut p,Build(true));fill(&mut p,&[1,2,6],Bridge::Wood);
+        click(&mut p,Undo);check(&mut p,"有限木桥撤销退款",|s|s.builder_puzzles[1].remaining(Bridge::Wood)==1);click(&mut p,Cell(6));guide(&mut p,2);
+        check(&mut p,"可见5张指令包含重复次数",|s|{let g=&s.builder_puzzles[1];g.plan.cards.len()==5&&g.plan.cards[0].repeats==3&&g.plan.cards[2].repeats==2&&g.plan.cards[4].repeats==3});
+        p.push_back(QaStep::VisualFit);p.push_back(QaStep::Shot("confirmed-program"));
+        for _ in 0..6{click(&mut p,Step);}
+        check(&mut p,"第6个动作踩机关开门",|s|s.builder_puzzles[1].gate_open&&s.builder_puzzles[1].robot==5);p.push_back(QaStep::Shot("gate-open"));
+        click(&mut p,Reset);check(&mut p,"复位关门并保留桥梁指令",|s|{let g=&s.builder_puzzles[1];!g.gate_open&&g.plan.bridges.len()==3&&g.plan.cards.len()==5});
+        click(&mut p,Run);p.push_back(QaStep::Wait(450));check(&mut p,"实际程序运行通关",|s|s.builder_puzzles[1].won);p.push_back(QaStep::Shot("program-won"));
+        click(&mut p,Clear);for _ in 0..9{click(&mut p,Add(Op::Wait));}
+        check(&mut p,"指令上限8张且可保存",|s|{let g=&s.builder_puzzles[1];g.plan.cards.len()==8&&g.snapshot().valid(PuzzleKind::Robot)});p.push_back(QaStep::VisualFit);p.push_back(QaStep::Shot("full-program"));
+    }
+    p.push_back(QaStep::Help);
+    p.push_back(QaStep::Library);check(&mut p,"返回游戏库",|s|s.library_open);
+    p.push_back(QaStep::SelectFromLibrary);check(&mut p,"再次进入保留新关卡进度",|s|{let g=&s.builder_puzzles[puzzle_index(s)];g.snapshot().valid(g.kind)&&g.progress.stars.iter().any(|n|*n>0)});
+    p.push_back(QaStep::Shot("reentered"));p
+}
+
+fn builder_campaign(s:&Session)->VecDeque<QaStep> {
+    use Action::*;
+    let mut p=VecDeque::from([QaStep::Wait(35),QaStep::Shot("initial")]);
+    for level in 0..5 {
+        click(&mut p,if s.mode==GameMode::CloudBridge {CloudLevel(level)}else{BuilderLevel(level)});
+        click(&mut p,Code);click(&mut p,Clear);
+        let mut work=Work::default();work.choose_level(level);assert!(work.load_guide_route());
+        let operations=Runner::new(&work).ops;
+        if s.mode==GameMode::Island&&matches!(level,3|4){click(&mut p,Finish);}
+        for instruction in &operations {click(&mut p,Add(*instruction));}
+        p.push_back(QaStep::VisualFit);
+        p.push_back(QaStep::Shot(["program-1","program-2","program-3","program-4","program-5"][level]));
+        click(&mut p,Run);p.push_back(QaStep::Wait((operations.len() as u32+1)*26));
+        check(&mut p,"真实操作完成关卡、收集星晶并抵达目标",|s|s.work.world.won()&&s.work.completed.contains(&s.work.level));
+        p.push_back(QaStep::Shot(["won-1","won-2","won-3","won-4","won-5"][level]));
+    }
+    click(&mut p,if s.mode==GameMode::CloudBridge {CloudLevel(5)}else{BuilderLevel(5)});
+    click(&mut p,Build);
+    for (i,cell) in (4..=5).flat_map(|x|(-2..=2).map(move|z|[x,0,z])).enumerate() {
+        click(&mut p,Material([crate::game::Material::Wood,crate::game::Material::Stone,crate::game::Material::Grass][i%3]));
+        p.push_back(QaStep::BuilderPlace(cell));
+    }
+    check(&mut p,"终章通过真实搭建完成10块3种材料",|s|{let(n,m)=s.work.creative_progress();n>=10&&m>=3&&s.work.completed.contains(&5)});
+    p.push_back(QaStep::Shot("creative-complete"));
+    p.push_back(QaStep::Library);check(&mut p,"返回游戏库",|s|s.library_open);
     p
 }
 
@@ -735,6 +1003,10 @@ type Surfaces<'w, 's> = Query<
 fn input(
     mut qa: ResMut<Qa>,
     s: Res<Session>,
+    forest: Res<ForestTrain>,
+    courier_canvases: Query<&ComputedNode,With<CourierCanvas>>,
+    snake_boards: Query<&ComputedNode,With<SnakePhoneBoard>>,
+    texts: Query<&Text>,
     mut windows: Query<(Entity, &mut Window), With<PrimaryWindow>>,
     surfaces: Surfaces,
     cameras: Query<(&Camera, &GlobalTransform), With<GameCamera>>,
@@ -744,7 +1016,12 @@ fn input(
     mut keys: ResMut<ButtonInput<KeyCode>>,
 ) {
     qa.frame += 1;
-    for key in [KeyCode::ArrowRight, KeyCode::ArrowLeft, KeyCode::Space] {
+    let mut synthetic_keys=vec![KeyCode::ArrowRight, KeyCode::ArrowLeft, KeyCode::Space];
+    if s.mode==GameMode::CloudBridge {synthetic_keys.extend([KeyCode::KeyW,KeyCode::KeyA,KeyCode::KeyS,KeyCode::KeyD,KeyCode::ArrowUp,KeyCode::ArrowDown]);}
+    if s.mode==GameMode::TankBattle {synthetic_keys.extend([KeyCode::KeyW,KeyCode::KeyA,KeyCode::KeyS,KeyCode::KeyD,KeyCode::ArrowUp,KeyCode::ArrowDown,KeyCode::KeyJ]);}
+    if s.mode==GameMode::GoldRunner {synthetic_keys.extend([KeyCode::ArrowUp,KeyCode::ArrowDown,KeyCode::KeyR,KeyCode::KeyX,KeyCode::KeyZ,KeyCode::KeyP,KeyCode::Enter]);}
+    if s.mode==GameMode::ForestTrain {synthetic_keys.extend([KeyCode::KeyP,KeyCode::Enter,KeyCode::KeyR,KeyCode::KeyZ,KeyCode::Digit1,KeyCode::Digit2,KeyCode::KeyA,KeyCode::KeyB]);}
+    for key in synthetic_keys {
         let wanted = matches!(&qa.active, Some(QaStep::Keys(held, _)) if qa.remaining > 0 && held.contains(&key));
         if !wanted { keys.release(key); }
     }
@@ -753,9 +1030,11 @@ fn input(
             qa.active,
             Some(
                 QaStep::Click(_)
+                    | QaStep::Hold(..)
                     | QaStep::Optional(_)
                     | QaStep::Point(..)
                     | QaStep::BuildCell
+                    | QaStep::BuilderPlace(_)
                     | QaStep::FruitSlice
             )
         )
@@ -787,7 +1066,7 @@ fn input(
             Some(QaStep::Keys(held, _)) => {
                 for key in held { keys.press(key); }
             }
-            Some(QaStep::Click(a)) | Some(QaStep::Optional(a)) if qa.remaining >= 5 => {
+            Some(QaStep::Click(a)) | Some(QaStep::Hold(a,_)) | Some(QaStep::Optional(a)) if qa.remaining >= 5 => {
                 if let Some(pos) = action_point(&surfaces, &window, a) {
                     window.set_cursor_position(Some(pos));
                     mouse.press(MouseButton::Left);
@@ -830,6 +1109,7 @@ fn input(
             qa.remaining = 6;
             qa.active = Some(step);
         }
+        QaStep::Hold(a,frames) => {if !available(a){qa.fail(&s,"长按按钮不可见");return;}qa.remaining=frames+5;qa.active=Some(step);}
         QaStep::Point(.., frames) => {
             qa.remaining = frames + 5;
             qa.active = Some(step);
@@ -854,6 +1134,9 @@ fn input(
                             && [b.pos[0], b.pos[2]] != s.work.world.goal
                     })
                     .filter_map(|b| {
+                        if builder_illustrated(&s) {
+                            return Some(builder_cell_screen(&s,Vec3::new(b.pos[0] as f32,0.5,b.pos[2] as f32),window.width(),window.height()));
+                        }
                         camera
                             .world_to_viewport(
                                 transform,
@@ -882,6 +1165,14 @@ fn input(
             qa.remaining = 7;
             qa.active = Some(step);
         }
+        QaStep::CloudPlace(id) => {
+            qa.point=Some(cloud_cell_screen(&s,id,window.width(),window.height()));qa.remaining=7;qa.active=Some(QaStep::BuildCell);
+        }
+        QaStep::BuilderPlace(cell) => {
+            qa.point=Some(builder_cell_screen(&s,Vec3::new(cell[0] as f32,cell[1] as f32+0.5,cell[2] as f32),window.width(),window.height()));
+            qa.remaining=7;
+            qa.active=Some(QaStep::BuildCell);
+        }
         QaStep::FruitSlice => {
             qa.point = s
                 .fruit
@@ -898,6 +1189,52 @@ fn input(
         }
         QaStep::Wait(frames) => {
             qa.remaining = frames;
+        }
+        QaStep::WindowSize(w,h) => {window.resolution.set(w,h);qa.remaining=24;}
+        QaStep::VisualFit => {
+            let mut wanted=vec![Action::Library];
+            match s.mode {
+                GameMode::Island => {
+                    wanted.extend([Action::Puzzle(PuzzleAction::Run),Action::Puzzle(PuzzleAction::Clear),Action::Puzzle(PuzzleAction::Repeat)]);
+                    for op in [crate::puzzle_game::Op::Forward,crate::puzzle_game::Op::Left,crate::puzzle_game::Op::Right,crate::puzzle_game::Op::Wait]{wanted.push(Action::Puzzle(PuzzleAction::Add(op)));}
+                },
+                GameMode::CloudBridge => {use CloudAction::*;wanted.push(Action::CloudWalk(if s.cloud_walk.walking{Back}else{Enter}));for a in if s.cloud_walk.walking{vec![Move(-1,0),Move(0,-1),Move(0,1),Move(1,0)]}else{vec![Undo,Erase,Restart]}{wanted.push(Action::CloudWalk(a));}},
+                GameMode::FruitArcade => {wanted.extend([Action::ArcadeRefill,Action::ArcadeClear,Action::ArcadeSpin]);for i in 0..5{wanted.push(Action::ArcadeBet(i));}},
+                GameMode::BubbleBomber => {
+                    let hearts=texts.iter().filter(|t|t.0=="♥"||t.0=="♡").count();
+                    if hearts!=3 {qa.fail(&s,&format!("生命栏应为3槽，实际{hearts}"));return;}
+                },
+                GameMode::Snake => {
+                    wanted.extend([Action::SnakeReset,Action::SnakeToggle,Action::SnakeMove(-1,0),Action::SnakeMove(1,0),Action::SnakeMove(0,-1),Action::SnakeMove(0,1)]);
+                    if let Ok(board)=snake_boards.single() {let size=board.size();let viewport=Vec2::new(window.width(),window.height())*window.scale_factor();
+                        // On narrow portrait screens the 18:24 board is width-limited;
+                        // requiring 65% of screen height can exceed the maximum that fits.
+                        let min_height = (viewport.y * 0.65).min(viewport.x * 24. / 18. * 0.9);
+                        if (size.x/size.y-18./24.).abs()>0.002||size.y<min_height||size.x<viewport.x.min(viewport.y*0.64)*0.7 {qa.fail(&s,"贪吃蛇大棋盘比例或可玩面积不足");return;}
+                    } else {qa.fail(&s,"没有接入贪吃蛇大棋盘");return;}
+                },
+                GameMode::SpaceCourier => {
+                    let Ok(canvas)=courier_canvases.single() else {qa.fail(&s,"缺少快递员等比画布");return;};
+                    if (canvas.size().x/canvas.size().y-1672./940.).abs()>0.002 {qa.fail(&s,"快递员主画布比例不正确");return;}
+                },
+                _=>{}
+            }
+            let screen=Rect::from_corners(Vec2::ZERO,Vec2::new(window.width(),window.height())*window.scale_factor());
+            for action in wanted {
+                let fully_visible=surfaces.iter().any(|(n,t,a,_,_,_,_,_,clip,_)| {
+                    if a!=Some(&action){return false;}
+                    let r=Rect::from_center_size(t.translation().truncate(),n.size());
+                    let clipped=clip.map_or(r,|c|r.intersect(c.clip)).intersect(screen);
+                    r.size().min_element()>1. && (r.size()-clipped.size()).abs().max_element()<2.
+                });
+                if !fully_visible {qa.fail(&s,&format!("按钮未完整显示：{action:?}"));return;}
+            }
+            qa.records.push(serde_json::json!({"check":"画布比例与按钮完整可见","passed":true}));
+        }
+        QaStep::ForestCheck(name, test) => {
+            let passed=test(&forest);
+            qa.records.push(serde_json::json!({"check":name,"passed":passed,"state":forest.qa_state()}));
+            if !passed {qa.fail(&s,name);}
         }
         QaStep::Check(name, test) => {
             let passed = test(&s);
@@ -1014,6 +1351,7 @@ fn action_point(surfaces: &Surfaces, window: &Window, wanted: Action) -> Option<
         })
 }
 fn area_point(surfaces: &Surfaces, w: &Window, area: Area, point: Vec2) -> Option<Vec2> {
+    if matches!(area, Area::Forest) { return Some(forest_screen_point(point,Vec2::new(w.width(),w.height()))); }
     if matches!(area, Area::Window) {
         return Some(point * Vec2::new(w.width(), w.height()));
     }
@@ -1038,7 +1376,7 @@ fn area_point(surfaces: &Surfaces, w: &Window, area: Area, point: Vec2) -> Optio
 impl Qa {
     fn save(&self) {
         let result = serde_json::json!({"game": self.mode.map(|m| m.title()), "failed": self.failed,
-            "completed": self.exit_frame.is_some(), "records": self.records});
+            "completed": self.exit_frame.is_some(), "frame":self.frame, "remaining":self.remaining, "records": self.records});
         let _ = fs::create_dir_all(&self.root);
         let _ = fs::write(
             self.root.join("result.json"),
@@ -1085,6 +1423,8 @@ fn observe(
 }
 fn snapshot(s: &Session) -> serde_json::Value {
     use serde_json::json;
+    if s.mode==GameMode::CloudBridge{let g=&s.cloud_walk;return json!({"stage":g.stage+1,"bridges":g.plan.bridges,"robot":g.map.cells[g.robot].at,"walking":g.walking,"won":g.won,"gem":g.gem_taken,"stars":g.progress.stars,"message":g.message});}
+    if builder_mode(s) {let g=&s.builder_puzzles[puzzle_index(s)];return json!({"stage":g.level.number,"bridges":g.plan.bridges,"cards":g.plan.cards,"remaining_wood":g.remaining(crate::puzzle_game::Bridge::Wood),"robot":g.robot,"gate_open":g.gate_open,"pc":g.pc,"substep":g.substep,"won":g.won,"bonus":g.bonus,"message":g.message});}
     match s.mode {
         GameMode::Island
         | GameMode::CloudBridge
@@ -1128,6 +1468,7 @@ fn snapshot(s: &Session) -> serde_json::Value {
         GameMode::Sokoban => {
             json!({"level": s.sokoban.level, "moves": s.sokoban.moves, "won": s.sokoban.won})
         }
+        GameMode::GoldRunner => json!({"position":[s.gold_runner.qa_position().x,s.gold_runner.qa_position().y],"holes":s.gold_runner.qa_holes(),"gold":s.gold_runner.collected,"level":s.gold_runner.level,"lives":s.gold_runner.lives,"state":format!("{:?}",s.gold_runner.state)}),
         GameMode::LightPath => s.light_path.qa_state(),
         GameMode::RabbitHome => json!({
             "progress": s.rabbit_home.progress(),
@@ -1146,4 +1487,47 @@ fn snapshot(s: &Session) -> serde_json::Value {
         GameMode::SpaceCourier => serde_json::to_value(&s.courier).unwrap(),
         _ => json!({}),
     }
+}
+
+
+fn forest_scenario() -> VecDeque<QaStep> {
+    use QaStep::*;
+    fn point(p: &mut VecDeque<QaStep>, x:f32,y:f32) { p.push_back(Point(Area::Forest,Vec2::new(x,y),Vec2::new(x,y),1)); }
+    let mut p=VecDeque::from([Wait(40),Shot("initial")]);
+    point(&mut p,612.,432.);
+    p.push_back(ForestCheck("点击岔道切到环线",|g|g.qa_state()["switches"][0]==true));
+    point(&mut p,612.,432.);
+    point(&mut p,1460.,877.);
+    p.push_back(Wait(110));
+    p.push_back(ForestCheck("两车抢桥触发冲突",|g|g.qa_state()["phase"]=="Failed"));
+    p.push_back(Shot("collision"));
+    point(&mut p,1165.,877.);
+    p.push_back(ForestCheck("撤回发车恢复本轮",|g|g.qa_state()["phase"]=="Ready"&&g.qa_state()["delivered"]==0));
+    for wave in 0..3 {
+        if wave==1 { point(&mut p,1126.,432.); }
+        point(&mut p,220.,205.);
+        p.push_back(ForestCheck("点击兔子村安排红车等待",|g|g.qa_state()["held"][0]==true));
+        point(&mut p,1460.,877.);
+        if wave==0 {
+            p.push_back(Wait(20));p.push_back(Shot("moving"));
+            point(&mut p,1615.,40.);
+            p.push_back(ForestCheck("点击右上暂停",|g|g.qa_state()["phase"]=="Paused"));
+            p.push_back(Wait(30));p.push_back(Shot("paused"));
+            point(&mut p,1615.,40.);
+        }
+        p.push_back(Wait(170));
+        p.push_back(ForestCheck("蓝车独立送达兔子村",|g|g.qa_state()["delivered"].as_u64().unwrap()%2==1&&g.qa_state()["phase"]=="Running"));
+        if wave!=1 {point(&mut p,1126.,432.);}
+        point(&mut p,220.,205.);
+        p.push_back(Wait(175));
+        p.push_back(ForestCheck("本轮两车全部正确送达",|g|g.qa_state()["delivered"].as_u64().unwrap()>0&&g.qa_state()["delivered"].as_u64().unwrap()%2==0&&g.qa_state()["phase"]!="Failed"));
+        p.push_back(Shot(if wave==0{"round-one"}else if wave==1{"round-two"}else{"won"}));
+    }
+    p.push_back(ForestCheck("六次送达通关",|g|g.qa_state()["delivered"]==6&&g.qa_state()["phase"]=="Won"));
+    point(&mut p,220.,875.);
+    p.push_back(ForestCheck("重新开始恢复初始状态",|g|g.qa_state()["delivered"]==0&&g.qa_state()["phase"]=="Ready"));
+    point(&mut p,57.,40.);p.push_back(Wait(20));
+    p.push_back(Check("返回游戏库",|s|s.library_open));p.push_back(Shot("library"));
+    p.push_back(SelectFromLibrary);p.push_back(Wait(20));p.push_back(Shot("returned"));
+    p
 }

@@ -1,0 +1,441 @@
+{
+  "completed": true,
+  "failed": false,
+  "frame": 1477,
+  "game": "森林小火车",
+  "records": [
+    {
+      "check": "点击岔道切到环线",
+      "passed": true,
+      "state": {
+        "delivered": 0,
+        "held": [
+          false,
+          false
+        ],
+        "loops": 0,
+        "phase": "Ready",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1320.0,
+            285.0
+          ]
+        ],
+        "switches": [
+          true,
+          false
+        ],
+        "wave": 0
+      }
+    },
+    {
+      "check": "两车抢桥触发冲突",
+      "passed": true,
+      "state": {
+        "delivered": 0,
+        "held": [
+          false,
+          false
+        ],
+        "loops": 0,
+        "phase": "Failed",
+        "positions": [
+          [
+            713.7667236328125,
+            432.0
+          ],
+          [
+            887.3472900390625,
+            432.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 0
+      }
+    },
+    {
+      "check": "撤回发车恢复本轮",
+      "passed": true,
+      "state": {
+        "delivered": 0,
+        "held": [
+          false,
+          false
+        ],
+        "loops": 0,
+        "phase": "Ready",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1320.0,
+            285.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 0
+      }
+    },
+    {
+      "check": "点击兔子村安排红车等待",
+      "passed": true,
+      "state": {
+        "delivered": 0,
+        "held": [
+          true,
+          false
+        ],
+        "loops": 0,
+        "phase": "Ready",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1320.0,
+            285.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 0
+      }
+    },
+    {
+      "check": "点击右上暂停",
+      "passed": true,
+      "state": {
+        "delivered": 0,
+        "held": [
+          true,
+          false
+        ],
+        "loops": 0,
+        "phase": "Paused",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1145.955810546875,
+            395.783935546875
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 0
+      }
+    },
+    {
+      "check": "蓝车独立送达兔子村",
+      "passed": true,
+      "state": {
+        "delivered": 1,
+        "held": [
+          true,
+          false
+        ],
+        "loops": 0,
+        "phase": "Running",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            190.0,
+            390.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 0
+      }
+    },
+    {
+      "check": "本轮两车全部正确送达",
+      "passed": true,
+      "state": {
+        "delivered": 2,
+        "held": [
+          false,
+          false
+        ],
+        "loops": 0,
+        "phase": "Ready",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1320.0,
+            285.0
+          ]
+        ],
+        "switches": [
+          false,
+          true
+        ],
+        "wave": 1
+      }
+    },
+    {
+      "check": "点击兔子村安排红车等待",
+      "passed": true,
+      "state": {
+        "delivered": 2,
+        "held": [
+          true,
+          false
+        ],
+        "loops": 0,
+        "phase": "Ready",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1320.0,
+            285.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 1
+      }
+    },
+    {
+      "check": "蓝车独立送达兔子村",
+      "passed": true,
+      "state": {
+        "delivered": 3,
+        "held": [
+          true,
+          false
+        ],
+        "loops": 0,
+        "phase": "Running",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            190.0,
+            390.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 1
+      }
+    },
+    {
+      "check": "本轮两车全部正确送达",
+      "passed": true,
+      "state": {
+        "delivered": 4,
+        "held": [
+          false,
+          false
+        ],
+        "loops": 0,
+        "phase": "Ready",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1320.0,
+            285.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 2
+      }
+    },
+    {
+      "check": "点击兔子村安排红车等待",
+      "passed": true,
+      "state": {
+        "delivered": 4,
+        "held": [
+          true,
+          false
+        ],
+        "loops": 0,
+        "phase": "Ready",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1320.0,
+            285.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 2
+      }
+    },
+    {
+      "check": "蓝车独立送达兔子村",
+      "passed": true,
+      "state": {
+        "delivered": 5,
+        "held": [
+          true,
+          false
+        ],
+        "loops": 0,
+        "phase": "Running",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            190.0,
+            390.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 2
+      }
+    },
+    {
+      "check": "本轮两车全部正确送达",
+      "passed": true,
+      "state": {
+        "delivered": 6,
+        "held": [
+          false,
+          false
+        ],
+        "loops": 0,
+        "phase": "Won",
+        "positions": [
+          [
+            1374.0,
+            648.0
+          ],
+          [
+            190.0,
+            390.0
+          ]
+        ],
+        "switches": [
+          false,
+          true
+        ],
+        "wave": 2
+      }
+    },
+    {
+      "check": "六次送达通关",
+      "passed": true,
+      "state": {
+        "delivered": 6,
+        "held": [
+          false,
+          false
+        ],
+        "loops": 0,
+        "phase": "Won",
+        "positions": [
+          [
+            1374.0,
+            648.0
+          ],
+          [
+            190.0,
+            390.0
+          ]
+        ],
+        "switches": [
+          false,
+          true
+        ],
+        "wave": 2
+      }
+    },
+    {
+      "check": "重新开始恢复初始状态",
+      "passed": true,
+      "state": {
+        "delivered": 0,
+        "held": [
+          false,
+          false
+        ],
+        "loops": 0,
+        "phase": "Ready",
+        "positions": [
+          [
+            190.0,
+            390.0
+          ],
+          [
+            1320.0,
+            285.0
+          ]
+        ],
+        "switches": [
+          false,
+          false
+        ],
+        "wave": 0
+      }
+    },
+    {
+      "check": "返回游戏库",
+      "passed": true,
+      "state": {}
+    },
+    {
+      "input": "SelectGame(ForestTrain)"
+    },
+    {
+      "check": "游戏库滚动选卡重新进入",
+      "passed": true
+    }
+  ],
+  "remaining": 0
+}

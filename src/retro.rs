@@ -1,8 +1,8 @@
 use super::*;
 use std::collections::VecDeque;
 
-const SNAKE_W: i8 = 12;
-const SNAKE_H: i8 = 12;
+const SNAKE_W: i8 = 18;
+const SNAKE_H: i8 = 24;
 
 pub(super) struct SnakeGame {
     pub(super) body: Vec<(i8, i8)>,
@@ -48,11 +48,12 @@ impl SnakeGame {
         game
     }
     pub(super) fn reset(&mut self) {
-        self.body = vec![(5, 6), (4, 6), (3, 6)];
+        let center=(SNAKE_W/2-1,SNAKE_H/2);
+        self.body = vec![center,(center.0-1,center.1),(center.0-2,center.1)];
         self.previous_body = self.body.clone();
         self.direction = (1, 0);
         self.pending = (1, 0);
-        self.fruit = (8, 6);
+        self.fruit = (SNAKE_W/2+2,SNAKE_H/2);
         self.clock = 0.;
         self.render_clock = 0.;
         self.move_progress = 0.;
@@ -82,9 +83,10 @@ impl SnakeGame {
         self.started = true;
     }
     fn next_fruit(&mut self) {
-        let start = (self.fruits_eaten as usize * 37) % 144;
-        for step in 0..144 {
-            let index = (start + step * 37) % 144;
+        let cells=SNAKE_W as usize*SNAKE_H as usize;
+        let start = (self.fruits_eaten as usize * 37) % cells;
+        for step in 0..cells {
+            let index = (start + step * 37) % cells;
             let point = (
                 (index % SNAKE_W as usize) as i8,
                 (index / SNAKE_W as usize) as i8,
@@ -103,24 +105,20 @@ impl SnakeGame {
             return false;
         }
         self.clock += dt;
-        let step_time = (0.16 - self.score as f32 * 0.004).max(0.085);
+        let step_time = (0.28 - self.fruits_eaten as f32 * 0.003).max(0.16);
         while self.clock >= step_time && !self.over {
             self.clock -= step_time;
             self.previous_body.clone_from(&self.body);
             self.direction = self.pending;
             let head = self.body[0];
-            let next = (head.0 + self.direction.0, head.1 + self.direction.1);
+            let next = ((head.0 + self.direction.0).rem_euclid(SNAKE_W), (head.1 + self.direction.1).rem_euclid(SNAKE_H));
             let eating = next == self.fruit;
             let collision_len = if eating {
                 self.body.len()
             } else {
                 self.body.len().saturating_sub(1)
             };
-            if next.0 < 0
-                || next.1 < 0
-                || next.0 >= SNAKE_W
-                || next.1 >= SNAKE_H
-                || self.body[..collision_len].contains(&next)
+            if self.body[..collision_len].contains(&next)
             {
                 self.over = true;
                 self.running = false;
@@ -153,7 +151,8 @@ impl SnakeGame {
             .iter()
             .enumerate()
             .map(|(index, &(x, y))| {
-                let from = self.previous_body.get(index).copied().unwrap_or((x, y));
+                let mut from = self.previous_body.get(index).copied().unwrap_or((x, y));
+                if (from.0-x).abs()>1 || (from.1-y).abs()>1 {from=(x,y);}
                 Vec2::new(from.0 as f32, from.1 as f32)
                     .lerp(Vec2::new(x as f32, y as f32), self.move_progress)
             })
@@ -882,916 +881,79 @@ pub(super) fn snake_ui(
     commands: &mut Commands,
     s: &Session,
     art: &Art,
-    compact: bool,
+    _compact: bool,
     width: f32,
     height: f32,
 ) {
-    if compact {
-        snake_ui_compact(commands, s, art, true);
-    } else {
-        snake_ui_desktop(commands, s, art, width, height);
-    }
+    // One approved renderer for every viewport. Resizing must never select a legacy theme.
+    snake_ui_pixel(commands, s, art, width, height);
 }
 
-fn snake_ui_desktop(commands: &mut Commands, s: &Session, art: &Art, width: f32, height: f32) {
-    let game = &s.snake;
-    let sx = width / 1664.;
-    let sy = height / 960.;
-    let cell_w = (748. * sx - 6.) / SNAKE_W as f32;
-    let cell_h = (740. * sy - 6.) / SNAKE_H as f32;
-    let panel_w = 437. * sx;
-    let panel_h = 750. * sy;
-    let scale = (sx + sy) * 0.5;
-    let parchment = Color::srgb(0.99, 0.985, 0.96);
-    let ink = Color::srgb(0.12, 0.18, 0.15);
-    let green = Color::srgb(0.20, 0.36, 0.27);
-    let muted = Color::srgb(0.43, 0.48, 0.42);
-    commands
-        .spawn((
-            UiRoot,
-            Node {
-                width: Val::Percent(100.),
-                height: Val::Percent(100.),
-                ..default()
-            },
-        ))
+#[derive(Component)]
+pub(super) struct SnakePhoneBoard;
+fn snake_pixel_node(x:f32,y:f32,w:f32,h:f32)->Node {
+    Node {position_type:PositionType::Absolute,left:Val::Px(x),top:Val::Px(y),width:Val::Px(w),height:Val::Px(h),..default()}
+}
+fn snake_pixel_sample(p:&mut ChildSpawnerCommands,art:&Art,source:[f32;4],destination:[f32;4])->Entity {
+    p.spawn((snake_pixel_node(destination[0],destination[1],destination[2],destination[3]),ImageNode {image:art.snake_pixel.clone(),rect:Some(Rect::new(source[0],source[1],source[2],source[3])),..default()})).id()
+}
+fn snake_pixel_number(p:&mut ChildSpawnerCommands,n:u32,x:f32,y:f32,scale:f32) {
+    const DIGITS:[[u8;7];10]=[
+        [14,17,19,21,25,17,14],[4,12,4,4,4,4,14],[14,17,1,2,4,8,31],[30,1,1,14,1,1,30],[2,6,10,18,31,2,2],
+        [31,16,16,30,1,1,30],[14,16,16,30,17,17,14],[31,1,2,4,8,8,8],[14,17,17,14,17,17,14],[14,17,17,15,1,1,14]
+    ];
+    let text=n.to_string();let pixel=5.*scale;let start=x+(110.*scale-text.len() as f32*pixel*6.)*0.5;
+    for (i,ch) in text.bytes().enumerate(){for (r,bits) in DIGITS[(ch-b'0') as usize].iter().enumerate(){for c in 0..5 {if bits&(1<<(4-c))!=0 {p.spawn((snake_pixel_node(start+(i*6+c) as f32*pixel,y+r as f32*pixel,pixel,pixel),BackgroundColor(Color::srgb(1.,0.88,0.08))));}}}}
+}
+fn snake_ui_pixel(commands:&mut Commands,s:&Session,art:&Art,viewport_width:f32,height:f32) {
+    let width=viewport_width.min(height*0.64);
+    let g=&s.snake;let k=width/941.;
+    let header=212.*k;let controls_h=124.*k;let footer_h=48.*k;
+    let cell=((width-60.*k)/SNAKE_W as f32).min((height-header-controls_h-footer_h-50.*k)/SNAKE_H as f32);
+    let bw=cell*SNAKE_W as f32;let bh=cell*SNAKE_H as f32;
+    let bx=(width-bw)*0.5;let by=header+24.*k;
+    let keys_y=(height-controls_h-footer_h-10.*k).max(by+bh+24.*k);
+    commands.spawn((UiRoot,WorldInputBlocker,Node {width:Val::Percent(100.),height:Val::Percent(100.),align_items:AlignItems::Center,justify_content:JustifyContent::Center,overflow:Overflow::clip(),..default()},BackgroundColor(Color::srgb(0.015,0.055,0.15))))
+    .with_children(|frame| {
+        frame.spawn(Node {width:Val::Px(width),height:Val::Px(height),flex_shrink:0.,position_type:PositionType::Relative,..default()})
         .with_children(|root| {
-            let mut backdrop = ImageNode::new(art.snake_reference.clone());
-            backdrop.image_mode = NodeImageMode::Stretch;
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    width: Val::Percent(100.),
-                    height: Val::Percent(100.),
-                    ..default()
-                },
-                backdrop,
-                ZIndex(-1),
-            ));
-
-            // Rebuild the design's board as live, cell-by-cell game UI over
-            // the illustration. The source design is only scenery; the snake,
-            // fruit, score, and controls below are all driven by SnakeGame.
-            let board_left = 307. * sx;
-            let board_top = 120. * sy;
-            let board_width = 748. * sx;
-            let board_height = 740. * sy;
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(board_left),
-                    top: Val::Px(board_top),
-                    width: Val::Px(board_width),
-                    height: Val::Px(board_height),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(sx),
-                    border: UiRect::all(Val::Px(3. * scale)),
-                    flex_shrink: 0.,
-                    ..default()
-                },
-                BackgroundColor(Color::srgb(0.84, 0.88, 0.80)),
-                BorderColor(if game.over {
-                    Color::srgb(0.79, 0.39, 0.32)
-                } else {
-                    Color::srgb(0.42, 0.53, 0.42)
-                }),
-                BorderRadius::all(Val::Px(8. * scale)),
-                ZIndex(1),
-            ))
-            .with_children(|board| {
-                for y in 0..SNAKE_H {
-                    board
-                        .spawn(Node {
-                            height: Val::Px(cell_h),
-                            column_gap: Val::Px(sx),
-                            ..row()
-                        })
-                        .with_children(|line| {
-                            for x in 0..SNAKE_W {
-                                let shade = if (x + y) % 2 == 0 {
-                                    Color::srgb(0.88, 0.91, 0.85)
-                                } else {
-                                    Color::srgb(0.85, 0.89, 0.82)
-                                };
-                                line.spawn((
-                                    Node {
-                                        width: Val::Px(cell_w),
-                                        height: Val::Px(cell_h),
-                                        ..default()
-                                    },
-                                    BackgroundColor(shade),
-                                ));
-                            }
-                        });
-                }
-                let body = game.interpolated_body();
-                for (index, point) in body.iter().enumerate().skip(1).rev() {
-                    let shade = index as f32 / body.len().max(1) as f32;
-                    board.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(point.x * (cell_w + sx) + sx),
-                            top: Val::Px(point.y * (cell_h + sx) + sx),
-                            width: Val::Px(cell_w - sx * 2.),
-                            height: Val::Px(cell_h - sx * 2.),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(
-                            0.19 + shade * 0.035,
-                            0.34 + shade * 0.035,
-                            0.24 + shade * 0.02,
-                        )),
-                        BorderRadius::all(Val::Px(5. * scale)),
-                        ZIndex(4),
-                    ));
-                }
-                if let Some(head) = body.first() {
-                    board
-                        .spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(head.x * (cell_w + sx) + sx),
-                                top: Val::Px(head.y * (cell_h + sx) + sx),
-                                width: Val::Px(cell_w - sx * 2.),
-                                height: Val::Px(cell_h - sx * 2.),
-                                ..default()
-                            },
-                            BackgroundColor(if game.over {
-                                Color::srgb(0.72, 0.39, 0.31)
-                            } else {
-                                Color::srgb(0.34, 0.48, 0.34)
-                            }),
-                            BorderRadius::all(Val::Px(5. * scale)),
-                            ZIndex(5),
-                        ))
-                        .with_children(|head_node| {
-                            let eyes = match game.direction {
-                                (1, 0) => [
-                                    (cell_w * 0.66, cell_h * 0.25),
-                                    (cell_w * 0.66, cell_h * 0.64),
-                                ],
-                                (-1, 0) => [
-                                    (cell_w * 0.25, cell_h * 0.25),
-                                    (cell_w * 0.25, cell_h * 0.64),
-                                ],
-                                (0, -1) => [
-                                    (cell_w * 0.25, cell_h * 0.25),
-                                    (cell_w * 0.64, cell_h * 0.25),
-                                ],
-                                _ => [
-                                    (cell_w * 0.25, cell_h * 0.64),
-                                    (cell_w * 0.64, cell_h * 0.64),
-                                ],
-                            };
-                            for (left, top) in eyes {
-                                head_node.spawn((
-                                    Node {
-                                        position_type: PositionType::Absolute,
-                                        left: Val::Px(left),
-                                        top: Val::Px(top),
-                                        width: Val::Px(5. * scale),
-                                        height: Val::Px(5. * scale),
-                                        ..default()
-                                    },
-                                    BackgroundColor(Color::srgb(0.94, 0.93, 0.84)),
-                                    BorderRadius::all(Val::Percent(50.)),
-                                ));
-                            }
-                        });
-                }
-                let fruit_left = game.fruit.0 as f32 * (cell_w + sx) + cell_w * 0.28;
-                let fruit_top = game.fruit.1 as f32 * (cell_h + sx) + cell_h * 0.28;
-                board.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(fruit_left),
-                        top: Val::Px(fruit_top),
-                        width: Val::Px(cell_w * 0.44),
-                        height: Val::Px(cell_h * 0.44),
-                        ..default()
-                    },
-                    BackgroundColor(if game.golden_fruit {
-                        Color::srgb(0.83, 0.58, 0.25)
-                    } else {
-                        Color::srgb(0.82, 0.29, 0.25)
-                    }),
-                    BorderRadius::all(Val::Percent(45.)),
-                    ZIndex(6),
-                ));
-                if !game.running {
-                    board
-                        .spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(3. * scale),
-                                top: Val::Px(3. * scale),
-                                width: Val::Px(board_width - 12. * scale),
-                                height: Val::Px(board_height - 12. * scale),
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(8. * scale),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgba(0.96, 0.96, 0.91, 0.88)),
-                            ZIndex(8),
-                        ))
-                        .with_children(|overlay| {
-                            label(
-                                overlay,
-                                art,
-                                if game.over {
-                                    "哎呀，撞到啦！"
-                                } else {
-                                    "准备好了吗？"
-                                },
-                                26. * scale,
-                                ink,
-                            );
-                            label(
-                                overlay,
-                                art,
-                                if game.over {
-                                    format!("这次吃到 {} 个果实", game.fruits_eaten)
-                                } else {
-                                    "红果 +1 · 金果 +3".to_owned()
-                                },
-                                16. * scale,
-                                muted,
-                            );
-                            label(
-                                overlay,
-                                art,
-                                if game.over {
-                                    "点击右侧按钮再来一局"
-                                } else {
-                                    "点开始，或按方向键出发"
-                                },
-                                14. * scale,
-                                muted,
-                            );
-                        });
-                }
-            });
-
-            let panel_left = 1080. * sx;
-            let panel_top = 120. * sy;
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(panel_left),
-                    top: Val::Px(panel_top),
-                    width: Val::Px(panel_w),
-                    height: Val::Px(panel_h),
-                    padding: UiRect::all(Val::Px(38. * scale)),
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(14. * scale),
-                    align_items: AlignItems::Stretch,
-                    ..default()
-                },
-                BackgroundColor(parchment),
-                BorderColor(Color::srgb(0.90, 0.88, 0.81)),
-                BorderRadius::all(Val::Px(18. * scale)),
-                ZIndex(2),
-            ))
-            .with_children(|panel| {
-                label(panel, art, "本局得分", 22. * scale, ink);
-                label(panel, art, game.score.to_string(), 76. * scale, green);
-                panel
-                    .spawn(Node {
-                        width: Val::Percent(100.),
-                        height: Val::Px(38. * scale),
-                        align_items: AlignItems::Center,
-                        ..row()
-                    })
-                    .with_children(|divider| {
-                        divider.spawn((
-                            Node {
-                                flex_grow: 1.,
-                                height: Val::Px(1. * scale),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.88, 0.86, 0.80)),
-                        ));
-                        divider.spawn((
-                            Node {
-                                width: Val::Px(30. * scale),
-                                height: Val::Px(24. * scale),
-                                margin: UiRect::horizontal(Val::Px(12. * scale)),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.82, 0.29, 0.25)),
-                            BorderRadius::all(Val::Percent(45.)),
-                        ));
-                        divider.spawn((
-                            Node {
-                                flex_grow: 1.,
-                                height: Val::Px(1. * scale),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.88, 0.86, 0.80)),
-                        ));
-                    });
-                panel
-                    .spawn((
-                        Node {
-                            width: Val::Percent(100.),
-                            height: Val::Px(54. * scale),
-                            padding: UiRect::horizontal(Val::Px(16. * scale)),
-                            justify_content: JustifyContent::SpaceBetween,
-                            align_items: AlignItems::Center,
-                            ..row()
-                        },
-                        BackgroundColor(Color::srgb(0.96, 0.95, 0.91)),
-                        BorderRadius::all(Val::Px(12. * scale)),
-                    ))
-                    .with_children(|best| {
-                        label(best, art, "♛  最高得分", 18. * scale, muted);
-                        label(best, art, game.best.to_string(), 19. * scale, ink);
-                    });
-                button(
-                    panel,
-                    art,
-                    if game.over {
-                        "再来一局  ›"
-                    } else if game.running {
-                        "暂停游戏 Ⅱ"
-                    } else if game.started {
-                        "继续游戏  ›"
-                    } else {
-                        "开始游戏  ›"
-                    },
-                    Action::SnakeToggle,
-                    panel_w - 76. * scale,
-                    88. * scale,
-                    green,
-                    Color::WHITE,
-                );
-                panel
-                    .spawn(Node {
-                        width: Val::Percent(100.),
-                        height: Val::Px(1. * scale),
-                        ..default()
-                    })
-                    .insert(BackgroundColor(Color::srgb(0.90, 0.88, 0.82)));
-                label(panel, art, "操作说明", 20. * scale, ink);
-                snake_dpad_scaled(panel, art, scale);
-                label(panel, art, "使用键盘方向键控制蛇的移动", 13. * scale, muted);
-            });
-
-            // Functional gear and library actions sit over the static header
-            // locations from the concept art.
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    right: Val::Px(112. * sx),
-                    top: Val::Px(24. * sy),
-                    ..row()
-                },
-                ZIndex(10),
-            ))
-            .with_children(|gear| {
-                button(
-                    gear,
-                    art,
-                    "⚙",
-                    Action::Help,
-                    54. * sx,
-                    54. * sy,
-                    parchment,
-                    ink,
-                )
-            });
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    right: Val::Px(100. * sx),
-                    top: Val::Px(24. * sy),
-                    ..row()
-                },
-                ZIndex(10),
-            ))
-            .with_children(|back| {
-                button(
-                    back,
-                    art,
-                    "游戏库",
-                    Action::Library,
-                    92. * sx,
-                    42. * sy,
-                    parchment,
-                    muted,
-                )
-            });
+        root.spawn((snake_pixel_node(0.,0.,width,height),ImageNode {image:art.snake_pixel.clone(),rect:Some(Rect::new(0.,0.,32.,32.)),image_mode:NodeImageMode::Tiled{tile_x:true,tile_y:true,stretch_value:k},..default()}));
+        snake_pixel_sample(root,art,[0.,0.,941.,212.],[0.,0.,width,header]);
+        // Remove baked example digits while preserving the exact approved capsule artwork.
+        snake_pixel_sample(root,art,[54.,151.,76.,190.],[210.*k,150.*k,118.*k,40.*k]);
+        snake_pixel_sample(root,art,[54.,151.,76.,190.],[561.*k,150.*k,116.*k,40.*k]);
+        snake_pixel_number(root,g.score,213.*k,153.*k,k);
+        snake_pixel_number(root,g.best,564.*k,153.*k,k);
+        for (action,rect) in [(Action::SnakeReset,[578.,35.,148.,81.]),(Action::Library,[747.,35.,174.,81.]),(Action::SnakeToggle,[740.,137.,172.,66.])] {
+            root.spawn((Button,WorldInputBlocker,action,snake_pixel_node(rect[0]*k,rect[1]*k,rect[2]*k,rect[3]*k),ZIndex(10)));
+        }
+        if g.started || g.over {
+        snake_pixel_sample(root,art,[754.,157.,767.,174.],[777.*k,147.*k,107.*k,42.*k]);
+        root.spawn((snake_pixel_node(767.*k,143.*k,122.*k,51.*k),Text::new(if g.over{"重开"}else if g.running{"暂停"}else if g.started{"继续"}else{"开始"}),TextFont{font:art.font.clone(),font_size:35.*k,..default()},TextColor(Color::WHITE),TextLayout::new_with_justify(JustifyText::Center)));
+        }
+        snake_pixel_sample(root,art,[16.,221.,925.,1448.],[bx-15.*k,by-15.*k,bw+30.*k,bh+30.*k]);
+        root.spawn((SnakePhoneBoard,snake_pixel_node(bx,by,bw,bh),BackgroundColor(Color::srgb(0.035,0.29,0.33)))).with_children(|board| {
+            for y in 0..SNAKE_H {for x in 0..SNAKE_W {
+                let source=if (x+y)%2==0 {[40.,246.,75.,279.]}else{[90.,246.,125.,279.]};
+                snake_pixel_sample(board,art,source,[x as f32*cell,y as f32*cell,cell-k,cell-k]);
+            }}
+            let body=g.interpolated_body();
+            for point in body.iter().skip(1).rev(){snake_pixel_sample(board,art,[371.,777.,424.,829.],[point.x*cell,point.y*cell,cell,cell]);}
+            if let Some(point)=body.first(){
+                let angle=match g.direction{(0,-1)=>-std::f32::consts::FRAC_PI_2,(0,1)=>std::f32::consts::FRAC_PI_2,(-1,0)=>std::f32::consts::PI,_=>0.};
+                board.spawn((snake_pixel_node(point.x*cell-cell*0.06,point.y*cell-cell*0.08,cell*1.5,cell*1.14),ImageNode{image:art.snake_pixel.clone(),rect:Some(Rect::new(562.,770.,645.,833.)),..default()},Transform::from_rotation(Quat::from_rotation_z(angle))));
+            }
+            board.spawn((snake_pixel_node(g.fruit.0 as f32*cell-cell*0.03,g.fruit.1 as f32*cell-cell*0.1,cell*1.06,cell*1.2),ImageNode{image:if g.golden_fruit{art.snake_gold.clone()}else{art.snake_pixel.clone()},rect:Some(if g.golden_fruit{Rect::new(407.,380.,849.,897.)}else{Rect::new(731.,623.,793.,697.)}),..default()}));
+            if g.over||(!g.running&&g.started){board.spawn((snake_pixel_node(0.,bh*0.4,bw,cell*2.2),BackgroundColor(Color::srgba(0.01,0.04,0.12,0.9)))).with_children(|message|{
+                label(message,art,if g.over{"撞到自己了 · 点重开再来"}else{"已暂停 · 点继续"},24.*k,Color::srgb(1.,0.86,0.3));
+            });}
         });
-}
-
-fn snake_ui_compact(commands: &mut Commands, s: &Session, art: &Art, compact: bool) {
-    let g = &s.snake;
-    commands
-        .spawn((
-            UiRoot,
-            Node {
-                width: Val::Percent(100.),
-                height: Val::Percent(100.),
-                padding: UiRect::all(Val::Px(22.)),
-                align_items: AlignItems::Center,
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(16.),
-                ..default()
-            },
-            BackgroundColor(Color::srgb(0.98, 0.97, 0.93)),
-        ))
-        .with_children(|root| {
-            root.spawn(Node {
-                width: Val::Percent(100.),
-                max_width: Val::Px(850.),
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                flex_shrink: 0.,
-                ..row()
-            })
-            .with_children(|header| {
-                header
-                    .spawn(Node {
-                        align_items: AlignItems::Center,
-                        column_gap: Val::Px(12.),
-                        ..row()
-                    })
-                    .with_children(|title| {
-                        title
-                            .spawn(Node {
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(1.),
-                                ..default()
-                            })
-                            .with_children(|text| {
-                                label(text, art, "贪吃蛇", 28., Color::srgb(0.13, 0.20, 0.17));
-                                label(
-                                    text,
-                                    art,
-                                    "吃果实，转弯，刷新你的纪录",
-                                    13.,
-                                    Color::srgb(0.43, 0.49, 0.44),
-                                );
-                            });
-                    });
-            });
-
-            root.spawn(Node {
-                width: Val::Percent(100.),
-                max_width: Val::Px(850.),
-                flex_grow: 1.,
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                flex_direction: if compact {
-                    FlexDirection::Column
-                } else {
-                    FlexDirection::Row
-                },
-                column_gap: Val::Px(20.),
-                row_gap: Val::Px(14.),
-                ..default()
-            })
-            .with_children(|main| {
-                main.spawn((
-                    Node {
-                        width: Val::Px(438.),
-                        height: Val::Px(438.),
-                        position_type: PositionType::Relative,
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(1.),
-                        border: UiRect::all(Val::Px(3.)),
-                        flex_shrink: 0.,
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.84, 0.88, 0.80)),
-                    BorderColor(if g.over {
-                        Color::srgb(0.79, 0.39, 0.32)
-                    } else {
-                        Color::srgb(0.42, 0.53, 0.42)
-                    }),
-                    BorderRadius::all(Val::Px(8.)),
-                ))
-                .with_children(|board| {
-                    for y in 0..SNAKE_H {
-                        board
-                            .spawn(Node {
-                                height: Val::Px(35.),
-                                column_gap: Val::Px(1.),
-                                ..row()
-                            })
-                            .with_children(|line| {
-                                for x in 0..SNAKE_W {
-                                    let shade = if (x + y) % 2 == 0 {
-                                        Color::srgb(0.88, 0.91, 0.85)
-                                    } else {
-                                        Color::srgb(0.85, 0.89, 0.82)
-                                    };
-                                    line.spawn((
-                                        Node {
-                                            width: Val::Px(35.),
-                                            height: Val::Px(35.),
-                                            ..default()
-                                        },
-                                        BackgroundColor(shade),
-                                    ));
-                                }
-                            });
-                    }
-                    let body = g.interpolated_body();
-                    for (index, point) in body.iter().enumerate().skip(1).rev() {
-                        let shade = index as f32 / body.len().max(1) as f32;
-                        board.spawn((
-                            Node {
-                                position_type: PositionType::Absolute,
-                                left: Val::Px(point.x * 36. + 2.),
-                                top: Val::Px(point.y * 36. + 2.),
-                                width: Val::Px(32.),
-                                height: Val::Px(32.),
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(
-                                0.19 + shade * 0.035,
-                                0.34 + shade * 0.035,
-                                0.24 + shade * 0.02,
-                            )),
-                            BorderRadius::all(Val::Px(8.)),
-                            ZIndex(4),
-                        ));
-                    }
-                    if let Some(head) = body.first() {
-                        board
-                            .spawn((
-                                Node {
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(head.x * 36. + 2.),
-                                    top: Val::Px(head.y * 36. + 2.),
-                                    width: Val::Px(32.),
-                                    height: Val::Px(32.),
-                                    ..default()
-                                },
-                                BackgroundColor(if g.over {
-                                    Color::srgb(0.72, 0.39, 0.31)
-                                } else {
-                                    Color::srgb(0.34, 0.48, 0.34)
-                                }),
-                                BorderRadius::all(Val::Px(9.)),
-                                ZIndex(5),
-                            ))
-                            .with_children(|head_node| {
-                                let eyes = match g.direction {
-                                    (1, 0) => [(21., 8.), (21., 20.)],
-                                    (-1, 0) => [(8., 8.), (8., 20.)],
-                                    (0, -1) => [(8., 8.), (20., 8.)],
-                                    _ => [(8., 20.), (20., 20.)],
-                                };
-                                for (left, top) in eyes {
-                                    head_node.spawn((
-                                        Node {
-                                            position_type: PositionType::Absolute,
-                                            left: Val::Px(left),
-                                            top: Val::Px(top),
-                                            width: Val::Px(4.),
-                                            height: Val::Px(4.),
-                                            ..default()
-                                        },
-                                        BackgroundColor(Color::srgb(0.94, 0.93, 0.84)),
-                                        BorderRadius::all(Val::Percent(50.)),
-                                    ));
-                                }
-                            });
-                    }
-                    let fruit_center =
-                        Vec2::new(g.fruit.0 as f32 * 36. + 18., g.fruit.1 as f32 * 36. + 18.);
-                    let fruit_size = 20. + if g.eating_flash > 0. { 4. } else { 0. };
-                    board.spawn((
-                        Node {
-                            position_type: PositionType::Absolute,
-                            left: Val::Px(fruit_center.x - fruit_size * 0.5),
-                            top: Val::Px(fruit_center.y - fruit_size * 0.5),
-                            width: Val::Px(fruit_size),
-                            height: Val::Px(fruit_size),
-                            ..default()
-                        },
-                        BackgroundColor(if g.golden_fruit {
-                            Color::srgb(0.83, 0.58, 0.25)
-                        } else {
-                            Color::srgb(0.82, 0.29, 0.25)
-                        }),
-                        BorderRadius::all(Val::Percent(50.)),
-                        ZIndex(6),
-                    ));
-                    if !g.running {
-                        board
-                            .spawn((
-                                Node {
-                                    position_type: PositionType::Absolute,
-                                    left: Val::Px(3.),
-                                    top: Val::Px(3.),
-                                    width: Val::Px(426.),
-                                    height: Val::Px(426.),
-                                    align_items: AlignItems::Center,
-                                    justify_content: JustifyContent::Center,
-                                    flex_direction: FlexDirection::Column,
-                                    row_gap: Val::Px(7.),
-                                    ..default()
-                                },
-                                BackgroundColor(Color::srgba(0.96, 0.96, 0.91, 0.88)),
-                                ZIndex(8),
-                            ))
-                            .with_children(|overlay| {
-                                if g.over {
-                                    label(
-                                        overlay,
-                                        art,
-                                        "哎呀，撞到啦！",
-                                        25.,
-                                        Color::srgb(0.17, 0.23, 0.19),
-                                    );
-                                    label(
-                                        overlay,
-                                        art,
-                                        format!("这次吃到 {} 个果实", g.fruits_eaten),
-                                        16.,
-                                        Color::srgb(0.39, 0.47, 0.40),
-                                    );
-                                    label(
-                                        overlay,
-                                        art,
-                                        "点击右侧按钮再来一局",
-                                        14.,
-                                        Color::srgb(0.65, 0.39, 0.25),
-                                    );
-                                } else {
-                                    label(
-                                        overlay,
-                                        art,
-                                        "准备好了吗？",
-                                        24.,
-                                        Color::srgb(0.17, 0.23, 0.19),
-                                    );
-                                    label(
-                                        overlay,
-                                        art,
-                                        "红果 +1 · 金果 +3",
-                                        16.,
-                                        Color::srgb(0.65, 0.43, 0.24),
-                                    );
-                                    label(
-                                        overlay,
-                                        art,
-                                        "点开始，或按方向键出发",
-                                        14.,
-                                        Color::srgb(0.39, 0.47, 0.40),
-                                    );
-                                }
-                            });
-                    }
-                });
-
-                main.spawn((
-                    Node {
-                        width: Val::Px(270.),
-                        min_height: Val::Px(438.),
-                        padding: UiRect::all(Val::Px(18.)),
-                        flex_direction: FlexDirection::Column,
-                        row_gap: Val::Px(12.),
-                        align_items: AlignItems::Stretch,
-                        flex_shrink: 0.,
-                        border: UiRect::all(Val::Px(1.)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(1., 0.995, 0.97)),
-                    BorderColor(Color::srgb(0.90, 0.88, 0.81)),
-                    BorderRadius::all(Val::Px(18.)),
-                ))
-                .with_children(|panel| {
-                    label(panel, art, "本局得分", 16., Color::srgb(0.29, 0.36, 0.30));
-                    label(
-                        panel,
-                        art,
-                        g.score.to_string(),
-                        54.,
-                        Color::srgb(0.20, 0.36, 0.27),
-                    );
-                    panel.spawn((
-                        Node {
-                            height: Val::Px(1.),
-                            width: Val::Percent(100.),
-                            ..default()
-                        },
-                        BackgroundColor(Color::srgb(0.90, 0.88, 0.82)),
-                    ));
-                    panel
-                        .spawn(Node {
-                            width: Val::Percent(100.),
-                            justify_content: JustifyContent::SpaceBetween,
-                            ..row()
-                        })
-                        .with_children(|best| {
-                            label(best, art, "最高纪录", 14., Color::srgb(0.43, 0.48, 0.42));
-                            label(
-                                best,
-                                art,
-                                g.best.to_string(),
-                                16.,
-                                Color::srgb(0.18, 0.25, 0.20),
-                            );
-                        });
-                    panel
-                        .spawn(Node {
-                            width: Val::Percent(100.),
-                            justify_content: JustifyContent::SpaceBetween,
-                            ..row()
-                        })
-                        .with_children(|fruit| {
-                            label(fruit, art, "金果进度", 14., Color::srgb(0.43, 0.48, 0.42));
-                            label(
-                                fruit,
-                                art,
-                                format!("{}/4", g.fruits_eaten % 4),
-                                14.,
-                                Color::srgb(0.65, 0.43, 0.24),
-                            );
-                        });
-                    button(
-                        panel,
-                        art,
-                        if g.over {
-                            "再来一局"
-                        } else if g.running {
-                            "暂停游戏"
-                        } else if g.started {
-                            "继续游戏"
-                        } else {
-                            "开始游戏"
-                        },
-                        Action::SnakeToggle,
-                        228.,
-                        48.,
-                        if g.running {
-                            Color::srgb(0.38, 0.48, 0.39)
-                        } else {
-                            Color::srgb(0.26, 0.41, 0.31)
-                        },
-                        Color::WHITE,
-                    );
-                    label(panel, art, "操作说明", 15., Color::srgb(0.25, 0.33, 0.27));
-                    label(
-                        panel,
-                        art,
-                        "方向键 / WASD 控制移动",
-                        12.,
-                        Color::srgb(0.47, 0.51, 0.45),
-                    );
-                    label(
-                        panel,
-                        art,
-                        "空格暂停 · 红果 +1 · 金果 +3",
-                        11.,
-                        Color::srgb(0.47, 0.51, 0.45),
-                    );
-                    snake_dpad(panel, art);
-                    label(
-                        panel,
-                        art,
-                        if g.over {
-                            "这局结束啦，挑战更高纪录吧"
-                        } else if g.running {
-                            "方向键转弯，别撞到自己"
-                        } else if g.started {
-                            "已暂停，准备好再继续"
-                        } else {
-                            "不能掉头撞向自己"
-                        },
-                        11.,
-                        Color::srgb(0.47, 0.51, 0.45),
-                    );
-                });
-            });
-        });
-    retro_shortcuts(commands, art, Action::SnakeReset);
-}
-
-fn snake_dpad(parent: &mut ChildSpawnerCommands, art: &Art) {
-    parent
-        .spawn(Node {
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center,
-            row_gap: Val::Px(4.),
-            ..default()
-        })
-        .with_children(|pad| {
-            let key_bg = Color::srgb(0.89, 0.91, 0.85);
-            let key_fg = Color::srgb(0.22, 0.32, 0.24);
-            button(
-                pad,
-                art,
-                "↑",
-                Action::SnakeMove(0, -1),
-                52.,
-                36.,
-                key_bg,
-                key_fg,
-            );
-            pad.spawn(Node {
-                column_gap: Val::Px(4.),
-                ..row()
-            })
-            .with_children(|row| {
-                button(
-                    row,
-                    art,
-                    "←",
-                    Action::SnakeMove(-1, 0),
-                    52.,
-                    36.,
-                    key_bg,
-                    key_fg,
-                );
-                button(
-                    row,
-                    art,
-                    "↓",
-                    Action::SnakeMove(0, 1),
-                    52.,
-                    36.,
-                    key_bg,
-                    key_fg,
-                );
-                button(
-                    row,
-                    art,
-                    "→",
-                    Action::SnakeMove(1, 0),
-                    52.,
-                    36.,
-                    key_bg,
-                    key_fg,
-                );
-            });
-        });
-}
-
-fn snake_dpad_scaled(parent: &mut ChildSpawnerCommands, art: &Art, scale: f32) {
-    parent
-        .spawn(Node {
-            flex_direction: FlexDirection::Column,
-            align_items: AlignItems::Center,
-            row_gap: Val::Px(4. * scale),
-            ..default()
-        })
-        .with_children(|pad| {
-            let key_bg = Color::srgb(0.89, 0.91, 0.85);
-            let key_fg = Color::srgb(0.22, 0.32, 0.24);
-            button(
-                pad,
-                art,
-                "↑",
-                Action::SnakeMove(0, -1),
-                52. * scale,
-                36. * scale,
-                key_bg,
-                key_fg,
-            );
-            pad.spawn(Node {
-                column_gap: Val::Px(4. * scale),
-                ..row()
-            })
-            .with_children(|keys| {
-                button(
-                    keys,
-                    art,
-                    "←",
-                    Action::SnakeMove(-1, 0),
-                    52. * scale,
-                    36. * scale,
-                    key_bg,
-                    key_fg,
-                );
-                button(
-                    keys,
-                    art,
-                    "↓",
-                    Action::SnakeMove(0, 1),
-                    52. * scale,
-                    36. * scale,
-                    key_bg,
-                    key_fg,
-                );
-                button(
-                    keys,
-                    art,
-                    "→",
-                    Action::SnakeMove(1, 0),
-                    52. * scale,
-                    36. * scale,
-                    key_bg,
-                    key_fg,
-                );
-            });
-        });
+        let sources=[[94.,1465.,276.,1598.],[286.,1465.,471.,1598.],[477.,1465.,663.,1598.],[670.,1465.,853.,1598.]];
+        let actions=[Action::SnakeMove(-1,0),Action::SnakeMove(0,-1),Action::SnakeMove(0,1),Action::SnakeMove(1,0)];
+        let kw=174.*k;let gap=18.*k;let kh=124.*k;let start=(width-kw*4.-gap*3.)*0.5;
+        for i in 0..4 {root.spawn((Button,actions[i],snake_pixel_node(start+i as f32*(kw+gap),keys_y,kw,kh),ImageNode {image:art.snake_pixel.clone(),rect:Some(Rect::new(sources[i][0],sources[i][1],sources[i][2],sources[i][3])),..default()}));}
+        root.spawn((snake_pixel_node(0.,height-45.*k,width,40.*k),Text::new("碰边穿行 · 慢速起步"),TextFont{font:art.font.clone(),font_size:25.*k,..default()},TextColor(Color::srgb(0.62,0.8,1.)),TextLayout::new_with_justify(JustifyText::Center)));
+    });    });
 }
 
 const MINES_DESIGN: Vec2 = Vec2::new(1586., 992.);
@@ -2837,19 +1999,31 @@ mod tests {
 
     #[test]
     fn snake_grows_only_after_eating_a_fruit() {
-        let mut snake = SnakeGame::new();
-        snake.fruit = (6, 6);
-        assert!(!snake.advance(0.2));
-        assert_eq!((snake.score, snake.body.len(), snake.body[0]), (0, 3, (5, 6)));
-        assert!(snake.turn(1, 0));
-        assert!(snake.advance(0.2));
-        assert_eq!((snake.score, snake.body.len()), (1, 4));
-        snake.fruit = (0, 0);
-        assert!(snake.advance(0.16));
-        assert_eq!((snake.score, snake.body.len(), snake.body[0]), (1, 4, (7, 6)));
-        snake.toggle();
-        assert!(!snake.advance(1.));
-        assert_eq!(snake.body[0], (7, 6));
+        let mut snake=SnakeGame::new();let start=snake.body[0];snake.fruit=(start.0+1,start.1);
+        assert!(!snake.advance(0.3));assert_eq!(snake.body[0],start);
+        snake.turn(1,0);snake.advance(0.28);assert_eq!((snake.score,snake.body.len()),(1,4));
+        snake.fruit=(0,0);snake.advance(0.28);assert_eq!(snake.body[0],(start.0+2,start.1));
+        snake.toggle();let stopped=snake.body[0];assert!(!snake.advance(1.));assert_eq!(snake.body[0],stopped);
+    }
+    #[test]
+    fn snake_wraps_all_four_edges_without_ending() {
+        for (head,dir,expected) in [((SNAKE_W-1,8),(1,0),(0,8)),((0,8),(-1,0),(SNAKE_W-1,8)),((8,0),(0,-1),(8,SNAKE_H-1)),((8,SNAKE_H-1),(0,1),(8,0))] {
+            let mut g=SnakeGame::new();g.body=vec![head];g.previous_body=g.body.clone();g.direction=dir;g.pending=dir;g.running=true;g.fruit=(2,2);g.advance(0.29);
+            assert_eq!(g.body[0],expected);assert!(!g.over);let p=g.interpolated_body()[0];assert!(p.distance(Vec2::new(expected.0 as f32,expected.1 as f32))<0.0001);
+        }
+    }
+    #[test]
+    fn snake_still_ends_on_self_collision() {
+        let mut g=SnakeGame::new();g.body=vec![(2,2),(2,3),(3,3),(3,2),(3,1)];g.running=true;g.advance(0.28);assert!(g.over);assert!(!g.running);
+    }
+    #[test]
+    fn snake_starts_slow_and_golden_scores_do_not_accelerate_it() {
+        let mut g=SnakeGame::new();let start=g.body[0];g.score=999;g.turn(1,0);g.advance(0.16);assert_eq!(g.body[0],start);g.advance(0.12);assert_eq!(g.body[0],(start.0+1,start.1));
+        g.fruits_eaten=1000;let before=g.body[0];g.advance(0.15);assert_eq!(g.body[0],before);g.advance(0.01);assert_eq!(g.body[0],(before.0+1,before.1));
+    }
+    #[test]
+    fn snake_fruit_search_covers_the_entire_large_board() {
+        let mut g=SnakeGame::new();g.body=(0..SNAKE_H).flat_map(|y|(0..SNAKE_W).map(move|x|(x,y))).collect();let free=g.body.pop().unwrap();g.next_fruit();assert_eq!(g.fruit,free);
     }
 
     #[test]

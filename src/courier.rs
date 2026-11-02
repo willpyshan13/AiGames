@@ -299,6 +299,9 @@ impl CourierGame {
     }
 }
 
+#[derive(Component)]
+pub(super) struct CourierCanvas;
+
 pub(super) fn courier_ui(
     commands: &mut Commands,
     s: &Session,
@@ -308,9 +311,9 @@ pub(super) fn courier_ui(
     height: f32,
 ) {
     let g = &s.courier;
-    let sx = (width / 1672.).max(0.25);
-    let sy = (height / 940.).max(0.25);
-    let size = sx.min(sy);
+    let size = (width / 1672.).min(height / 940.);
+    let sx = size;
+    let sy = size;
 
     commands
         .spawn((
@@ -318,267 +321,285 @@ pub(super) fn courier_ui(
             Node {
                 width: Val::Percent(100.),
                 height: Val::Percent(100.),
+                align_items: AlignItems::Center,
+                justify_content: JustifyContent::Center,
                 overflow: Overflow::clip(),
                 ..default()
             },
-            ImageNode::new(art.courier_map.clone()),
+            ImageNode::new(art.courier_wide_frame.clone()),
         ))
-        .with_children(|root| {
-            let chapter_title = if g.chapter == 1 {
-                "第一章：蓝莓星航线".to_owned()
-            } else {
-                format!("第{}章：蓝莓星航线", g.chapter)
-            };
-            courier_image(root, &art.courier_title, 14. * sx, 0., 506. * sx, 126. * sy);
-            // Keep the approved title artwork; let its existing home area
-            // return to the library instead of trapping the player here.
-            root.spawn((
-                Button,
-                Action::Library,
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(14. * sx),
-                    top: Val::Px(0.),
-                    width: Val::Px(506. * sx),
-                    height: Val::Px(126. * sy),
-                    ..default()
-                },
-                BackgroundColor(Color::NONE),
-                ZIndex(5),
-            ));
-
-            if g.chapter == 1 {
-                courier_image(
-                    root,
-                    &art.courier_chapter_banner,
-                    565. * sx,
-                    15. * sy,
-                    511. * sx,
-                    88. * sy,
-                );
-            } else {
-                root.spawn((
+        .with_children(|frame| {
+            frame
+                .spawn((
+                    CourierCanvas,
                     Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(576. * sx),
-                        top: Val::Px(20. * sy),
-                        width: Val::Px(500. * sx),
-                        height: Val::Px(76. * sy),
-                        padding: UiRect::horizontal(Val::Px(22. * sx)),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        border: UiRect::all(Val::Px(4. * size)),
+                        width: Val::Px(1672. * size),
+                        height: Val::Px(940. * size),
+                        flex_shrink: 0.,
+                        position_type: PositionType::Relative,
                         ..default()
                     },
-                    BackgroundColor(Color::srgb(0.73, 0.92, 1.)),
-                    BorderColor(Color::srgb(0.24, 0.61, 0.94)),
-                    BorderRadius::all(Val::Px(34. * size)),
+                    ImageNode::new(art.courier_map.clone()),
                 ))
-                .with_children(|p| {
-                    label(p, art, chapter_title, 26. * size, NAVY);
-                });
-            }
-
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    right: Val::Px(22. * sx),
-                    top: Val::Px(22. * sy),
-                    width: Val::Px(292. * sx),
-                    height: Val::Px(74. * sy),
-                    padding: UiRect::horizontal(Val::Px(14. * sx)),
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(12. * sx),
-                    border: UiRect::all(Val::Px(4. * size)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.04, 0.17, 0.42, 0.95)),
-                BorderColor(Color::srgb(0.34, 0.65, 1.)),
-                BorderRadius::all(Val::Px(28. * size)),
-            ))
-            .with_children(|p| {
-                let mut parcel = ImageNode::new(art.courier_parcel.clone());
-                parcel.image_mode = NodeImageMode::Stretch;
-                p.spawn((
-                    Node {
-                        width: Val::Px(66. * sx),
-                        height: Val::Px(62. * sy),
-                        ..default()
-                    },
-                    parcel,
-                ));
-                label(
-                    p,
-                    art,
-                    format!("送货 {}/9", g.total()),
-                    29. * size,
-                    Color::WHITE,
-                );
-            });
-
-            courier_resources(root, art, g, sx, sy, size);
-
-            for (planet, x, y, name) in [
-                (0, 409., 256., "月球站"),
-                (1, 1055., 220., "蓝莓星"),
-                (2, 1048., 657., "糖果星"),
-            ] {
-                courier_planet(
-                    root,
-                    art,
-                    g,
-                    planet,
-                    name,
-                    x * sx,
-                    y * sy,
-                    218. * sx,
-                    104. * sy,
-                    sx,
-                    sy,
-                );
-            }
-
-            courier_station_button(root, art, sx, sy, size);
-            courier_panel(root, art, g, sx, sy, size);
-
-            root.spawn((
-                Node {
-                    position_type: PositionType::Absolute,
-                    left: Val::Px(468. * sx),
-                    bottom: Val::Px(12. * sy),
-                    width: Val::Px(738. * sx),
-                    height: Val::Px(134. * sy),
-                    padding: UiRect::all(Val::Px(10. * size)),
-                    flex_direction: FlexDirection::Column,
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    row_gap: Val::Px(5. * sy),
-                    border: UiRect::all(Val::Px(5. * size)),
-                    ..default()
-                },
-                BackgroundColor(Color::srgba(0.08, 0.34, 0.73, 0.97)),
-                BorderColor(Color::srgb(0.28, 0.62, 1.)),
-                BorderRadius::all(Val::Px(34. * size)),
-            ))
-            .with_children(|p| {
-                p.spawn((
-                    Node {
-                        position_type: PositionType::Absolute,
-                        left: Val::Px(44. * sx),
-                        top: Val::Px(-16. * sy),
-                        width: Val::Px(610. * sx),
-                        height: Val::Px(48. * sy),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        border: UiRect::all(Val::Px(4. * size)),
-                        ..default()
-                    },
-                    BackgroundColor(Color::srgb(0.12, 0.40, 0.79)),
-                    BorderColor(Color::srgb(0.35, 0.69, 1.)),
-                    BorderRadius::all(Val::Px(26. * size)),
-                ));
-                p.spawn(Node {
-                    position_type: PositionType::Relative,
-                    top: Val::Px(-20. * sy),
-                    width: Val::Percent(100.),
-                    height: Val::Px(33. * sy),
-                    align_items: AlignItems::Center,
-                    justify_content: JustifyContent::Center,
-                    flex_shrink: 0.,
-                    ..default()
-                })
-                .with_children(|heading| {
-                    if g.total() == 9 {
-                        label(
-                            heading,
-                            art,
-                            "本章 9 个送货点 · 完成后挑战终点包裹  终点已开启",
-                            19. * size,
-                            Color::WHITE,
-                        );
+                .with_children(|root| {
+                    let chapter_title = if g.chapter == 1 {
+                        "第一章：蓝莓星航线".to_owned()
                     } else {
-                        let mut title = ImageNode::new(art.courier_progress_title.clone());
-                        title.image_mode = NodeImageMode::Stretch;
-                        heading.spawn((
-                            Node {
-                                width: Val::Px(460. * sx),
-                                height: Val::Px(36. * sy),
-                                ..default()
-                            },
-                            title,
-                        ));
-                    }
-                });
-                p.spawn(Node {
-                    width: Val::Percent(100.),
-                    height: Val::Px(62. * sy),
-                    position_type: PositionType::Relative,
-                    ..default()
-                })
-                .with_children(|row| {
-                    row.spawn((
+                        format!("第{}章：蓝莓星航线", g.chapter)
+                    };
+                    courier_image(root, &art.courier_title, 14. * sx, 0., 506. * sx, 126. * sy);
+                    // Keep the approved title artwork; let its existing home area
+                    // return to the library instead of trapping the player here.
+                    root.spawn((
+                        Button,
+                        Action::Library,
                         Node {
                             position_type: PositionType::Absolute,
-                            left: Val::Px(10. * sx),
+                            left: Val::Px(14. * sx),
                             top: Val::Px(0.),
-                            width: Val::Px(570. * sx),
-                            height: Val::Px(62. * sy),
-                            border: UiRect::all(Val::Px(3. * size)),
+                            width: Val::Px(506. * sx),
+                            height: Val::Px(126. * sy),
                             ..default()
                         },
-                        BackgroundColor(Color::srgb(0.87, 0.95, 1.)),
-                        BorderColor(Color::srgb(0.38, 0.66, 0.94)),
-                        BorderRadius::all(Val::Px(20. * size)),
+                        BackgroundColor(Color::NONE),
+                        ZIndex(5),
                     ));
-                    row.spawn(Node {
-                        width: Val::Percent(100.),
-                        height: Val::Percent(100.),
-                        align_items: AlignItems::Center,
-                        justify_content: JustifyContent::Center,
-                        column_gap: Val::Px(8. * sx),
-                        ..default()
-                    })
-                    .with_children(|items| {
-                        for delivered in g.delivered {
-                            if delivered {
-                                let mut parcel = ImageNode::new(art.courier_parcel_slot.clone());
-                                parcel.image_mode = NodeImageMode::Stretch;
-                                items.spawn((
-                                    Node {
-                                        width: Val::Px(50. * sx),
-                                        height: Val::Px(47. * sy),
-                                        flex_shrink: 0.,
-                                        ..default()
-                                    },
-                                    parcel,
-                                ));
-                            } else {
-                                let mut empty = ImageNode::new(art.courier_empty_slot.clone());
-                                empty.image_mode = NodeImageMode::Stretch;
-                                items.spawn((
-                                    Node {
-                                        width: Val::Px(50. * sx),
-                                        height: Val::Px(47. * sy),
-                                        flex_shrink: 0.,
-                                        ..default()
-                                    },
-                                    empty,
-                                ));
-                            }
-                        }
-                        let mut gift = ImageNode::new(art.courier_gift.clone());
-                        gift.image_mode = NodeImageMode::Stretch;
-                        items.spawn((
+
+                    if g.chapter == 1 {
+                        courier_image(
+                            root,
+                            &art.courier_chapter_banner,
+                            565. * sx,
+                            15. * sy,
+                            511. * sx,
+                            88. * sy,
+                        );
+                    } else {
+                        root.spawn((
                             Node {
-                                width: Val::Px(108. * sx),
-                                height: Val::Px(94. * sy),
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(576. * sx),
+                                top: Val::Px(20. * sy),
+                                width: Val::Px(500. * sx),
+                                height: Val::Px(76. * sy),
+                                padding: UiRect::horizontal(Val::Px(22. * sx)),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                border: UiRect::all(Val::Px(4. * size)),
                                 ..default()
                             },
-                            gift,
+                            BackgroundColor(Color::srgb(0.73, 0.92, 1.)),
+                            BorderColor(Color::srgb(0.24, 0.61, 0.94)),
+                            BorderRadius::all(Val::Px(34. * size)),
+                        ))
+                        .with_children(|p| {
+                            label(p, art, chapter_title, 26. * size, NAVY);
+                        });
+                    }
+
+                    root.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            right: Val::Px(22. * sx),
+                            top: Val::Px(22. * sy),
+                            width: Val::Px(292. * sx),
+                            height: Val::Px(74. * sy),
+                            padding: UiRect::horizontal(Val::Px(14. * sx)),
+                            align_items: AlignItems::Center,
+                            column_gap: Val::Px(12. * sx),
+                            border: UiRect::all(Val::Px(4. * size)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.04, 0.17, 0.42, 0.95)),
+                        BorderColor(Color::srgb(0.34, 0.65, 1.)),
+                        BorderRadius::all(Val::Px(28. * size)),
+                    ))
+                    .with_children(|p| {
+                        let mut parcel = ImageNode::new(art.courier_parcel.clone());
+                        parcel.image_mode = NodeImageMode::Stretch;
+                        p.spawn((
+                            Node {
+                                width: Val::Px(66. * sx),
+                                height: Val::Px(62. * sy),
+                                ..default()
+                            },
+                            parcel,
                         ));
+                        label(
+                            p,
+                            art,
+                            format!("送货 {}/9", g.total()),
+                            29. * size,
+                            Color::WHITE,
+                        );
+                    });
+
+                    courier_resources(root, art, g, sx, sy, size);
+
+                    for (planet, x, y, name) in [
+                        (0, 409., 256., "月球站"),
+                        (1, 1055., 220., "蓝莓星"),
+                        (2, 1048., 657., "糖果星"),
+                    ] {
+                        courier_planet(
+                            root,
+                            art,
+                            g,
+                            planet,
+                            name,
+                            x * sx,
+                            y * sy,
+                            218. * sx,
+                            104. * sy,
+                            sx,
+                            sy,
+                        );
+                    }
+
+                    courier_station_button(root, art, sx, sy, size);
+                    courier_panel(root, art, g, sx, sy, size);
+
+                    root.spawn((
+                        Node {
+                            position_type: PositionType::Absolute,
+                            left: Val::Px(468. * sx),
+                            bottom: Val::Px(12. * sy),
+                            width: Val::Px(738. * sx),
+                            height: Val::Px(134. * sy),
+                            padding: UiRect::all(Val::Px(10. * size)),
+                            flex_direction: FlexDirection::Column,
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            row_gap: Val::Px(5. * sy),
+                            border: UiRect::all(Val::Px(5. * size)),
+                            ..default()
+                        },
+                        BackgroundColor(Color::srgba(0.08, 0.34, 0.73, 0.97)),
+                        BorderColor(Color::srgb(0.28, 0.62, 1.)),
+                        BorderRadius::all(Val::Px(34. * size)),
+                    ))
+                    .with_children(|p| {
+                        p.spawn((
+                            Node {
+                                position_type: PositionType::Absolute,
+                                left: Val::Px(44. * sx),
+                                top: Val::Px(-16. * sy),
+                                width: Val::Px(610. * sx),
+                                height: Val::Px(48. * sy),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                border: UiRect::all(Val::Px(4. * size)),
+                                ..default()
+                            },
+                            BackgroundColor(Color::srgb(0.12, 0.40, 0.79)),
+                            BorderColor(Color::srgb(0.35, 0.69, 1.)),
+                            BorderRadius::all(Val::Px(26. * size)),
+                        ));
+                        p.spawn(Node {
+                            position_type: PositionType::Relative,
+                            top: Val::Px(-20. * sy),
+                            width: Val::Percent(100.),
+                            height: Val::Px(33. * sy),
+                            align_items: AlignItems::Center,
+                            justify_content: JustifyContent::Center,
+                            flex_shrink: 0.,
+                            ..default()
+                        })
+                        .with_children(|heading| {
+                            if g.total() == 9 {
+                                label(
+                                    heading,
+                                    art,
+                                    "本章 9 个送货点 · 完成后挑战终点包裹  终点已开启",
+                                    19. * size,
+                                    Color::WHITE,
+                                );
+                            } else {
+                                let mut title = ImageNode::new(art.courier_progress_title.clone());
+                                title.image_mode = NodeImageMode::Stretch;
+                                heading.spawn((
+                                    Node {
+                                        width: Val::Px(460. * sx),
+                                        height: Val::Px(36. * sy),
+                                        ..default()
+                                    },
+                                    title,
+                                ));
+                            }
+                        });
+                        p.spawn(Node {
+                            width: Val::Percent(100.),
+                            height: Val::Px(62. * sy),
+                            position_type: PositionType::Relative,
+                            ..default()
+                        })
+                        .with_children(|row| {
+                            row.spawn((
+                                Node {
+                                    position_type: PositionType::Absolute,
+                                    left: Val::Px(10. * sx),
+                                    top: Val::Px(0.),
+                                    width: Val::Px(570. * sx),
+                                    height: Val::Px(62. * sy),
+                                    border: UiRect::all(Val::Px(3. * size)),
+                                    ..default()
+                                },
+                                BackgroundColor(Color::srgb(0.87, 0.95, 1.)),
+                                BorderColor(Color::srgb(0.38, 0.66, 0.94)),
+                                BorderRadius::all(Val::Px(20. * size)),
+                            ));
+                            row.spawn(Node {
+                                width: Val::Percent(100.),
+                                height: Val::Percent(100.),
+                                align_items: AlignItems::Center,
+                                justify_content: JustifyContent::Center,
+                                column_gap: Val::Px(8. * sx),
+                                ..default()
+                            })
+                            .with_children(|items| {
+                                for delivered in g.delivered {
+                                    if delivered {
+                                        let mut parcel =
+                                            ImageNode::new(art.courier_parcel_slot.clone());
+                                        parcel.image_mode = NodeImageMode::Stretch;
+                                        items.spawn((
+                                            Node {
+                                                width: Val::Px(50. * sx),
+                                                height: Val::Px(47. * sy),
+                                                flex_shrink: 0.,
+                                                ..default()
+                                            },
+                                            parcel,
+                                        ));
+                                    } else {
+                                        let mut empty =
+                                            ImageNode::new(art.courier_empty_slot.clone());
+                                        empty.image_mode = NodeImageMode::Stretch;
+                                        items.spawn((
+                                            Node {
+                                                width: Val::Px(50. * sx),
+                                                height: Val::Px(47. * sy),
+                                                flex_shrink: 0.,
+                                                ..default()
+                                            },
+                                            empty,
+                                        ));
+                                    }
+                                }
+                                let mut gift = ImageNode::new(art.courier_gift.clone());
+                                gift.image_mode = NodeImageMode::Stretch;
+                                items.spawn((
+                                    Node {
+                                        width: Val::Px(108. * sx),
+                                        height: Val::Px(94. * sy),
+                                        ..default()
+                                    },
+                                    gift,
+                                ));
+                            });
+                        });
                     });
                 });
-            });
         });
 }
 

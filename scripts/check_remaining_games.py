@@ -9,8 +9,8 @@ import sys
 import time
 
 ROOT = Path(__file__).resolve().parents[1]
-OUT = ROOT / ("output/remaining-games-check-wide" if os.environ.get("MAGNET_QA_SIZE") else "output/remaining-games-check")
-GAMES = ["island", "cloudbridge", "freebuild", "ball", "tetris", "fire",
+OUT = ROOT / os.environ.get("MAGNET_QA_OUTPUT", "output/remaining-games-check-wide" if os.environ.get("MAGNET_QA_SIZE") else "output/remaining-games-check")
+GAMES = ["gold", "descent", "island", "cloudbridge", "freebuild", "ball", "tetris", "fire",
          "detective", "farm", "tank", "sky", "bubble", "bomber", "fruit",
          "fortune", "slots", "arcade", "fishing", "honey", "snake", "mines",
          "sokoban", "lightpath", "garden", "courier", "restaurant", "math",
@@ -33,7 +33,7 @@ def run(game):
         process = subprocess.Popen([str(ROOT / "target/debug/magnet-island")],
                                    cwd=ROOT, env=env, stdout=log, stderr=subprocess.STDOUT)
         try:
-            code = process.wait(timeout=50)
+            code = process.wait(timeout=180 if game == "rabbit" else 150 if game in ("island", "cloudbridge") and (env.get("MAGNET_QA_PUZZLE_CAMPAIGN") or env.get("MAGNET_QA_PUZZLE_ADDED")) else 50)
         except subprocess.TimeoutExpired:
             process.terminate()
             try:
@@ -56,7 +56,7 @@ def run(game):
         width, height = map(int, os.environ["MAGNET_QA_SIZE"].split("x"))
         aspect_ok = dimensions is not None and abs(dimensions[0] / dimensions[1] - width / height) < 0.01
     result = {"game": game, "title": data.get("game"), "exit": code,
-              "passed": code == 0 and not data.get("failed", True) and data.get("completed", False) and aspect_ok,
+              "passed": code == 0 and not data.get("failed", True) and data.get("completed", False) and dimensions is not None and aspect_ok,
               "dimensions": dimensions, "aspect_ok": aspect_ok,
               "seconds": round(time.monotonic() - began, 1), "save": str(saved.relative_to(ROOT)),
               "checks": sum("check" in r for r in data.get("records", []))}

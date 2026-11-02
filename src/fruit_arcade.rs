@@ -173,6 +173,7 @@ pub(super) enum ArcadeMotion {
 }
 pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: f32, height: f32) {
     let g = &s.arcade;
+    let panel_scale = ((height - 98.) / 442.).clamp(0.7, 1.3);
     let gold = Color::srgb(0.98, 0.72, 0.25);
     let ink = Color::srgb(0.025, 0.055, 0.085);
     let panel_color = Color::srgb(0.035, 0.11, 0.14);
@@ -387,7 +388,7 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                 top: Val::Px(74.),
                 width: Val::Px(sw),
                 flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(8.),
+                row_gap: Val::Px(6. * panel_scale),
                 ..default()
             })
             .with_children(|panel| {
@@ -395,7 +396,7 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                     .spawn((
                         Node {
                             width: Val::Percent(100.),
-                            padding: UiRect::all(Val::Px(12.)),
+                            padding: UiRect::all(Val::Px(9. * panel_scale)),
                             justify_content: JustifyContent::SpaceBetween,
                             ..row()
                         },
@@ -403,11 +404,11 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                         BorderRadius::all(Val::Px(8.)),
                     ))
                     .with_children(|score| {
-                        label(score, art, "积分", 18., gold);
-                        label(score, art, g.points.to_string(), 27., gold);
+                        label(score, art, "积分", 18. * panel_scale, gold);
+                        label(score, art, g.points.to_string(), 24. * panel_scale, gold);
                     });
-                label(panel, art, "选择水果 · 每点 +10", 19., gold);
-                let bet_h = ((height - 340.) / 5.).clamp(44., 60.);
+                label(panel, art, "选择水果 · 每点 +10", 19. * panel_scale, gold);
+                let bet_h = 40. * panel_scale;
                 for i in 0..5 {
                     let selected = g.bets[i] > 0;
                     panel
@@ -418,9 +419,11 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                             Node {
                                 width: Val::Px(sw),
                                 height: Val::Px(bet_h),
+                                min_height: Val::Px(bet_h),
+                                flex_shrink: 0.,
                                 padding: UiRect::horizontal(Val::Px(9.)),
                                 align_items: AlignItems::Center,
-                                column_gap: Val::Px(8.),
+                                column_gap: Val::Px(6.),
                                 border: UiRect::all(Val::Px(2.)),
                                 ..default()
                             },
@@ -435,8 +438,8 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                         .with_children(|entry| {
                             entry
                                 .spawn(Node {
-                                    width: Val::Px(34.),
-                                    height: Val::Px(34.),
+                                    width: Val::Px(32. * panel_scale),
+                                    height: Val::Px(32. * panel_scale),
                                     ..default()
                                 })
                                 .with_children(|icon| fruit(icon, i));
@@ -444,13 +447,19 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                                 entry,
                                 art,
                                 format!("{} ×{}  投入 {}", NAMES[i], RATES[i], g.bets[i]),
-                                14.,
+                                14. * panel_scale,
                                 Color::WHITE,
                             );
-                            label(entry, art, "＋", 22., gold);
+                            label(entry, art, "＋", 22. * panel_scale, gold);
                         });
                 }
-                label(panel, art, format!("本次投入  {} 点", g.total()), 16., gold);
+                label(
+                    panel,
+                    art,
+                    format!("本次投入  {} 点", g.total()),
+                    16. * panel_scale,
+                    gold,
+                );
                 panel.spawn(row()).with_children(|actions| {
                     button(
                         actions,
@@ -458,7 +467,7 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                         "清空",
                         Action::ArcadeClear,
                         (sw - 8.) * 0.35,
-                        43.,
+                        43. * panel_scale,
                         RED,
                         Color::WHITE,
                     );
@@ -474,7 +483,7 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                         },
                         Action::ArcadeSpin,
                         (sw - 8.) * 0.65,
-                        43.,
+                        43. * panel_scale,
                         Color::srgb(0.14, 0.57, 0.34),
                         Color::WHITE,
                     );
@@ -485,7 +494,7 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                     "免费补充 +1000",
                     Action::ArcadeRefill,
                     sw,
-                    38.,
+                    38. * panel_scale,
                     Color::srgb(0.14, 0.33, 0.62),
                     Color::WHITE,
                 );
@@ -493,7 +502,7 @@ pub(super) fn arcade_ui(commands: &mut Commands, s: &Session, art: &Art, width: 
                     panel,
                     art,
                     "仅使用免费虚拟积分",
-                    12.,
+                    12. * panel_scale,
                     Color::srgb(0.62, 0.63, 0.59),
                 );
             });

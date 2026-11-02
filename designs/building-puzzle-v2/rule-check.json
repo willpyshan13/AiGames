@@ -1,0 +1,120 @@
+{
+  "type": "design_rule_simulation_only_not_game_test",
+  "cloud": {
+    "two_routes_feasible": true,
+    "cannot_build_both_with_budget": true,
+    "routes": {
+      "direct": {
+        "wood": 2,
+        "stone": 1,
+        "wind": "stone",
+        "bonus": false
+      },
+      "detour": {
+        "wood": 7,
+        "stone": 0,
+        "wind": null,
+        "bonus": true
+      }
+    }
+  },
+  "island": {
+    "success": {
+      "won": true,
+      "steps": 10,
+      "cards": 5,
+      "bridges": 3,
+      "trace": [
+        {
+          "step": 1,
+          "position": [
+            1,
+            0
+          ],
+          "gate_open": false
+        },
+        {
+          "step": 2,
+          "position": [
+            2,
+            0
+          ],
+          "gate_open": false
+        },
+        {
+          "step": 3,
+          "position": [
+            3,
+            0
+          ],
+          "gate_open": false
+        },
+        {
+          "step": 4,
+          "position": [
+            3,
+            0
+          ],
+          "gate_open": false
+        },
+        {
+          "step": 5,
+          "position": [
+            3,
+            1
+          ],
+          "gate_open": false
+        },
+        {
+          "step": 6,
+          "position": [
+            3,
+            2
+          ],
+          "gate_open": true
+        },
+        {
+          "step": 7,
+          "position": [
+            3,
+            2
+          ],
+          "gate_open": true
+        },
+        {
+          "step": 8,
+          "position": [
+            4,
+            2
+          ],
+          "gate_open": true
+        },
+        {
+          "step": 9,
+          "position": [
+            5,
+            2
+          ],
+          "gate_open": true
+        },
+        {
+          "step": 10,
+          "position": [
+            6,
+            2
+          ],
+          "gate_open": true
+        }
+      ]
+    },
+    "closed_gate_check": {
+      "won": false,
+      "stopped_before_gate": [
+        4,
+        2
+      ],
+      "step": 9
+    }
+  },
+  "implementation_changed": false
+}

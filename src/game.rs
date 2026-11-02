@@ -136,11 +136,31 @@ impl World {
     pub fn in_bounds(p: [i32; 3]) -> bool {
         (-6..=6).contains(&p[0]) && (0..=8).contains(&p[1]) && (-3..=3).contains(&p[2])
     }
+    /// Approved compact islands: three columns by five rows on each bank.
+    /// Keep `in_bounds` for validating and migrating earlier saved worlds.
+    pub fn compact_bounds(p: [i32; 3]) -> bool {
+        (-5..=5).contains(&p[0]) && (0..=8).contains(&p[1]) && (-2..=2).contains(&p[2])
+    }
+    pub fn compact_builder(&mut self, level_index: usize) -> bool {
+        if self.free_build { return false; }
+        let old = self.clone();
+        self.blocks.retain(|b| Self::compact_bounds(b.pos));
+        if !Self::compact_bounds([self.robot[0], 0, self.robot[1]]) {
+            let initial = level(level_index);
+            self.robot = initial.robot;
+            self.facing = initial.facing;
+            if self.material([self.robot[0], 0, self.robot[1]]).is_none() {
+                self.put([self.robot[0], 0, self.robot[1]], Material::Grass);
+            }
+            self.blocks.retain(|b| b.pos != [self.robot[0], 1, self.robot[1]]);
+        }
+        *self != old
+    }
     fn accepts(&self, p: [i32; 3]) -> bool {
         if self.free_build {
             (-8..=8).contains(&p[0]) && (0..=12).contains(&p[1]) && (-5..=5).contains(&p[2])
         } else {
-            Self::in_bounds(p)
+            Self::compact_bounds(p)
         }
     }
     pub fn edit(
@@ -269,7 +289,7 @@ impl World {
                 .crystals
                 .iter()
                 .all(|crystal| Self::in_bounds([crystal[0], 0, crystal[1]]))
-            && self.blocks.iter().all(|b| self.accepts(b.pos))
+            && self.blocks.iter().all(|b| if self.free_build { self.accepts(b.pos) } else { Self::in_bounds(b.pos) })
             && self
                 .blocks
                 .iter()
@@ -327,9 +347,9 @@ pub fn level(index: usize) -> World {
         crystals: vec![],
         free_build: false,
     };
-    for x in -6_i32..=6 {
-        for z in -3_i32..=3 {
-            if x.abs() >= 3 && !(x.abs() == 6 && z.abs() == 3) {
+    for x in -5_i32..=5 {
+        for z in -2_i32..=2 {
+            if x.abs() >= 3 {
                 w.put([x, 0, z], Material::Grass);
             }
         }
@@ -393,7 +413,7 @@ impl Default for Work {
 impl Work {
     pub fn valid(&self) -> bool {
         self.world.validate()
-            && self.program.len() <= 8
+            && self.program.len() <= 16
             && (1..=8).contains(&self.repeat)
             && self.level < 6
             && self.completed.iter().all(|i| *i < 6)
@@ -568,6 +588,44 @@ impl Runner {
 mod tests {
     use super::*;
     #[test]
+    fn compact_islands_keep_routes_and_reject_removed_outer_cells() {
+        let mut world = level(3);
+        assert_eq!(world.blocks.len(), 30);
+        assert!(world.blocks.iter().all(|b| World::compact_bounds(b.pos)));
+        assert!(world.edit([6, 0, 0], Material::Wood, false).is_err());
+        assert!(world.edit([0, 0, 3], Material::Wood, false).is_err());
+        assert!(world.edit([0, 0, 2], Material::Wood, false).is_ok());
+        assert!(world.validate());
+    }
+    #[test]
+    fn compact_migration_preserves_progress_and_remaining_construction() {
+        let mut save = Save::default();
+        let work = save.profiles.get_mut(&0).unwrap();
+        work.completed = vec![0, 1, 2];
+        work.stars = [3, 2, 3, 0, 0, 0];
+        work.world.blocks.push(Block {pos: [-6, 0, 0], material: Material::Grass});
+        work.world.blocks.push(Block {pos: [-6, 1, 1], material: Material::Crystal});
+        work.world.blocks.push(Block {pos: [-4, 2, 0], material: Material::Stone});
+        work.world.robot = [-6, 0];
+        assert!(save.validate());
+        let work = save.profiles.get_mut(&0).unwrap();
+        assert!(work.world.compact_builder(work.level));
+        assert_eq!(work.world.robot, [-3, 0]);
+        assert_eq!(work.world.material([-4, 2, 0]), Some(Material::Stone));
+        assert_eq!(work.world.material([-6, 1, 1]), None);
+        assert_eq!(work.completed, [0, 1, 2]);
+        assert_eq!(work.stars, [3, 2, 3, 0, 0, 0]);
+        assert!(!work.world.compact_builder(work.level));
+        assert!(save.validate());
+    }
+    #[test]
+    fn compact_migration_leaves_free_build_board_unchanged() {
+        let mut world = free_build_world();
+        let original = world.clone();
+        assert!(!world.compact_builder(0));
+        assert_eq!(world, original);
+    }
+    #[test]
     fn hollow_structure_survives_edit_and_save() {
         let mut w = level(5);
         w.edit([0, 0, 2], Material::Wood, false).unwrap();
@@ -696,6 +754,17 @@ mod tests {
         assert!(decoded.validate());
         s.profiles.get_mut(&0).unwrap().world.facing = 9;
         assert!(!s.validate());
+    }
+    #[test]
+    fn sixteen_instruction_profile_survives_serialization_and_rejects_overflow() {
+        let mut save=Save::default();
+        save.profiles.get_mut(&0).unwrap().program=vec![Instruction::Wait;16];
+        let restored:Save=serde_json::from_slice(&serde_json::to_vec(&save).unwrap()).unwrap();
+        assert!(restored.validate());
+        assert_eq!(restored.profiles[&0].program.len(),16);
+        assert_eq!(Runner::new(&restored.profiles[&0]).ops.len(),81);
+        save.profiles.get_mut(&0).unwrap().program.push(Instruction::Wait);
+        assert!(!save.validate());
     }
     #[test]
     fn cannot_overwrite_bridge_or_block_robot() {

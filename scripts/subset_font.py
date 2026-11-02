@@ -19,6 +19,8 @@ def main() -> None:
     for source in (ROOT / "src").rglob("*.rs"):
         characters.update(source.read_text(encoding="utf-8"))
 
+    characters.update((ROOT / "assets/builders/cloud-walk-v3/maps.json").read_text(encoding="utf-8"))
+
     options = subset.Options()
     options.desubroutinize = True
     options.hinting = False

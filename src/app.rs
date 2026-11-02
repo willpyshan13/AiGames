@@ -1,3 +1,12 @@
+#[path = "forest_train.rs"]
+mod forest_train;
+use forest_train::*;
+#[path = "gold_runner.rs"]
+mod gold_runner;
+use gold_runner::*;
+#[path = "descent.rs"]
+mod descent;
+use descent::*;
 #[path = "fruit_arcade.rs"]
 mod fruit_arcade;
 use fruit_arcade::*;
@@ -49,6 +58,16 @@ use rabbit_home::*;
 #[path = "courier.rs"]
 mod courier;
 use courier::*;
+#[path = "builder_redesign.rs"]
+mod builder_redesign;
+use builder_redesign::*;
+#[path = "builder_puzzle_ui.rs"]
+mod builder_puzzle_ui;
+use builder_puzzle_ui::*;
+#[path = "cloud_walk_ui.rs"]
+mod cloud_walk_ui;
+use cloud_walk_ui::*;
+use crate::puzzle_game::{Puzzle, Kind as PuzzleKind};
 #[cfg(debug_assertions)]
 #[path = "qa.rs"]
 mod qa;
@@ -81,6 +100,9 @@ const GARDEN_WOOD_EDGE: Color = Color::srgb(0.78, 0.59, 0.31);
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum GameMode {
+    ForestTrain,
+    GoldRunner,
+    Descent,
     Island,
     CloudBridge,
     CrystalGarden,
@@ -123,7 +145,10 @@ enum GameMode {
 impl GameMode {
     fn title(self) -> &'static str {
         match self {
-            Self::Island => "磁力小岛",
+            Self::ForestTrain => "森林小火车",
+            Self::GoldRunner => "遗迹淘金者",
+            Self::Descent => "勇闯地下100层",
+            Self::Island => "小小建造师",
             Self::CloudBridge => "云桥工程师",
             Self::CrystalGarden => "小小动物餐厅",
             Self::FreeBuild => "自由搭建工坊",
@@ -165,8 +190,11 @@ impl GameMode {
 
     fn subtitle(self) -> &'static str {
         match self {
-            Self::Island => "选材料搭桥，让机器人走到星星身边",
-            Self::CloudBridge => "在云海之间搭一座会走的桥",
+            Self::ForestTrain => "切换岔道、交替过桥，把动物乘客送回家",
+            Self::GoldRunner => "爬梯攀绳、挖坑困敌，收齐黄金逃出遗迹",
+            Self::Descent => "左右移动穿越矿井，挑战地下100层",
+            Self::Island => "有限积木与行动卡，带机器人解开机关",
+            Self::CloudBridge => "规划两条路线，用有限建材跨过云海",
             Self::CrystalGarden => "装修餐厅，准备动物们喜欢的美食",
             Self::FreeBuild => "没有任务和终点，想搭什么就搭什么",
             Self::Ball2048 => "从 2 开始滚动，合并数字，躲开陷阱",
@@ -190,7 +218,7 @@ impl GameMode {
             Self::Fishing => "瞄准游动的鱼群，撒网收获金币",
             Self::HoneyHunt => "摇摆抓钩，收集草地里的甜甜蜂蜜",
             Self::MoonFestival => "摇动六颗骰子，收集月兔福礼",
-            Self::Snake => "吃掉果实变长，别撞到自己和边界",
+            Self::Snake => "慢速吃果变长，碰边穿行，别撞到自己",
             Self::Minesweeper => "找出安全格，标记藏起来的地雷",
             Self::Classic2048 => "滑动数字格，合并出更大的数字",
             Self::Klotski => "移动棋子，为曹操打开通往出口的路",
@@ -207,8 +235,11 @@ impl GameMode {
 
     fn intro(self) -> &'static str {
         match self {
-            Self::Island => "完成岛上的小任务，获得星星和新奖励。",
-            Self::CloudBridge => "用放置和前进，越过云海中的缺口。",
+            Self::ForestTrain => "点击岔道切换路线，点击兔子村或松鼠林安排车站等待；两车交替过桥，红车按提示送达，蓝车回兔子村。空格发车/暂停，1/2切岔道，A/B等待，Z撤回，R重开。",
+            Self::GoldRunner => "方向键或WASD移动与爬梯，Z/Q向左挖、X/E向右挖；收齐黄金，爬上出口梯通关。坑会恢复，追兵会脱困。P/空格暂停，R重试本关。",
+            Self::Descent => "按住左右方向键或A/D移动，自然下落。避开尖刺，碎裂平台会塌陷，弹簧反弹，传送带推动角色。空格开始或暂停，P暂停，R重开。",
+            Self::Island => "先搭桥，再编排行动；踩机关开门，走到星星身边。",
+            Self::CloudBridge => "近路省建材，绕路拿星晶；风口需要石桥。",
             Self::CrystalGarden => "给小动物布置餐桌、厨房和食材区。",
             Self::FreeBuild => "挑一种方块，轻点搭建。你的作品会自动保存在这个档案里。",
             Self::Ball2048 => "左右换道，让相同数字的球碰到一起。",
@@ -232,7 +263,7 @@ impl GameMode {
             Self::Fishing => "点击水面发射渔网，网住鱼群赚取金币。",
             Self::HoneyHunt => "等抓钩对准蜂蜜后轻点画面。抓到蜂蜜会自动拉回小熊身边。",
             Self::MoonFestival => "摇一摇六颗骰子，收下属于你的中秋福气。",
-            Self::Snake => "控制小蛇吃果实，撞墙或撞到自己就结束。",
+            Self::Snake => "控制小蛇吃果实，碰到边界会从另一侧穿出，撞到自己才结束。慢速起步，随吃果数量逐渐提速。",
             Self::Minesweeper => "点击安全格查看数字提示；切换标记模式后，点击方块插旗。",
             Self::Classic2048 => "向任意方向滑动，让相同数字合并。",
             Self::Klotski => "先点选棋子，再用方向键移动；让曹操走到最下方出口。",
@@ -3438,6 +3469,8 @@ impl FruitGame {
 
 #[derive(Resource)]
 struct Session {
+    gold_runner: GoldRunner,
+    descent: DescentGame,
     mode: GameMode,
     help_open: bool,
     math_tools: bool,
@@ -3481,6 +3514,8 @@ struct Session {
     mission_feedback: String,
     save: Save,
     cloud_bridge_campaign: CloudBridgeCampaign,
+    builder_puzzles: [Puzzle;2],
+    cloud_walk: crate::cloud_walk_game::CloudWalk,
     work: Work,
     runner: Option<Runner>,
     material: Material,
@@ -3559,27 +3594,9 @@ impl Session {
         let mut save_path = save_directory().join("island-v1.json");
         let (save, warning) = match fs::read(&save_path) {
             Ok(bytes) => match serde_json::from_slice::<Save>(&bytes) {
-                Ok(mut save) if save.validate() => {
-                    // Move a never-played first profile into the redesigned
-                    // bridge-building challenge, while keeping any real player
-                    // progress and custom construction untouched.
-                    let untouched_first_profile = save.profiles.get(&0).is_some_and(|work| {
-                        work.level == 0
-                            && work.completed.is_empty()
-                            && work.stars == [0; 6]
-                            && work.world == game::level(0)
-                            && work.program == [Instruction::Forward, Instruction::Forward]
-                            && work.repeat == 1
-                            && !work.finish_forward
-                    });
-                    if untouched_first_profile {
-                        let mut work = save.profiles[&0].clone();
-                        work.choose_level(3);
-                        work.repeat = 5;
-                        save.profiles.insert(0, work);
-                    }
-                    (save, None)
-                }
+                // V2 puzzles use their own saves. Preserve legacy profile
+                // geometry, stars and programs for existing constructions.
+                Ok(save) if save.validate() => (save, None),
                 _ => {
                     // A damaged/unsupported save must never be overwritten by autosave.
                     let stamp = std::time::SystemTime::now()
@@ -3643,6 +3660,8 @@ impl Session {
             garden: GardenGame::new(),
             courier: CourierGame::load(),
             rabbit_home: RabbitHomeGame::new(),
+            descent: DescentGame::new(),
+            gold_runner: GoldRunner::new(),
             mission_step: 0,
             mission_done: false,
             mission_wrong: None,
@@ -3652,6 +3671,8 @@ impl Session {
             message: warning.unwrap_or(game::LEVEL_HINTS[work.level]).to_owned(),
             save,
             cloud_bridge_campaign,
+            builder_puzzles: [load_puzzle(PuzzleKind::Cloud),load_puzzle(PuzzleKind::Robot)],
+            cloud_walk: load_cloud_walk(),
             work,
             runner: None,
             material: Material::Wood,
@@ -3670,8 +3691,11 @@ impl Session {
             pitch: 0.762,
             zoom: 16.0,
         };
-        session.island_3d_view = !island_base_intact(&session.work);
+        session.island_3d_view = false;
         if let Some(mode) = match std::env::var("MAGNET_START_GAME").as_deref() {
+            Ok("train") => Some(GameMode::ForestTrain),
+            Ok("gold") => Some(GameMode::GoldRunner),
+            Ok("descent") => Some(GameMode::Descent),
             Ok("fire") => Some(GameMode::Firefighters),
             Ok("detective") => Some(GameMode::Detective),
             Ok("farm") => Some(GameMode::SpaceFarm),
@@ -3893,6 +3917,7 @@ impl Session {
         session
     }
     fn persist(&mut self) {
+        if builder_mode(self) { persist_puzzle(self); return; }
         if self.mode == GameMode::CrystalGarden {
             let path = save_directory().join("restaurant-v1.json");
             let result = (|| -> Result<(), Box<dyn std::error::Error>> {
@@ -4132,7 +4157,7 @@ fn select_game(s: &mut Session, mode: GameMode) {
     s.island_3d_view = false;
     if mode == GameMode::Island {
         s.work = s.save.profiles[&s.save.active].clone();
-        s.island_3d_view = !island_base_intact(&s.work);
+        s.island_3d_view = false;
         s.build = true;
         s.message = game::LEVEL_HINTS[s.work.level].into();
     } else {
@@ -4159,7 +4184,10 @@ fn select_game(s: &mut Session, mode: GameMode) {
                 completed: vec![],
                 stars: [0; 6],
             },
-            GameMode::Ball2048
+            GameMode::ForestTrain
+            | GameMode::GoldRunner
+            | GameMode::Descent
+            | GameMode::Ball2048
             | GameMode::Tetris
             | GameMode::Math
             | GameMode::Literacy
@@ -4347,6 +4375,14 @@ struct BallPlayer(f32);
 struct CrystalSparkle(f32);
 #[derive(Component, Clone, Copy, Debug, PartialEq, Eq)]
 enum Action {
+    CloudWalk(CloudAction),
+    Puzzle(PuzzleAction),
+    GoldToggle,
+    GoldReset,
+    GoldNext,
+    DescentStart,
+    DescentToggle,
+    DescentEndless,
     Help,
     CloseHelp,
     MathTools,
@@ -4483,6 +4519,8 @@ enum Action {
     Clear,
     GuideRoute,
     Repeat,
+    RepeatDelta(i8),
+    BuilderLevel(usize),
     Save,
     Profile(usize),
     Next,
@@ -4584,12 +4622,14 @@ impl LibraryDrag {
 #[derive(Resource, Default)]
 struct TankHold {
     direction: Option<(i8, i8)>,
+    keyboard_direction: Option<(i8, i8)>,
+    keyboard_fire: bool,
     repeat_in: f32,
     pointer: Option<Option<u64>>,
+    fire_pointer: Option<Option<u64>>,
     center: Vec2,
     radius: f32,
     knob: Vec2,
-    fire_in: f32,
 }
 #[derive(Component)]
 struct TankStick;
@@ -4597,16 +4637,62 @@ struct TankStick;
 struct TankKnob;
 #[derive(Component)]
 struct TankFirePad;
-fn tank_stick_direction(delta: Vec2, radius: f32) -> Option<(i8, i8)> {
-    if delta.length() < radius * 0.20 {
+fn tank_stick_direction(delta: Vec2, radius: f32, previous: Option<(i8, i8)>) -> Option<(i8, i8)> {
+    // A smaller release zone and an axis margin prevent thumb jitter from
+    // repeatedly stopping the tank or alternating its direction at 45 degrees.
+    if delta.length() < radius * if previous.is_some() { 0.14 } else { 0.20 } {
         return None;
     }
-    if delta.x.abs() > delta.y.abs() {
+    let horizontal = match previous {
+        Some((x, _)) if x != 0 => delta.y.abs() <= delta.x.abs() * 1.25,
+        Some(_) => delta.x.abs() > delta.y.abs() * 1.25,
+        None => delta.x.abs() > delta.y.abs(),
+    };
+    if horizontal {
         Some((if delta.x > 0. { 1 } else { -1 }, 0))
     } else {
         Some((0, if delta.y > 0. { 1 } else { -1 }))
     }
 }
+
+impl TankHold {
+    fn drive(
+        &mut self,
+        game: &mut TankGame,
+        direction: Option<(i8, i8)>,
+        firing: bool,
+        dt: f32,
+    ) -> bool {
+        let mut changed = false;
+        if let Some(direction) = direction {
+            changed |= game.direction != direction;
+            game.direction = direction;
+            if self.direction.is_none() {
+                self.repeat_in = 0.;
+            } else {
+                self.repeat_in -= dt.clamp(0., 0.1);
+            }
+            if self.repeat_in <= 0. {
+                game.move_player(direction.0, direction.1);
+                // Preserve the fractional frame instead of slowing down on
+                // displays whose refresh period does not divide 0.18 seconds.
+                self.repeat_in = (self.repeat_in + 0.18).max(0.);
+                changed = true;
+            }
+        } else {
+            self.repeat_in = 0.;
+        }
+        self.direction = direction;
+        // TankGame owns the firing cooldown. Poll it directly so touch and
+        // keyboard firing do not compete through independent repeat timers.
+        if firing && game.cooldown <= 0. {
+            game.fire();
+            changed = true;
+        }
+        changed
+    }
+}
+
 #[derive(Resource, Default)]
 struct SkyHold {
     repeat_in: f32,
@@ -4637,6 +4723,12 @@ struct FruitSlash {
 }
 #[derive(Resource)]
 struct Art {
+    cloud_walk: CloudArt,
+    puzzle: PuzzleArt,
+    builder: BuilderArt,
+    gold_icon: Handle<Image>,
+    forest_icon: Handle<Image>,
+    descent_icon: Handle<Image>,
     storybook: StorybookArt,
     restaurant_grass: Handle<StandardMaterial>,
     cube: Handle<Mesh>,
@@ -4677,6 +4769,7 @@ struct Art {
     honey_claw: Handle<Image>,
     honey_jar: Handle<Image>,
     courier_map: Handle<Image>,
+    courier_wide_frame: Handle<Image>,
     courier_title: Handle<Image>,
     courier_chapter_banner: Handle<Image>,
     courier_route_card: Handle<Image>,
@@ -4739,7 +4832,8 @@ struct Art {
     tank_mobile_background_wide: Handle<Image>,
     tank_mobile_background_regular: Handle<Image>,
     placement_preview: Handle<StandardMaterial>,
-    snake_reference: Handle<Image>,
+    snake_pixel: Handle<Image>,
+    snake_gold: Handle<Image>,
     minesweeper_plate: Handle<Image>,
     minesweeper_atlas: Handle<Image>,
     sokoban_atlas: Handle<Image>,
@@ -5034,9 +5128,9 @@ pub fn run() {
     // so a preview never flashes the wrong layout first.
     let portrait_game = matches!(
         std::env::var("MAGNET_START_GAME").as_deref(),
-        Ok("sky") | Ok("ball") | Ok("tetris") | Ok("moon") | Ok("bobing") | Ok("snake")
+        Ok("descent") | Ok("sky") | Ok("ball") | Ok("tetris") | Ok("moon") | Ok("bobing") | Ok("snake")
     );
-    let tank_game = matches!(std::env::var("MAGNET_START_GAME").as_deref(), Ok("tank"));
+    let tank_game = matches!(std::env::var("MAGNET_START_GAME").as_deref(), Ok("tank") | Ok("train"));
     let mission_game = matches!(
         std::env::var("MAGNET_START_GAME").as_deref(),
         Ok("fire") | Ok("detective") | Ok("farm")
@@ -5049,6 +5143,7 @@ pub fn run() {
             ..default()
         })
         .insert_resource(Session::new())
+        .init_resource::<ForestTrain>()
         .init_resource::<PressGate>()
         .init_resource::<Gesture>()
         .init_resource::<LibraryDrag>()
@@ -5078,7 +5173,7 @@ pub fn run() {
                                 (960_f32, 540_f32).into()
                             }
                         } else if portrait_game {
-                            (560_f32, 900_f32).into()
+                            if std::env::var("MAGNET_START_GAME").as_deref() == Ok("descent") { (600_f32, 900_f32).into() } else { (560_f32, 900_f32).into() }
                         } else if tank_game {
                             (1280_f32, 720_f32).into()
                         } else if mission_game {
@@ -5092,7 +5187,10 @@ pub fn run() {
                 })
                 .set(bevy::render::texture::ImagePlugin::default_nearest()),
         )
-        .add_systems(Startup, setup)
+        .add_systems(Startup, (setup, setup_descent, setup_gold, setup_forest))
+        .add_systems(Update, forest_input.before(rebuild_ui).after(buttons))
+        .add_systems(Update, gold_input.before(rebuild_ui).after(buttons))
+        .add_systems(Update, descent_input.before(rebuild_ui).after(buttons))
         .add_systems(
             Update,
             (
@@ -5135,6 +5233,7 @@ pub fn run() {
                     classic_swipe_input,
                     breakout_pointer_input,
                     garden_input,
+                    cloud_walk_input,
                     buttons,
                     tetris_hold_input,
                     tank_touch_hold,
@@ -5155,6 +5254,9 @@ pub fn run() {
                 (
                     animate_tank_stick,
                     animate_play_ui,
+                    animate_builder_actor,
+                    animate_puzzle_actor,
+                    animate_cloud_walk,
                     rabbit_home_animation,
                     fortune_camera,
                     animate_fortune,
@@ -5402,6 +5504,9 @@ fn setup(
         ..default()
     });
     let art = Art {
+        builder: load_builder_art(&assets),
+        puzzle: load_puzzle_art(&assets),
+        cloud_walk: load_cloud_art(&assets),
         storybook: load_storybook(&assets),
         restaurant_grass: materials.add(StandardMaterial {
             base_color_texture: Some(assets.load_with_settings(
@@ -5469,6 +5574,9 @@ fn setup(
             ..default()
         }),
         font: assets.load("fonts/NotoSansCJKsc-Medium.otf"),
+        forest_icon: assets.load(image_asset_path("forest_train/approved.png")),
+        descent_icon: assets.load("descent/mine-atlas.png"),
+        gold_icon: assets.load("gold_runner/temple-atlas.png"),
         mission_fire_approved: assets.load(image_asset_path("learning/fire-approved-v2.png")),
         mission_fire_steps: [
             assets.load(image_asset_path("learning/fire-step2-v2.png")),
@@ -5504,6 +5612,7 @@ fn setup(
         honey_claw: assets.load(image_asset_path("honey/crane-claw-v1.png")),
         honey_jar: assets.load(image_asset_path("honey/honey-jar-v1.png")),
         courier_map: assets.load(image_asset_path("courier/space-map-v1.png")),
+        courier_wide_frame: assets.load(image_asset_path("courier/wide-frame-approved-v1.png")),
         courier_title: assets.load(image_asset_path("courier/title-logo-v1.png")),
         courier_chapter_banner: assets.load(image_asset_path("courier/chapter-banner-v1.png")),
         courier_route_card: assets.load(image_asset_path("courier/route-card-v1.png")),
@@ -5661,7 +5770,8 @@ fn setup(
             unlit: true,
             ..default()
         }),
-        snake_reference: assets.load(image_asset_path("snake/snake-reference-v1.png")),
+        snake_pixel: assets.load("snake/pixel-large-approved-v1.png"),
+        snake_gold: assets.load("snake/pixel-gold-apple-v1.png"),
         minesweeper_plate: assets.load_with_settings(
             image_asset_path("minesweeper/approved-plate-v1.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
@@ -5905,7 +6015,7 @@ fn layout_camera(
     windows: Query<&Window, With<PrimaryWindow>>,
     mut cameras: Query<(&mut Camera, &mut Transform, &mut Projection), With<GameCamera>>,
     mut backdrop_camera: Query<&mut Camera, (With<BuilderBackdropCamera>, Without<GameCamera>)>,
-    mut backdrop_visibility: Query<(&mut Visibility, &mut ImageNode), With<BuilderBackdrop>>,
+    mut backdrop_visibility: Query<(&mut Visibility, &mut ImageNode, &mut Node), (With<BuilderBackdrop>,Without<IslandPlate>,Without<IslandGoalSprite>)>,
     mut island_plate: Query<&mut Node, (With<IslandPlate>, Without<IslandGoalSprite>)>,
     mut island_goal_sprite: Query<&mut Node, (With<IslandGoalSprite>, Without<IslandPlate>)>,
     mut ui_scale: ResMut<UiScale>,
@@ -5936,14 +6046,16 @@ fn layout_camera(
     if let Ok(mut camera) = backdrop_camera.single_mut() {
         camera.is_active = show_builder_backdrop;
     }
-    if let Ok((mut visibility, mut image)) = backdrop_visibility.single_mut() {
+    if let Ok((mut visibility, mut image, _)) = backdrop_visibility.single_mut() {
         *visibility = if show_builder_backdrop {
             Visibility::Visible
         } else {
             Visibility::Hidden
         };
         image.image = if s.mode == GameMode::CloudBridge {
-            art.cloud_bridge_backdrop.clone()
+            art.cloud_walk.sky.clone()
+        } else if s.mode == GameMode::Island {
+            art.puzzle.island.clone()
         } else {
             art.builder_backdrop.clone()
         };
@@ -5975,7 +6087,7 @@ fn layout_camera(
         }
     }
     if let Ok(mut goal) = island_goal_sprite.single_mut() {
-        let illustrated_goal = s.mode == GameMode::Island
+        let illustrated_goal = !builder_mode(&s) && s.mode == GameMode::Island
             && !s.island_3d_view
             && island_base_intact(&s.work)
             && s.work.level == 3;
@@ -6015,11 +6127,38 @@ fn layout_camera(
     }
     .max(0.2);
     ui_scale.0 = scale;
+    if let Ok((_,_,mut node))=backdrop_visibility.single_mut() {
+        if builder_mode(&s) {
+            let cover=(window.width()/1672.).max(window.height()/941.);
+            let size=Vec2::new(1672.,941.)*cover;
+            node.left=Val::Px((window.width()-size.x)*0.5/scale);
+            node.top=Val::Px((window.height()-size.y)*0.5/scale);
+            node.width=Val::Px(size.x/scale);node.height=Val::Px(size.y/scale);
+        } else {node.left=Val::Px(0.);node.top=Val::Px(0.);node.width=Val::Percent(100.);node.height=Val::Percent(100.);}
+    }
     let Ok((mut camera, mut transform, mut projection)) = cameras.single_mut() else {
         return;
     };
     camera.is_active = *resize_cooldown == 0;
     *resize_cooldown = resize_cooldown.saturating_sub(1);
+    if builder_mode(&s) {
+        camera.is_active &= !builder_illustrated(&s);
+        let (k, offset) = builder_canvas(window.width(), window.height());
+        let dpi = window.scale_factor();
+        camera.viewport = Some(Viewport {
+            physical_position: ((offset + Vec2::new(110., 125.) * k) * dpi).as_uvec2(),
+            physical_size: (Vec2::new(1180., if s.build { 640. } else { 460. }) * k * dpi).as_uvec2(),
+            ..default()
+        });
+        camera.clear_color = ClearColorConfig::None;
+        let radius = 30.4;
+        let horizontal = radius * s.pitch.cos();
+        *transform = Transform::from_xyz(s.yaw.sin()*horizontal, radius*s.pitch.sin(), s.yaw.cos()*horizontal).looking_at(Vec3::ZERO,Vec3::Y);
+        let mut ortho=OrthographicProjection::default_3d();
+        ortho.scaling_mode=ScalingMode::AutoMin{min_width:s.zoom,min_height:s.zoom*0.7};
+        *projection=Projection::Orthographic(ortho);
+        return;
+    }
     if s.mode == GameMode::CrystalGarden {
         let k = (window.width() / 1672.).min(window.height() / 941.);
         let offset =
@@ -6132,7 +6271,7 @@ fn layout_camera(
     }
     if matches!(
         s.mode,
-        GameMode::Breakout | GameMode::ElementLab | GameMode::LightPath | GameMode::GardenDefense
+        GameMode::ForestTrain | GameMode::GoldRunner | GameMode::Descent | GameMode::Breakout | GameMode::ElementLab | GameMode::LightPath | GameMode::GardenDefense
     ) {
         camera.viewport = None;
         camera.clear_color = ClearColorConfig::Custom(Color::srgb(0.05, 0.08, 0.16));
@@ -6329,6 +6468,12 @@ fn rebuild_world(
         return;
     }
     s.world_dirty = false;
+    if builder_illustrated(&s) {
+        for entity in &entities { commands.entity(entity).despawn(); }
+        for mut robot in &mut robots { *robot=Visibility::Hidden; }
+        if let Ok((mut visibility,_))=island_plate.single_mut(){*visibility=Visibility::Hidden;}
+        return;
+    }
     let illustrated_island =
         s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
     if let Ok((mut visibility, mut image)) = island_plate.single_mut() {
@@ -6352,7 +6497,10 @@ fn rebuild_world(
             || (s.mode == GameMode::CloudBridge && s.work.level == 5)
             || matches!(
                 s.mode,
-                GameMode::Ball2048
+                GameMode::ForestTrain
+                    | GameMode::GoldRunner
+                    | GameMode::Descent
+                    | GameMode::Ball2048
                     | GameMode::Tetris
                     | GameMode::Math
                     | GameMode::Literacy
@@ -6413,7 +6561,7 @@ fn rebuild_world(
     }
     if matches!(
         s.mode,
-        GameMode::Breakout | GameMode::ElementLab | GameMode::LightPath | GameMode::GardenDefense
+        GameMode::ForestTrain | GameMode::GoldRunner | GameMode::Descent | GameMode::Breakout | GameMode::ElementLab | GameMode::LightPath | GameMode::GardenDefense
     ) {
         return;
     }
@@ -7165,8 +7313,8 @@ fn sync_island_robot_billboard(
     let Ok((mut billboard, mut visibility)) = billboards.single_mut() else {
         return;
     };
-    let illustrated =
-        s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
+    let illustrated = !builder_mode(&s)
+        && s.mode == GameMode::Island && !s.island_3d_view && island_base_intact(&s.work);
     *visibility = if illustrated {
         Visibility::Visible
     } else {
@@ -7197,6 +7345,15 @@ fn tick(time: Res<Time>, mut s: ResMut<Session>) {
     if s.library_open || s.help_open {
         return;
     }
+    if s.mode == GameMode::CloudBridge {
+        return;
+    }
+    if builder_mode(&s) {
+        let index=puzzle_index(&s);
+        if s.builder_puzzles[index].tick(time.delta_secs()) { s.ui_dirty=true; if s.builder_puzzles[index].won {persist_puzzle(&mut s);} }
+        return;
+    }
+    if matches!(s.mode, GameMode::ForestTrain | GameMode::Descent | GameMode::GoldRunner) { return; }
     s.cheer = (s.cheer - time.delta_secs()).max(0.);
     if s.mode == GameMode::Math || s.mode == GameMode::Literacy || mission_index(s.mode).is_some() {
         return;
@@ -7706,37 +7863,40 @@ fn assault_touch_hold(
     }
 }
 
-fn tank_key_input(keys: Res<ButtonInput<KeyCode>>, mut s: ResMut<Session>) {
-    if s.library_open || s.help_open || s.mode != GameMode::TankBattle {
+fn tank_key_input(keys: Res<ButtonInput<KeyCode>>, mut hold: ResMut<TankHold>, s: Res<Session>) {
+    if s.library_open || s.help_open || s.mode != GameMode::TankBattle || s.tank.failed {
+        hold.keyboard_direction = None;
+        hold.keyboard_fire = false;
         return;
     }
-    let mut moved = false;
-    for (key, dx, dy) in [
-        (KeyCode::KeyW, 0, -1),
-        (KeyCode::ArrowUp, 0, -1),
-        (KeyCode::KeyS, 0, 1),
-        (KeyCode::ArrowDown, 0, 1),
-        (KeyCode::KeyA, -1, 0),
-        (KeyCode::ArrowLeft, -1, 0),
-        (KeyCode::KeyD, 1, 0),
-        (KeyCode::ArrowRight, 1, 0),
-    ] {
-        if keys.just_pressed(key) {
-            s.tank.move_player(dx, dy);
-            moved = true;
-            break;
-        }
-    }
-    if keys.just_pressed(KeyCode::Space) || keys.just_pressed(KeyCode::KeyJ) {
-        s.tank.fire();
-        moved = true;
-    }
-    if moved {
-        s.ui_dirty = true;
-    }
+    let bindings = [
+        ([KeyCode::KeyW, KeyCode::ArrowUp], (0, -1)),
+        ([KeyCode::KeyS, KeyCode::ArrowDown], (0, 1)),
+        ([KeyCode::KeyA, KeyCode::ArrowLeft], (-1, 0)),
+        ([KeyCode::KeyD, KeyCode::ArrowRight], (1, 0)),
+    ];
+    // A newly pressed direction takes priority. Keep it while held, then
+    // resume another held direction when that key is released.
+    hold.keyboard_direction = bindings
+        .iter()
+        .find(|(pair, _)| pair.iter().any(|key| keys.just_pressed(*key)))
+        .or_else(|| {
+            bindings.iter().find(|(pair, direction)| {
+                Some(*direction) == hold.keyboard_direction
+                    && pair.iter().any(|key| keys.pressed(*key))
+            })
+        })
+        .or_else(|| {
+            bindings
+                .iter()
+                .find(|(pair, _)| pair.iter().any(|key| keys.pressed(*key)))
+        })
+        .map(|(_, direction)| *direction);
+    hold.keyboard_fire = keys.pressed(KeyCode::Space) || keys.pressed(KeyCode::KeyJ);
 }
 
-// Capture the finger, not a rebuilt UI button. A second finger can fire.
+// Capture each control's finger so UI rebuilding and a second finger never
+// interrupt a held direction or shot. Both keyboard and touch use one cadence.
 fn tank_touch_hold(
     time: Res<Time>,
     mouse: Res<ButtonInput<MouseButton>>,
@@ -7756,74 +7916,83 @@ fn tank_touch_hold(
         return;
     }
     let Ok(window) = windows.single() else {
+        *hold = TankHold::default();
         return;
     };
+    if !window.focused {
+        *hold = TankHold::default();
+        return;
+    }
     let physical = |point: Vec2| point * window.scale_factor();
-    let mut firing = false;
+    // Touch-generated mouse events must not acquire the same controls twice.
+    let use_mouse = touches.iter().next().is_none()
+        && touches.iter_just_released().next().is_none()
+        && touches.iter_just_canceled().next().is_none();
+    let pointer_point = |pointer: Option<Option<u64>>| match pointer {
+        Some(Some(id)) => touches.get_pressed(id).map(|t| physical(t.position())),
+        Some(None) if use_mouse && mouse.pressed(MouseButton::Left) => {
+            window.cursor_position().map(physical)
+        }
+        _ => None,
+    };
+    if pointer_point(hold.pointer).is_none() {
+        hold.pointer = None;
+    }
+    if pointer_point(hold.fire_pointer).is_none() {
+        hold.fire_pointer = None;
+    }
     for (node, transform, stick, fire) in &controls {
         if stick.is_none() && fire.is_none() {
             continue;
         }
         let center = transform.translation().truncate();
         let radius = node.size().x.min(node.size().y) / 2.;
-        let inside = |point: Vec2| physical(point).distance(center) <= radius;
-        if stick.is_some() && hold.pointer.is_none() {
-            let touch = touches.iter_just_pressed().find(|t| inside(t.position()));
-            let pointer = touch.map(|t| Some(t.id())).or_else(|| {
-                (mouse.just_pressed(MouseButton::Left)
-                    && window.cursor_position().is_some_and(inside))
-                .then_some(None)
-            });
-            if let Some(pointer) = pointer {
-                hold.pointer = Some(pointer);
-                hold.center = center;
-                hold.radius = radius;
-            }
+        if radius <= 0. {
+            continue;
         }
-        if fire.is_some() {
-            firing = touches
-                .iter()
-                .any(|t| hold.pointer != Some(Some(t.id())) && inside(t.position()))
-                || (hold.pointer != Some(None)
-                    && mouse.pressed(MouseButton::Left)
-                    && window.cursor_position().is_some_and(inside));
+        let inside = |point: Vec2| physical(point).distance(center) <= radius;
+        let occupied = if stick.is_some() {
+            hold.fire_pointer
+        } else {
+            hold.pointer
+        };
+        let touch = touches
+            .iter_just_pressed()
+            .find(|t| occupied != Some(Some(t.id())) && inside(t.position()));
+        let pressed = touch.map(|t| Some(t.id())).or_else(|| {
+            (use_mouse
+                && occupied != Some(None)
+                && mouse.just_pressed(MouseButton::Left)
+                && window.cursor_position().is_some_and(inside))
+            .then_some(None)
+        });
+        if stick.is_some() {
+            if hold.pointer.is_none() {
+                hold.pointer = pressed;
+            }
+            // Refresh the geometry during a resize without losing the finger.
+            hold.center = center;
+            hold.radius = radius;
+        }
+        if fire.is_some() && hold.fire_pointer.is_none() {
+            hold.fire_pointer = pressed;
         }
     }
-    let point = match hold.pointer {
-        Some(Some(id)) => touches.get_pressed(id).map(|t| physical(t.position())),
-        Some(None) if mouse.pressed(MouseButton::Left) => window.cursor_position().map(physical),
-        _ => None,
-    };
-    let direction = if let Some(point) = point {
+    let stick_direction = if let Some(point) = pointer_point(hold.pointer) {
         let delta = point - hold.center;
         hold.knob = delta.clamp_length_max(hold.radius * 0.6) / hold.radius.max(1.);
-        tank_stick_direction(delta, hold.radius)
+        tank_stick_direction(delta, hold.radius, hold.direction)
     } else {
-        hold.pointer = None;
         hold.knob = Vec2::ZERO;
         None
     };
-    if let Some(direction) = direction {
-        hold.repeat_in -= time.delta_secs();
-        if hold.direction != Some(direction) || hold.repeat_in <= 0. {
-            s.tank.move_player(direction.0, direction.1);
-            hold.repeat_in = 0.18;
-            s.ui_dirty = true;
-        }
-    } else {
-        hold.repeat_in = 0.;
-    }
-    hold.direction = direction;
-    hold.fire_in = (hold.fire_in - time.delta_secs()).max(0.);
-    if firing && hold.fire_in <= 0. {
-        s.tank.fire();
-        hold.fire_in = 0.30;
+    let direction = stick_direction.or(hold.keyboard_direction);
+    let firing = pointer_point(hold.fire_pointer).is_some() || hold.keyboard_fire;
+    if hold.drive(&mut s.tank, direction, firing, time.delta_secs()) {
         s.ui_dirty = true;
     }
-    if !firing {
-        hold.fire_in = 0.;
-    }
 }
+
 fn animate_tank_stick(hold: Res<TankHold>, mut knobs: Query<&mut Node, With<TankKnob>>) {
     for mut node in &mut knobs {
         node.left = Val::Percent(32. + hold.knob.x * 50.);
@@ -8422,6 +8591,23 @@ fn buttons(
             continue;
         }
         match *action {
+            Action::CloudWalk(a) => {
+                if s.mode == GameMode::CloudBridge {
+                    cloud_action(&mut s, a);
+                    s.ui_dirty = true;
+                    if !matches!(a, CloudAction::Move(..)) || s.cloud_walk.won {
+                        persist_cloud_walk(&mut s);
+                    }
+                }
+                break;
+            },
+            Action::Puzzle(a) => { if builder_mode(&s) { puzzle_action(&mut s,a); s.ui_dirty=true; persist_puzzle(&mut s); } break; },
+            Action::GoldToggle => s.gold_runner.toggle(),
+            Action::GoldReset => s.gold_runner.reset(),
+            Action::GoldNext => s.gold_runner.next(),
+            Action::DescentStart => s.descent.start(),
+            Action::DescentToggle => s.descent.toggle(),
+            Action::DescentEndless => s.descent.continue_endless(),
             Action::Help => s.help_open = true,
             Action::CloseHelp => s.help_open = false,
             Action::MathTools => s.math_tools = !s.math_tools,
@@ -9171,7 +9357,7 @@ fn buttons(
             }
             Action::Add(op) => {
                 s.edit_program();
-                let limit = if s.mode == GameMode::Island { 8 } else { 16 };
+                let limit = 16;
                 if s.work.program.len() < limit {
                     s.work.program.push(op);
                 } else {
@@ -9203,6 +9389,16 @@ fn buttons(
                 s.edit_program();
                 s.work.repeat = s.work.repeat % 8 + 1;
             }
+            Action::RepeatDelta(delta) => {
+                s.edit_program();
+                s.work.repeat=(s.work.repeat as i32+delta as i32).clamp(1,8) as usize;
+            }
+            Action::BuilderLevel(level) => {
+                if s.mode==GameMode::Island && level<6 {
+                    s.reset_run();s.work.choose_level(level);s.build=true;s.island_3d_view=false;
+                    s.undo.clear();s.world_dirty=true;s.message=game::LEVEL_HINTS[level].into();
+                }
+            }
             Action::Save => {
                 s.message = if matches!(s.mode, GameMode::Island | GameMode::FreeBuild) {
                     "已保存到这台设备，下次打开可以继续。".into()
@@ -9225,7 +9421,7 @@ fn buttons(
                     );
                 } else {
                     s.work = s.save.profiles[&i].clone();
-                    s.island_3d_view = !island_base_intact(&s.work);
+                    s.island_3d_view = false;
                     s.runner = None;
                     s.undo.clear();
                     s.world_dirty = true;
@@ -9408,6 +9604,7 @@ fn world_input(
     scale: Res<UiScale>,
     blockers: Query<(&ComputedNode, &GlobalTransform), Or<(With<WorldInputBlocker>, With<Button>)>>,
 ) {
+    if builder_mode(&s) { *g=Gesture::default(); wheels.clear(); return; }
     let Ok(window) = windows.single() else {
         return;
     };
@@ -9438,9 +9635,15 @@ fn world_input(
         .first()
         .map(|t| t.position())
         .or_else(|| window.cursor_position());
+    let illustrated_builder=builder_illustrated(&s);
+    let (builder_scale,builder_origin)=builder_canvas(window.width(),window.height());
+    let builder_rect=Rect::from_corners(builder_origin+Vec2::new(0.,104.)*builder_scale,builder_origin+Vec2::new(1450.,if s.build{780.}else{595.})*builder_scale);
     let in_world = |p: Vec2| {
         if blocked(p) {
             return false;
+        }
+        if illustrated_builder {
+            return builder_rect.contains(p);
         }
         cameras
             .single()
@@ -9516,11 +9719,13 @@ fn world_input(
     if !in_world(p) || !s.build {
         return;
     }
-    let Ok((camera, transform)) = cameras.single() else {
-        return;
-    };
-    let Ok(ray) = camera.viewport_to_world(transform, p) else {
-        return;
+    let ray=if builder_illustrated(&s) {
+        let Some(ray)=builder_pointer_to_world(&s,p,window.width(),window.height()) else{return;};
+        ray
+    } else {
+        let Ok((camera,transform))=cameras.single() else{return;};
+        let Ok(ray)=camera.viewport_to_world(transform,p) else{return;};
+        ray
     };
     let mut best: Option<(f32, [i32; 3], Vec3)> = None;
     for b in &s.work.world.blocks {
@@ -9555,7 +9760,7 @@ fn world_input(
     let before = s.work.world.clone();
     let material = s.material;
     let erase = s.erase;
-    let erased_illustrated_ground = matches!(s.mode, GameMode::Island | GameMode::FreeBuild)
+    let erased_illustrated_ground = !builder_illustrated(&s) && matches!(s.mode, GameMode::Island | GameMode::FreeBuild)
         && !s.island_3d_view
         && erase
         && pos[1] == 0
@@ -9656,7 +9861,7 @@ fn update_builder_preview(
     let Ok((mut transform, mut visibility)) = preview.single_mut() else {
         return;
     };
-    if !matches!(s.mode, GameMode::Island | GameMode::FreeBuild) || !s.build || s.erase {
+    if builder_illustrated(&s) || !matches!(s.mode, GameMode::Island | GameMode::FreeBuild) || !s.build || s.erase {
         *visibility = Visibility::Hidden;
         return;
     }
@@ -9738,7 +9943,7 @@ fn update_builder_preview(
     let character_tile = target[1] == 0
         && ([target[0], target[2]] == s.work.world.robot
             || [target[0], target[2]] == s.work.world.goal);
-    let valid = game::World::in_bounds(target)
+    let valid = game::World::compact_bounds(target)
         && s.work.world.material(target).is_none()
         && (target[1] == 0 || connected)
         && !character_tile;
@@ -10159,6 +10364,10 @@ fn panel(left: Val, right: Val, top: Val, bottom: Val, width: Val) -> Node {
 }
 fn rebuild_ui(
     mut commands: Commands,
+    descent_art: Res<DescentArt>,
+    gold_art: Res<GoldArt>,
+    forest_art: Res<ForestArt>,
+    forest: Res<ForestTrain>,
     mut s: ResMut<Session>,
     art: Res<Art>,
     roots: Query<Entity, With<UiRoot>>,
@@ -10174,6 +10383,18 @@ fn rebuild_ui(
     }
     if s.library_open {
         library_ui(&mut commands, &s, &art, layout.compact);
+        return;
+    }
+    if s.mode == GameMode::ForestTrain {
+        forest_ui(&mut commands, &forest, &art, &forest_art, layout.width / ui_scale.0, layout.height / ui_scale.0);
+        return;
+    }
+    if s.mode == GameMode::GoldRunner {
+        gold_ui(&mut commands, &s, &art, &gold_art, layout.width / ui_scale.0, layout.height / ui_scale.0);
+        return;
+    }
+    if s.mode == GameMode::Descent {
+        descent_ui(&mut commands, &s, &art, &descent_art, layout.width / ui_scale.0, layout.height / ui_scale.0);
         return;
     }
     if s.magnet_modes_open {
@@ -10345,8 +10566,8 @@ fn rebuild_ui(
             &s,
             &art,
             layout.compact,
-            layout.width,
-            layout.height,
+            layout.width / ui_scale.0,
+            layout.height / ui_scale.0,
         );
         return;
     }
@@ -10450,12 +10671,12 @@ fn rebuild_ui(
         free_build_ui(&mut commands, &s, &art, layout.compact);
         return;
     }
-    if s.mode == GameMode::Island && layout.compact {
-        island_compact_ui(&mut commands, &s, &art);
+    if s.mode == GameMode::Island {
+        builder_ui(&mut commands,&s,&art,layout.width/ui_scale.0,layout.height/ui_scale.0);
         return;
     }
     if s.mode == GameMode::CloudBridge {
-        cloud_bridge_ui(&mut commands, &s, &art, layout.compact);
+        builder_ui(&mut commands,&s,&art,layout.width/ui_scale.0,layout.height/ui_scale.0);
         return;
     }
     if layout.compact {
@@ -10470,7 +10691,6 @@ fn cloud_bridge_ui(commands: &mut Commands, s: &Session, art: &Art, compact: boo
     let muted = Color::srgb(0.38, 0.49, 0.58);
     let paper = Color::srgba(1.0, 0.98, 0.91, 0.97);
     let soft = Color::srgb(0.88, 0.94, 0.98);
-    let blue = Color::srgb(0.20, 0.54, 0.91);
     let green = Color::srgb(0.09, 0.73, 0.31);
     let running = s.runner.as_ref().is_some_and(|runner| runner.running);
     let rail_width = if compact { 104. } else { 126. };
@@ -10762,6 +10982,7 @@ fn cloud_bridge_ui(commands: &mut Commands, s: &Session, art: &Art, compact: boo
                     height: Val::Px(dock_height),
                     padding: UiRect::all(Val::Px(if compact { 9. } else { 13. })),
                     flex_direction: FlexDirection::Column,
+                    justify_content: JustifyContent::SpaceBetween,
                     row_gap: Val::Px(8.),
                     ..default()
                 },
@@ -10770,191 +10991,61 @@ fn cloud_bridge_ui(commands: &mut Commands, s: &Session, art: &Art, compact: boo
             ))
             .with_children(|dock| {
                 dock.spawn(Node {
-                    width: Val::Percent(100.),
+                    width: Val::Percent(100.), height: Val::Px(28.),
                     align_items: AlignItems::Center,
-                    justify_content: JustifyContent::SpaceBetween,
-                    ..row()
-                })
-                .with_children(|heading| {
-                    label(
-                        heading,
-                        art,
-                        if s.build {
-                            "搭建云桥"
-                        } else {
-                            "编排机器人的行动"
-                        },
-                        if compact { 17. } else { 20. },
-                        ink,
-                    );
-                    label(
-                        heading,
-                        art,
-                        if s.build {
-                            "选材料后点空位搭桥"
-                        } else if s.work.program.is_empty() {
-                            "选择行动卡片，规划过桥路线"
-                        } else {
-                            "点已放入的卡片可移除"
-                        },
-                        if compact { 12. } else { 14. },
-                        muted,
-                    );
+                    justify_content: JustifyContent::SpaceBetween, ..row()
+                }).with_children(|heading| {
+                    label(heading, art, if s.build { "搭建云桥" } else { "编排机器人的行动" }, if compact {17.} else {20.}, ink);
                     if s.build {
-                        button(heading, art, "拆除", Action::Erase, 70., 36., soft, ink);
-                        button(heading, art, "撤销", Action::Undo, 70., 36., soft, ink);
-                    } else {
-                        button(heading, art, "清空", Action::Clear, 70., 36., soft, ink);
-                    }
+                        button(heading, art, "拆除", Action::Erase, 70., 28., soft, ink);
+                        button(heading, art, "撤销", Action::Undo, 70., 28., soft, ink);
+                    } else {button(heading, art, "清空", Action::Clear, 62., 28., soft, ink);}
                 });
-                dock.spawn(Node {
-                    width: Val::Percent(100.),
-                    flex_grow: 1.,
-                    align_items: AlignItems::Center,
-                    column_gap: Val::Px(7.),
-                    overflow: Overflow::clip_x(),
-                    ..row()
-                })
-                .with_children(|controls| {
-                    if s.build {
-                        button(
-                            controls,
-                            art,
-                            "切换编程模式",
-                            Action::Code,
-                            170.,
-                            if compact { 58. } else { 70. },
-                            soft,
-                            ink,
-                        );
-                        label(controls, art, &s.message, 14., muted);
-                    } else {
-                        for (index, instruction) in s.work.program.iter().copied().enumerate() {
-                            let (icon, title, color, accent) = match instruction {
-                                Instruction::Place => (
-                                    "+",
-                                    "放木块",
-                                    Color::srgb(1.0, 0.92, 0.75),
-                                    Color::srgb(0.76, 0.42, 0.12),
-                                ),
-                                Instruction::Forward => {
-                                    ("↑", "前进", Color::srgb(0.82, 0.92, 1.0), blue)
-                                }
-                                Instruction::Left => {
-                                    ("↶", "左转", Color::srgb(0.83, 0.96, 0.86), green)
-                                }
-                                Instruction::Right => (
-                                    "↷",
-                                    "右转",
-                                    Color::srgb(1.0, 0.86, 0.86),
-                                    Color::srgb(0.84, 0.22, 0.25),
-                                ),
-                                Instruction::Back => (
-                                    "↓",
-                                    "后退",
-                                    Color::srgb(0.90, 0.88, 1.0),
-                                    Color::srgb(0.42, 0.38, 0.78),
-                                ),
-                                Instruction::Jump => (
-                                    "↟",
-                                    "跳跃",
-                                    Color::srgb(1.0, 0.88, 0.63),
-                                    Color::srgb(0.82, 0.51, 0.10),
-                                ),
-                                Instruction::Wait => {
-                                    ("Ⅱ", "停留", Color::srgb(0.90, 0.93, 0.95), muted)
-                                }
-                            };
-                            button(
-                                controls,
-                                art,
-                                format!("{icon} {title} ×"),
-                                Action::Remove(index),
-                                if compact { 88. } else { 106. },
-                                if compact { 56. } else { 68. },
-                                color,
-                                accent,
-                            );
-                        }
-                        if s.work.program.is_empty() {
-                            for _ in 0..3 {
-                                controls
-                                    .spawn((
-                                        Node {
-                                            width: Val::Px(if compact { 70. } else { 92. }),
-                                            height: Val::Px(if compact { 56. } else { 68. }),
-                                            border: UiRect::all(Val::Px(1.)),
-                                            align_items: AlignItems::Center,
-                                            justify_content: JustifyContent::Center,
-                                            ..default()
-                                        },
-                                        BorderColor(Color::srgb(0.86, 0.87, 0.84)),
-                                        BorderRadius::all(Val::Px(14.)),
-                                        BackgroundColor(Color::srgb(0.98, 0.96, 0.90)),
-                                    ))
-                                    .with_children(|slot| label(slot, art, "+", 27., muted));
+                if s.build {
+                    dock.spawn(Node {width:Val::Percent(100.),flex_grow:1.,align_items:AlignItems::Center,column_gap:Val::Px(10.),..row()}).with_children(|controls| {
+                        button(controls,art,"切换编程模式",Action::Code,170.,58.,soft,ink);
+                        label(controls,art,&s.message,14.,muted);
+                    });
+                } else {
+                    dock.spawn(Node {width:Val::Percent(100.),height:Val::Px(42.),min_height:Val::Px(42.),column_gap:Val::Px(6.),..row()}).with_children(|sequence| {
+                        for index in 0..s.work.program.len().max(8) {
+                            if let Some(instruction)=s.work.program.get(index).copied() {
+                                let (title,color)=cloud_command_style(instruction);
+                                let accent=match instruction {Instruction::Place=>Color::srgb(0.76,0.42,0.12),Instruction::Forward=>Color::srgb(0.20,0.54,0.91),_=>ink};
+                                cloud_action_tile(sequence,art,format!("{title} ×"),Action::Remove(index),color,accent,42.,1.,if s.work.program.len()>8 {10.}else{15.});
+                            } else {
+                                sequence.spawn((Node {flex_basis:Val::Px(0.),flex_grow:1.,min_width:Val::Px(0.),height:Val::Percent(100.),border:UiRect::all(Val::Px(1.)),..default()},BorderColor(Color::srgb(0.84,0.86,0.82)),BorderRadius::all(Val::Px(9.))));
                             }
                         }
-                        for (instruction, icon, title, color) in [
-                            (
-                                Instruction::Place,
-                                "+",
-                                "放木块",
-                                Color::srgb(1.0, 0.92, 0.75),
-                            ),
-                            (
-                                Instruction::Forward,
-                                "↑",
-                                "前进",
-                                Color::srgb(0.82, 0.92, 1.0),
-                            ),
-                            (
-                                Instruction::Left,
-                                "↶",
-                                "左转",
-                                Color::srgb(0.83, 0.96, 0.86),
-                            ),
-                            (
-                                Instruction::Right,
-                                "↷",
-                                "右转",
-                                Color::srgb(1.0, 0.86, 0.86),
-                            ),
-                            (Instruction::Back, "↓", "后退", Color::srgb(0.90, 0.88, 1.0)),
-                            (Instruction::Jump, "↟", "跳跃", Color::srgb(1.0, 0.88, 0.63)),
-                            (
-                                Instruction::Wait,
-                                "Ⅱ",
-                                "停留",
-                                Color::srgb(0.90, 0.93, 0.95),
-                            ),
-                        ] {
-                            button(
-                                controls,
-                                art,
-                                format!("{icon} {title}"),
-                                Action::Add(instruction),
-                                if compact { 72. } else { 82. },
-                                if compact { 56. } else { 68. },
-                                color,
-                                ink,
-                            );
+                    });
+                    dock.spawn(Node {width:Val::Percent(100.),height:Val::Px(48.),min_height:Val::Px(48.),column_gap:Val::Px(6.),..row()}).with_children(|controls| {
+                        for instruction in [Instruction::Place,Instruction::Forward,Instruction::Left,Instruction::Right,Instruction::Back,Instruction::Jump,Instruction::Wait] {
+                            let (title,color)=cloud_command_style(instruction);
+                            cloud_action_tile(controls,art,title,Action::Add(instruction),color,ink,48.,1.,15.);
                         }
-                        controls.spawn(Node {
-                            flex_grow: 1.,
-                            ..default()
-                        });
-                        island_run_button(
-                            controls,
-                            art,
-                            running,
-                            if compact { 120. } else { 154. },
-                            if compact { 58. } else { 70. },
-                        );
-                    }
-                });
+                        cloud_action_tile(controls,art,if running {"Ⅱ 暂停"} else {"▶ 运行"},Action::Run,green,Color::WHITE,48.,1.3,15.);
+                    });
+                }
             });
         });
+}
+
+fn cloud_command_style(instruction:Instruction)->(&'static str,Color) {
+    match instruction {
+        Instruction::Place=>("+ 放木块",Color::srgb(1.,0.92,0.75)),
+        Instruction::Forward=>("↑ 前进",Color::srgb(0.82,0.92,1.)),
+        Instruction::Left=>("左转",Color::srgb(0.83,0.96,0.86)),
+        Instruction::Right=>("右转",Color::srgb(1.,0.86,0.86)),
+        Instruction::Back=>("↓ 后退",Color::srgb(0.90,0.88,1.)),
+        Instruction::Jump=>("跳跃",Color::srgb(1.,0.88,0.63)),
+        Instruction::Wait=>("Ⅱ 停留",Color::srgb(0.90,0.93,0.95)),
+    }
+}
+fn cloud_action_tile(parent:&mut ChildSpawnerCommands,art:&Art,title:impl Into<String>,action:Action,bg:Color,fg:Color,height:f32,grow:f32,font_size:f32) {
+    parent.spawn((Button,action,ButtonTone(bg),Node {
+        flex_basis:Val::Px(0.),flex_grow:grow,min_width:Val::Px(0.),height:Val::Px(height),
+        align_items:AlignItems::Center,justify_content:JustifyContent::Center,..default()
+    },BackgroundColor(bg),BorderRadius::all(Val::Px(10.)))).with_children(|p|label(p,art,title,font_size,fg));
 }
 
 fn magnet_ui(commands: &mut Commands, s: &Session, art: &Art) {
@@ -13416,7 +13507,7 @@ mod tests {
             let mut keys = ButtonInput::<KeyCode>::default();
             keys.press(KeyCode::KeyD);
             keys.press(KeyCode::Space);
-            app.insert_resource(time).insert_resource(keys);
+            app.insert_resource(time).insert_resource(keys).init_resource::<TankHold>();
             let mut s = Session::new();
             s.mode = mode;
             s.help_open = true;
@@ -18648,7 +18739,7 @@ fn bomber_ui_compact(
                     ..row()
                 })
                 .with_children(|p| {
-                    for i in 0..5 {
+                    for i in 0..3 {
                         label(
                             p,
                             art,
@@ -21434,6 +21525,15 @@ fn library_icon(parent: &mut ChildSpawnerCommands, art: &Art, mode: GameMode) {
             let white = Color::WHITE;
             let pale = Color::srgba(1., 1., 1., 0.65);
             match mode {
+                GameMode::ForestTrain => {
+                    icon.spawn((Node { width: Val::Px(72.), height: Val::Px(72.), ..default() }, ImageNode { image: art.forest_icon.clone(), rect: Some(Rect::new(74., 287., 302., 415.)), ..default() }));
+                }
+                GameMode::GoldRunner => {
+                    icon.spawn((Node {width: Val::Px(72.),height: Val::Px(72.),..default()}, ImageNode {image: art.gold_icon.clone(),rect: Some(Rect::new(58.,447.,249.,650.)),..default()}));
+                }
+                GameMode::Descent => {
+                    icon.spawn((Node {width: Val::Px(72.),height: Val::Px(72.),..default()}, ImageNode {image: art.descent_icon.clone(),rect: Some(Rect::new(52.,679.,262.,879.)),..default()}));
+                }
                 GameMode::Island => {
                     block(icon, 12., 39., 25., 21., 3., white);
                     block(icon, 39., 39., 21., 21., 3., pale);
@@ -21710,6 +21810,9 @@ fn library_ui(commands: &mut Commands, _s: &Session, art: &Art, compact: bool) {
             root.spawn((cards, ScrollPosition::default(), LibraryCards))
                 .with_children(|p| {
                     for (mode, color) in [
+                        (GameMode::ForestTrain, Color::srgb(0.33, 0.54, 0.22)),
+                        (GameMode::GoldRunner, Color::srgb(0.64, 0.39, 0.12)),
+                        (GameMode::Descent, Color::srgb(0.25, 0.36, 0.44)),
                         (GameMode::GardenDefense, Color::srgb(0.34, 0.57, 0.20)),
                         (GameMode::Island, Color::srgb(0.28, 0.62, 0.59)),
                         (GameMode::Ball2048, Color::srgb(0.89, 0.47, 0.25)),
@@ -22049,7 +22152,8 @@ mod library_gesture_tests {
 fn game_wants_portrait(mode: GameMode, library_open: bool) -> bool {
     matches!(
         mode,
-        GameMode::SkyRaid
+        GameMode::Descent
+            | GameMode::SkyRaid
             | GameMode::Ball2048
             | GameMode::Tetris
             | GameMode::MoonFestival
@@ -22068,7 +22172,7 @@ fn sync_game_orientation(
     let portrait = game_wants_portrait(s.mode, s.library_open);
     let game_wide = matches!(
         s.mode,
-        GameMode::TankBattle | GameMode::Firefighters | GameMode::Detective | GameMode::SpaceFarm
+        GameMode::ForestTrain | GameMode::TankBattle | GameMode::Firefighters | GameMode::Detective | GameMode::SpaceFarm
     ) && !s.library_open;
     if *applied == Some((portrait, game_wide)) {
         return;
@@ -22104,6 +22208,8 @@ fn sync_game_orientation(
             let (width, height) = if portrait {
                 if phone_preview {
                     (540., 960.)
+                } else if s.mode == GameMode::Descent {
+                    (600., 900.)
                 } else {
                     (560., 900.)
                 }
@@ -22124,6 +22230,8 @@ mod orientation_tests {
     use super::*;
     #[test]
     fn portrait_games_request_portrait_and_library_restores_landscape() {
+        assert!(game_wants_portrait(GameMode::Descent, false));
+        assert!(!game_wants_portrait(GameMode::Descent, true));
         assert!(game_wants_portrait(GameMode::SkyRaid, false));
         assert!(game_wants_portrait(GameMode::Ball2048, false));
         assert!(game_wants_portrait(GameMode::Tetris, false));
@@ -22172,19 +22280,23 @@ mod orientation_tests {
 }
 
 #[cfg(test)]
+#[path = "tank_controls_tests.rs"]
+mod tank_controls_tests;
+
+#[cfg(test)]
 mod tank_stick_tests {
     use super::*;
     #[test]
     fn dead_zone_and_four_directions() {
-        assert_eq!(tank_stick_direction(Vec2::new(5., 8.), 90.), None);
+        assert_eq!(tank_stick_direction(Vec2::new(5., 8.), 90., None), None);
         for (point, expected) in [
             (Vec2::new(70., 20.), (1, 0)),
             (Vec2::new(-70., 20.), (-1, 0)),
             (Vec2::new(20., -70.), (0, -1)),
             (Vec2::new(20., 70.), (0, 1)),
         ] {
-            assert_eq!(tank_stick_direction(point, 90.), Some(expected));
-            assert_eq!(tank_stick_direction(point * 3., 90.), Some(expected));
+            assert_eq!(tank_stick_direction(point, 90., None), Some(expected));
+            assert_eq!(tank_stick_direction(point * 3., 90., None), Some(expected));
         }
     }
 }
