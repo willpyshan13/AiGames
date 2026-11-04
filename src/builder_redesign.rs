@@ -56,20 +56,20 @@ pub(super) struct BuilderArt {
     scenery: Handle<Image>,
 }
 pub(super) fn load_builder_art(server: &AssetServer) -> BuilderArt {
-    let image = |name: &str| {
+    let image = |path: &str| {
         server.load_with_settings(
-            image_asset_path(&format!("builders/redesign-v1/{name}.png")),
+            image_asset_path(path),
             |s: &mut bevy::image::ImageLoaderSettings| {
                 s.sampler = bevy::image::ImageSampler::linear()
             },
         )
     };
     BuilderArt {
-        cloud: image("cloud-background"),
-        island: image("island-background"),
-        tiles: image("tiles"),
-        frames: image("frames"),
-        scenery: image("scenery"),
+        cloud: image("builders/redesign-v1/cloud-background.png"),
+        island: image("builders/redesign-v1/island-background.png"),
+        tiles: image("builders/redesign-v1/tiles.png"),
+        frames: image("builders/redesign-v1/frames.png"),
+        scenery: image("builders/redesign-v1/scenery.png"),
     }
 }
 pub(super) fn builder_mode(s: &Session) -> bool {

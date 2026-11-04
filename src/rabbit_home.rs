@@ -246,7 +246,7 @@ impl RabbitHomeGame {
             cleared: [false; MAX_HAZARDS],
             jump_left: 0.,
             jump_buffer: 0.,
-            jump_forward_speed: 18.,
+            jump_forward_speed: 22.,
             invulnerable: 0.,
             outcome: None,
             walk_clock: 0.,
@@ -260,7 +260,7 @@ impl RabbitHomeGame {
         let stage_bonus = ((self.level.saturating_sub(1) / 2) as f32 * 0.30).min(1.2);
         let ground_speed = match direction {
             -1 => 2.3,
-            1 => 10.5,
+            1 => 17.5,
             _ => 5.5,
         } + stage_bonus;
         // All platforms use the long course's river width and jump distance.
@@ -279,7 +279,7 @@ impl RabbitHomeGame {
                 1.
             };
         let next = (self.position + step).min(GOAL_X);
-        self.walk_clock += dt.min(0.05) * ground_speed.min(6.4) / 6.4;
+        self.walk_clock += dt.min(0.05) * ground_speed / 6.4;
         let mut changed = false;
 
         let jump_height = self.jump_height();
@@ -593,7 +593,7 @@ impl RabbitHomeGame {
         self.cleared = [false; MAX_HAZARDS];
         self.jump_left = 0.;
         self.jump_buffer = 0.;
-        self.jump_forward_speed = 18.;
+        self.jump_forward_speed = 22.;
         self.invulnerable = 0.;
         self.outcome = None;
         self.walk_clock = 0.;
@@ -636,7 +636,7 @@ mod tests {
                 assert_eq!(game.combo, game.hazards().len() as u8);
                 eprintln!("LONG_COURSE level={level} direction={direction} seconds={elapsed:.1}");
                 assert!(game.collected_count() > 90);
-                assert!((140. ..380.).contains(&elapsed), "duration={elapsed}");
+                assert!((85. ..380.).contains(&elapsed), "duration={elapsed}");
                 assert_eq!(game.camera_x(), 2000.);
                 game.next();
                 assert_eq!(game.level, (level + 1).min(10));
@@ -794,7 +794,7 @@ mod tests {
             fast.move_player(1, 1. / 60.);
         }
         assert!((normal.position - 15.5).abs() < 0.01);
-        assert!((fast.position - 20.5).abs() < 0.01);
+        assert!((fast.position - 27.5).abs() < 0.01);
     }
     #[test]
     fn animation_queries_are_disjoint() {

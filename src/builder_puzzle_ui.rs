@@ -169,19 +169,19 @@ pub(super) struct PuzzleArt {
     frames: Handle<Image>,
 }
 pub(super) fn load_puzzle_art(server: &AssetServer) -> PuzzleArt {
-    let load = |name: &str| {
+    let load = |path: &str| {
         server.load_with_settings(
-            image_asset_path(&format!("builders/puzzle-v2/{name}.png")),
+            image_asset_path(path),
             |settings: &mut bevy::image::ImageLoaderSettings| {
                 settings.sampler = bevy::image::ImageSampler::linear()
             },
         )
     };
     PuzzleArt {
-        cloud: load("cloud-scene"),
-        island: load("island-scene"),
-        actors: load("actors"),
-        frames: load("frames"),
+        cloud: load("builders/puzzle-v2/cloud-scene.png"),
+        island: load("builders/puzzle-v2/island-scene.png"),
+        actors: load("builders/puzzle-v2/actors.png"),
+        frames: load("builders/puzzle-v2/frames.png"),
     }
 }
 #[derive(Component)]

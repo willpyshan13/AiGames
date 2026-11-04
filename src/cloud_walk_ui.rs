@@ -22,9 +22,9 @@ pub(super) struct CloudArt {
 }
 pub(super) fn load_cloud_art(a: &AssetServer) -> CloudArt {
     CloudArt {
-        sky: a.load("builders/redesign-v1/cloud-background.png"),
-        island: a.load("builders/cloud-walk-v3/island.png"),
-        tiles: a.load("builders/cloud-walk-v3/tiles.png"),
+        sky: a.load(image_asset_path("builders/redesign-v1/cloud-background.png")),
+        island: a.load(image_asset_path("builders/cloud-walk-v3/island.png")),
+        tiles: a.load(image_asset_path("builders/cloud-walk-v3/tiles.png")),
     }
 }
 pub(super) fn load_cloud_walk() -> CloudWalk {
@@ -679,6 +679,7 @@ pub(super) fn cloud_walk_input(
     let mut step = key_first;
     if dir != hold.0 {
         *hold = (dir, 0.);
+        step |= dir.is_some();
     } else if dir.is_some() {
         hold.1 += time.delta_secs();
         if hold.1 >= 0.29 {

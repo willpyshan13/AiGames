@@ -294,8 +294,8 @@ pub(super) struct DescentArt {
 }
 pub(super) fn setup_descent(mut commands: Commands, assets: Res<AssetServer>) {
     commands.insert_resource(DescentArt {
-        background: assets.load("descent/mine-background.png"),
-        sheet: assets.load("descent/mine-atlas.png"),
+        background: assets.load(image_asset_path("descent/mine-background.png")),
+        sheet: assets.load(image_asset_path("descent/mine-atlas.png")),
     });
 }
 

@@ -669,9 +669,9 @@ pub(super) struct GoldArt {
 }
 pub(super) fn setup_gold(mut commands: Commands, assets: Res<AssetServer>) {
     commands.insert_resource(GoldArt {
-        background: assets.load("gold_runner/temple-background.png"),
-        atlas: assets.load("gold_runner/temple-atlas.png"),
-        reference: assets.load("gold_runner/approved.png"),
+        background: assets.load(image_asset_path("gold_runner/temple-background.png")),
+        atlas: assets.load(image_asset_path("gold_runner/temple-atlas.png")),
+        reference: assets.load(image_asset_path("gold_runner/approved.png")),
     });
 }
 

@@ -3628,7 +3628,8 @@ impl Session {
             mode: GameMode::Island,
             help_open: false,
             math_tools: false,
-            library_open: std::env::var_os("MAGNET_START_LIBRARY").is_some(),
+            library_open: std::env::var_os("MAGNET_START_LIBRARY").is_some()
+                || std::env::var_os("MAGNET_START_GAME").is_none(),
             magnet_modes_open: false,
             ball: BallGame::new(),
             tetris: load_tetris(),
@@ -5575,8 +5576,8 @@ fn setup(
         }),
         font: assets.load("fonts/NotoSansCJKsc-Medium.otf"),
         forest_icon: assets.load(image_asset_path("forest_train/approved.png")),
-        descent_icon: assets.load("descent/mine-atlas.png"),
-        gold_icon: assets.load("gold_runner/temple-atlas.png"),
+        descent_icon: assets.load(image_asset_path("descent/mine-atlas.png")),
+        gold_icon: assets.load(image_asset_path("gold_runner/temple-atlas.png")),
         mission_fire_approved: assets.load(image_asset_path("learning/fire-approved-v2.png")),
         mission_fire_steps: [
             assets.load(image_asset_path("learning/fire-step2-v2.png")),
@@ -5770,8 +5771,8 @@ fn setup(
             unlit: true,
             ..default()
         }),
-        snake_pixel: assets.load("snake/pixel-large-approved-v1.png"),
-        snake_gold: assets.load("snake/pixel-gold-apple-v1.png"),
+        snake_pixel: assets.load(image_asset_path("snake/pixel-large-approved-v1.png")),
+        snake_gold: assets.load(image_asset_path("snake/pixel-gold-apple-v1.png")),
         minesweeper_plate: assets.load_with_settings(
             image_asset_path("minesweeper/approved-plate-v1.png"),
             |settings: &mut bevy::image::ImageLoaderSettings| {
