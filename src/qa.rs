@@ -69,6 +69,7 @@ enum QaStep {
     VisualFit,
     Click(Action),
     Hold(Action,u32),
+    ReorderLibrary(GameMode, Option<GameMode>, bool),
     Optional(Action),
     Point(Area, Vec2, Vec2, u32),
     Keys(Vec<KeyCode>, u32),
@@ -93,6 +94,7 @@ struct Qa {
     steps: VecDeque<QaStep>,
     active: Option<QaStep>,
     point: Option<Vec2>,
+    drag_points: Option<(Vec2, Vec2)>,
     mode: Option<GameMode>,
     records: Vec<serde_json::Value>,
     root: PathBuf,
@@ -108,6 +110,33 @@ fn check(steps: &mut VecDeque<QaStep>, name: &'static str, f: fn(&Session) -> bo
 }
 fn scenario(s: &Session) -> VecDeque<QaStep> {
     use Action::*;
+    if let Some(run) = std::env::var_os("MAGNET_QA_LIBRARY_ORDER") {
+        let mut steps = VecDeque::from([QaStep::Wait(35)]);
+        if !s.library_open {
+            steps.extend([QaStep::Library, QaStep::Wait(15)]);
+        }
+        if run == "reload" {
+            check(&mut steps, "重启后保留排序", |s| {
+                s.library_open && LibraryOrder::load().0.first() == Some(&GameMode::Tetris)
+            });
+            click(&mut steps, SelectGame(GameMode::Tetris));
+            check(&mut steps, "轻点卡片打开游戏", |s| !s.library_open && s.mode == GameMode::Tetris);
+            return steps;
+        }
+        steps.push_back(QaStep::ReorderLibrary(GameMode::Tetris, Some(GameMode::ForestTrain), false));
+        check(&mut steps, "长按拖动，方块消消乐排到第一位", |s| {
+            s.library_open && LibraryOrder::load().0.first() == Some(&GameMode::Tetris)
+        });
+        steps.push_back(QaStep::Shot("library-reordered"));
+        steps.push_back(QaStep::ReorderLibrary(GameMode::ForestTrain, None, true));
+        check(&mut steps, "触摸拖到下边缘时自动滚动，可跨行移动", |s| {
+            let order = LibraryOrder::load();
+            s.library_open && order.0.first() == Some(&GameMode::Tetris)
+                && order.0.iter().position(|&mode| mode == GameMode::ForestTrain)
+                    .is_some_and(|index| index >= 12)
+        });
+        return steps;
+    }
     if s.mode==GameMode::ForestTrain{return forest_scenario();}
     if s.mode==GameMode::CloudBridge{return cloud_walk_scenario(s);}
     if builder_mode(s) {return puzzle_scenario(s);}
@@ -734,17 +763,28 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             click(&mut p, SudokuSize(4));
             click(&mut p, SudokuSelect(1));
             click(&mut p, SudokuDigit(1));
-            check(&mut p, "错误标记", |s| {
-                s.sudoku.is_wrong(1) && s.sudoku.mistakes == 1
+            check(&mut p, "未填满时不提示对错", |s| {
+                s.sudoku.cells[1] == 1 && !s.sudoku.failed
             });
             click(&mut p, SudokuClear);
             check(&mut p, "清除错误", |s| {
-                s.sudoku.cells[1] == 0 && s.sudoku.mistakes == 0
+                s.sudoku.cells[1] == 0 && !s.sudoku.failed
             });
             click(&mut p, SudokuHint);
             check(&mut p, "提示填入正确数字", |s| {
-                s.sudoku.cells[1] == 2 && !s.sudoku.is_wrong(1)
+                s.sudoku.cells[1] == 2 && !s.sudoku.failed
             });
+            for (cell, value) in [(2, 1), (4, 3), (6, 1), (9, 1), (11, 3), (13, 3), (14, 2)] {
+                click(&mut p, SudokuSelect(cell));
+                click(&mut p, SudokuDigit(value));
+            }
+            check(&mut p, "填满才验证整盘，不提示错格", |s| {
+                s.sudoku.failed && !s.sudoku.won
+                    && s.sudoku.progress_label() == "答案有误，请检查后重试"
+            });
+            click(&mut p, SudokuSelect(2));
+            click(&mut p, SudokuDigit(3));
+            check(&mut p, "修正后整盘验证通过", |s| s.sudoku.won && !s.sudoku.failed);
             click(&mut p, SudokuNew);
             check(&mut p, "更换题目", |s| {
                 s.sudoku.variant == 1 && s.sudoku.size == 4
@@ -760,7 +800,7 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             check(&mut p, "仅选格不会开始计时", |s| s.sudoku.elapsed.is_none());
             click(&mut p, SudokuDigit(4));
             check(&mut p, "数字键填入正确答案", |s| {
-                s.sudoku.cells[14] == 4 && !s.sudoku.is_wrong(14)
+                s.sudoku.cells[14] == 4 && !s.sudoku.failed
             });
             click(&mut p, SudokuClear);
             p.push_back(QaStep::Wait(35));
@@ -1066,6 +1106,7 @@ fn input(
     cameras: Query<(&Camera, &GlobalTransform), With<GameCamera>>,
     cards: Query<(&ComputedNode, &GlobalTransform), With<LibraryCards>>,
     mut wheels: EventWriter<MouseWheel>,
+    mut touch_events: EventWriter<bevy::input::touch::TouchInput>,
     mut mouse: ResMut<ButtonInput<MouseButton>>,
     mut keys: ResMut<ButtonInput<KeyCode>>,
 ) {
@@ -1085,6 +1126,7 @@ fn input(
             Some(
                 QaStep::Click(_)
                     | QaStep::Hold(..)
+                    | QaStep::ReorderLibrary(..)
                     | QaStep::Optional(_)
                     | QaStep::Point(..)
                     | QaStep::BuildCell
@@ -1126,6 +1168,31 @@ fn input(
                     mouse.press(MouseButton::Left);
                 }
             }
+            Some(QaStep::ReorderLibrary(_, _, touch)) => {
+                use bevy::input::touch::{TouchInput, TouchPhase};
+                if let Some((from, to)) = qa.drag_points {
+                    let frames = if touch { 96 } else { 36 };
+                    let frame = frames + 4 - qa.remaining;
+                    let point = from.lerp(to, (frame.saturating_sub(16) as f32 / 8.).min(1.));
+                    if touch && qa.remaining >= 4 {
+                        touch_events.write(TouchInput {
+                            phase: if frame == 0 { TouchPhase::Started }
+                                else if qa.remaining == 4 { TouchPhase::Ended }
+                                else { TouchPhase::Moved },
+                            position: point,
+                            force: None,
+                            id: 71,
+                            window: window_entity,
+                        });
+                    } else if !touch && qa.remaining >= 5 {
+                        window.set_cursor_position(Some(point));
+                        mouse.press(MouseButton::Left);
+                    } else if !touch && qa.remaining == 3 {
+                        let height = window.height();
+                        window.set_cursor_position(Some(Vec2::new(8., height - 8.)));
+                    }
+                }
+            }
             Some(QaStep::Point(area, from, to, frames)) if qa.remaining >= 5 => {
                 let t = 1. - (qa.remaining - 5) as f32 / frames.max(1) as f32;
                 if let Some(pos) = area_point(&surfaces, &window, area, from.lerp(to, t)) {
@@ -1164,6 +1231,24 @@ fn input(
             qa.active = Some(step);
         }
         QaStep::Hold(a,frames) => {if !available(a){qa.fail(&s,"长按按钮不可见");return;}qa.remaining=frames+5;qa.active=Some(step);}
+        QaStep::ReorderLibrary(source, destination, touch) => {
+            let from = action_point(&surfaces, &window, Action::SelectGame(source));
+            let to = if let Some(mode) = destination {
+                action_point(&surfaces, &window, Action::SelectGame(mode))
+            } else if let Ok((node, transform)) = cards.single() {
+                let bottom = (transform.translation().y + node.size().y / 2.) / window.scale_factor();
+                from.map(|point| Vec2::new(point.x, bottom - 12.))
+            } else {
+                None
+            };
+            let Some((from, to)) = from.zip(to) else {
+                qa.fail(&s, "找不到拖动卡片或目标位置");
+                return;
+            };
+            qa.drag_points = Some((from, to));
+            qa.remaining = if touch { 101 } else { 41 };
+            qa.active = Some(step);
+        }
         QaStep::Point(.., frames) => {
             qa.remaining = frames + 5;
             qa.active = Some(step);
@@ -1453,8 +1538,17 @@ fn observe(
     mut exit: EventWriter<bevy::app::AppExit>,
     s: Res<Session>,
 ) {
-    if let Some(QaStep::Shot(name)) = qa.active.clone() {
-        qa.active = None;
+    let shot = match qa.active {
+        Some(QaStep::Shot(name)) => {
+            qa.active = None;
+            Some(name)
+        }
+        Some(QaStep::ReorderLibrary(_, Some(_), false)) if qa.remaining == 12 => {
+            Some("library-dragging")
+        }
+        _ => None,
+    };
+    if let Some(name) = shot {
         commands
             .spawn(bevy::render::view::screenshot::Screenshot::primary_window())
             .observe(bevy::render::view::screenshot::save_to_disk(

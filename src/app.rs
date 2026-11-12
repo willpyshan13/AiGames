@@ -28,6 +28,9 @@ use fortune::*;
 #[path = "play_ui.rs"]
 mod play_ui;
 use play_ui::*;
+#[path = "library.rs"]
+mod library;
+use library::*;
 #[path = "storybook.rs"]
 mod storybook;
 use storybook::*;
@@ -100,7 +103,7 @@ const GARDEN_GREEN: Color = Color::srgb(0.37, 0.53, 0.22);
 const GARDEN_WOOD: Color = Color::srgb(0.35, 0.23, 0.12);
 const GARDEN_WOOD_EDGE: Color = Color::srgb(0.78, 0.59, 0.31);
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 enum GameMode {
     ForestTrain,
     GoldRunner,
@@ -4367,8 +4370,6 @@ struct GameCamera;
 #[derive(Component)]
 struct UiRoot;
 #[derive(Component)]
-struct LibraryCards;
-#[derive(Component)]
 struct ButtonTone(Color);
 #[derive(Component, Clone, Copy)]
 struct BallObstacleScene(usize, f32);
@@ -4574,55 +4575,6 @@ impl Gesture {
 #[derive(Component)]
 struct WorldInputBlocker;
 
-#[derive(Resource, Default)]
-struct LibraryDrag {
-    start: Option<Vec2>,
-    last: Vec2,
-    dragging: bool,
-    touch: Option<u64>,
-    in_list: bool,
-    pending_game: Option<GameMode>,
-}
-impl LibraryDrag {
-    fn begin(&mut self, point: Vec2, touch: Option<u64>, in_list: bool) {
-        *self = Self {
-            start: Some(point),
-            last: point,
-            touch,
-            in_list,
-            ..default()
-        };
-    }
-    fn move_to(&mut self, point: Vec2, scale: f32) -> f32 {
-        let Some(start) = self.start else {
-            return 0.;
-        };
-        let was_dragging = self.dragging;
-        if point.distance(start) / scale.max(0.01) >= 8. {
-            self.dragging = true;
-            self.pending_game = None;
-        }
-        let previous = if was_dragging { self.last } else { start };
-        self.last = point;
-        if self.dragging && self.in_list {
-            (previous.y - point.y) / scale.max(0.01)
-        } else {
-            0.
-        }
-    }
-    fn finish(&mut self, released: Option<Vec2>, scale: f32) -> Option<GameMode> {
-        if let Some(point) = released {
-            self.move_to(point, scale);
-        }
-        let selected = if released.is_some() && !self.dragging {
-            self.pending_game
-        } else {
-            None
-        };
-        *self = Self::default();
-        selected
-    }
-}
 #[derive(Resource, Default)]
 struct TankHold {
     direction: Option<(i8, i8)>,
@@ -5151,6 +5103,7 @@ pub fn run() {
         .init_resource::<PressGate>()
         .init_resource::<Gesture>()
         .init_resource::<LibraryDrag>()
+        .insert_resource(LibraryOrder::load())
         .init_resource::<TankHold>()
         .init_resource::<SkyHold>()
         .init_resource::<BubbleHold>()
@@ -8585,7 +8538,7 @@ fn buttons(
     mouse: Res<ButtonInput<MouseButton>>,
     touches: Res<Touches>,
     mut gate: ResMut<PressGate>,
-    mut library_drag: ResMut<LibraryDrag>,
+    library_drag: Res<LibraryDrag>,
     mut s: ResMut<Session>,
 ) {
     if !mouse.pressed(MouseButton::Left) && touches.iter().next().is_none() {
@@ -8599,15 +8552,10 @@ fn buttons(
             continue;
         }
         gate.0 = true;
-        if let Action::SelectGame(mode) = *action {
-            if s.library_open {
-                if library_drag.start.is_some() && !library_drag.dragging {
-                    library_drag.pending_game = Some(mode);
-                }
-                // A press is only a candidate tap. Never rebuild the scrolling
-                // list here: rebuilding destroys its ScrollPosition and hit state.
-                continue;
-            }
+        if s.library_open
+            && (matches!(action, Action::SelectGame(_)) || library_drag.captures_pointer())
+        {
+            continue;
         }
         if s.help_open && !matches!(action, Action::CloseHelp | Action::Library) {
             continue;
@@ -10399,6 +10347,7 @@ fn rebuild_ui(
     art: Res<Art>,
     roots: Query<Entity, With<UiRoot>>,
     layout: Res<Layout>,
+    library_order: Res<LibraryOrder>,
     ui_scale: Res<UiScale>,
 ) {
     if !s.ui_dirty && !layout.is_changed() {
@@ -10409,7 +10358,7 @@ fn rebuild_ui(
         commands.entity(root).despawn();
     }
     if s.library_open {
-        library_ui(&mut commands, &s, &art, layout.compact);
+        library_ui(&mut commands, &library_order, &art, layout.compact);
         return;
     }
     if s.mode == GameMode::ForestTrain {
@@ -21328,116 +21277,6 @@ fn tank_wide_ui(commands: &mut Commands, g: &TankGame, art: &Art, width: f32, he
         });
 }
 
-// The library keeps its title and return button visible while the card collection
-// scrolls in the space between them.  Wheel input works on desktop and vertical
-// finger drags work on a phone.
-fn library_scroll_input(
-    mut wheels: EventReader<MouseWheel>,
-    touches: Res<Touches>,
-    mouse: Res<ButtonInput<MouseButton>>,
-    windows: Query<&Window, With<PrimaryWindow>>,
-    scale: Res<UiScale>,
-    mut drag: ResMut<LibraryDrag>,
-    mut s: ResMut<Session>,
-    mut cards: Query<(&mut ScrollPosition, &ComputedNode, &GlobalTransform), With<LibraryCards>>,
-    game_buttons: Query<(&Action, &ComputedNode, &GlobalTransform), With<Button>>,
-) {
-    if !s.library_open {
-        *drag = LibraryDrag::default();
-        wheels.clear();
-        return;
-    }
-    let Ok(window) = windows.single() else {
-        return;
-    };
-    let Ok((mut scroll, node, transform)) = cards.single_mut() else {
-        return;
-    };
-    let max_scroll =
-        ((node.content_size().y - node.size().y) * node.inverse_scale_factor()).max(0.);
-    let inside = |point: Vec2| {
-        let physical = point * window.scale_factor();
-        let center = transform.translation().truncate();
-        let half = node.size() / 2.;
-        (physical.x - center.x).abs() <= half.x && (physical.y - center.y).abs() <= half.y
-    };
-    for wheel in wheels.read() {
-        if window.cursor_position().is_some_and(inside) {
-            let distance = match wheel.unit {
-                MouseScrollUnit::Line => wheel.y * 42.,
-                MouseScrollUnit::Pixel => wheel.y / scale.0,
-            };
-            scroll.offset_y = (scroll.offset_y - distance).clamp(0., max_scroll);
-        }
-    }
-    if drag.start.is_none() {
-        if let Some(touch) = touches.iter_just_pressed().next() {
-            drag.begin(touch.position(), Some(touch.id()), inside(touch.position()));
-        } else if mouse.just_pressed(MouseButton::Left) {
-            if let Some(point) = window.cursor_position() {
-                drag.begin(point, None, inside(point));
-            }
-        }
-    }
-    if drag.start.is_none() {
-        return;
-    }
-    let (point, released) = if let Some(id) = drag.touch {
-        (
-            touches.get_pressed(id).map(|t| t.position()),
-            touches.get_released(id).map(|t| t.position()),
-        )
-    } else {
-        (
-            if mouse.pressed(MouseButton::Left) {
-                window.cursor_position()
-            } else {
-                None
-            },
-            if mouse.just_released(MouseButton::Left) {
-                window.cursor_position()
-            } else {
-                None
-            },
-        )
-    };
-    if let Some(point) = point {
-        scroll.offset_y = (scroll.offset_y + drag.move_to(point, scale.0)).clamp(0., max_scroll);
-    } else {
-        if let Some(point) = released {
-            scroll.offset_y =
-                (scroll.offset_y + drag.move_to(point, scale.0)).clamp(0., max_scroll);
-        }
-        let raw_tap = released
-            .filter(|point| {
-                drag.in_list
-                    && drag
-                        .start
-                        .is_some_and(|start| point.distance(start) / scale.0.max(0.01) < 8.)
-            })
-            .and_then(|point| {
-                let physical = point * window.scale_factor();
-                game_buttons.iter().find_map(|(action, node, transform)| {
-                    let Action::SelectGame(mode) = action else {
-                        return None;
-                    };
-                    Rect::from_center_size(transform.translation().truncate(), node.size())
-                        .contains(physical)
-                        .then_some(*mode)
-                })
-            });
-        if let Some(mode) = drag.finish(released, scale.0).or(raw_tap) {
-            if mode == GameMode::Island {
-                s.library_open = false;
-                s.magnet_modes_open = true;
-                s.ui_dirty = true;
-            } else {
-                launch_game(&mut s, mode);
-            }
-        }
-    }
-}
-
 fn magnet_modes_ui(commands: &mut Commands, _s: &Session, art: &Art, compact: bool) {
     commands
         .spawn((
@@ -21775,182 +21614,6 @@ fn library_icon(parent: &mut ChildSpawnerCommands, art: &Art, mode: GameMode) {
         });
 }
 
-fn library_ui(commands: &mut Commands, _s: &Session, art: &Art, compact: bool) {
-    commands
-        .spawn((
-            UiRoot,
-            Node {
-                width: Val::Percent(100.),
-                height: Val::Percent(100.),
-                position_type: PositionType::Absolute,
-                align_items: AlignItems::Center,
-                justify_content: JustifyContent::Center,
-                flex_direction: FlexDirection::Column,
-                row_gap: Val::Px(20.),
-                padding: UiRect::all(Val::Px(28.)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.07, 0.15, 0.19, 0.96)),
-        ))
-        .with_children(|root| {
-            root.spawn(Node {
-                width: Val::Percent(100.),
-                justify_content: JustifyContent::SpaceBetween,
-                align_items: AlignItems::Center,
-                ..row()
-            })
-            .with_children(|p| {
-                p.spawn(Node {
-                    flex_direction: FlexDirection::Column,
-                    row_gap: Val::Px(3.),
-                    ..default()
-                })
-                .with_children(|p| {
-                    label(p, art, "游戏库", 32., Color::WHITE);
-                    label(p, art, "选择一个小小世界，马上开始玩", 15., SOFT);
-                });
-                button(
-                    p,
-                    art,
-                    "返回当前游戏",
-                    Action::LibraryReturn,
-                    150.,
-                    44.,
-                    SLATE,
-                    Color::WHITE,
-                );
-            });
-            let cards = Node {
-                width: Val::Percent(100.),
-                flex_grow: 1.,
-                flex_shrink: 1.,
-                min_height: Val::Px(0.),
-                justify_content: JustifyContent::Center,
-                align_items: AlignItems::Center,
-                align_content: AlignContent::FlexStart,
-                column_gap: Val::Px(16.),
-                row_gap: Val::Px(16.),
-                flex_wrap: FlexWrap::Wrap,
-                overflow: Overflow::scroll_y(),
-                ..default()
-            };
-            root.spawn((cards, ScrollPosition::default(), LibraryCards))
-                .with_children(|p| {
-                    for (mode, color) in [
-                        (GameMode::ForestTrain, Color::srgb(0.33, 0.54, 0.22)),
-                        (GameMode::GoldRunner, Color::srgb(0.64, 0.39, 0.12)),
-                        (GameMode::Descent, Color::srgb(0.25, 0.36, 0.44)),
-                        (GameMode::GardenDefense, Color::srgb(0.34, 0.57, 0.20)),
-                        (GameMode::Island, Color::srgb(0.28, 0.62, 0.59)),
-                        (GameMode::Ball2048, Color::srgb(0.89, 0.47, 0.25)),
-                        (GameMode::Breakout, Color::srgb(0.18, 0.57, 0.72)),
-                        (GameMode::ElementLab, Color::srgb(0.22, 0.54, 0.57)),
-                        (GameMode::LightPath, Color::srgb(0.16, 0.50, 0.72)),
-                        (GameMode::RabbitHome, Color::srgb(0.39, 0.60, 0.28)),
-                        (GameMode::Tetris, Color::srgb(0.34, 0.38, 0.82)),
-                        (GameMode::Math, Color::srgb(0.32, 0.38, 0.78)),
-                        (GameMode::Literacy, Color::srgb(0.23, 0.63, 0.39)),
-                        (GameMode::Firefighters, Color::srgb(0.88, 0.30, 0.22)),
-                        (GameMode::Detective, Color::srgb(0.42, 0.30, 0.66)),
-                        (GameMode::SpaceFarm, Color::srgb(0.18, 0.56, 0.70)),
-                        (GameMode::MusicFactory, Color::srgb(0.90, 0.48, 0.18)),
-                        (GameMode::PixelAssault, Color::srgb(0.28, 0.70, 0.58)),
-                        (GameMode::MushroomRun, Color::srgb(0.90, 0.37, 0.24)),
-                        (GameMode::TankBattle, Color::srgb(0.30, 0.55, 0.78)),
-                        (GameMode::SkyRaid, Color::srgb(0.28, 0.45, 0.78)),
-                        (GameMode::BubbleIsland, Color::srgb(0.78, 0.38, 0.62)),
-                        (GameMode::BubbleBomber, Color::srgb(0.18, 0.54, 0.82)),
-                        (GameMode::FruitNinja, Color::srgb(0.84, 0.31, 0.24)),
-                        (GameMode::Fortune, Color::srgb(0.18, 0.55, 0.44)),
-                        (GameMode::Slots, Color::srgb(0.45, 0.29, 0.64)),
-                        (GameMode::FruitArcade, Color::srgb(0.75, 0.20, 0.28)),
-                        (GameMode::Fishing, Color::srgb(0.08, 0.50, 0.68)),
-                        (GameMode::HoneyHunt, Color::srgb(0.86, 0.52, 0.15)),
-                        (GameMode::MoonFestival, Color::srgb(0.78, 0.16, 0.18)),
-                        (GameMode::SpaceCourier, Color::srgb(0.21, 0.56, 0.86)),
-                        (GameMode::Snake, Color::srgb(0.28, 0.68, 0.34)),
-                        (GameMode::Minesweeper, Color::srgb(0.38, 0.44, 0.54)),
-                        (GameMode::Classic2048, Color::srgb(0.82, 0.51, 0.22)),
-                        (GameMode::Klotski, Color::srgb(0.66, 0.34, 0.20)),
-                        (GameMode::Sokoban, Color::srgb(0.48, 0.34, 0.22)),
-                        (GameMode::Sudoku, Color::srgb(0.23, 0.44, 0.68)),
-                    ] {
-                        let (title, subtitle) = if mode == GameMode::Island {
-                            ("磁力方块探险家", "闯关 · 云桥 · 餐厅 · 自由搭建")
-                        } else {
-                            (mode.title(), mode.subtitle())
-                        };
-                        p.spawn((
-                            Button,
-                            ButtonTone(color),
-                            Action::SelectGame(mode),
-                            Node {
-                                width: Val::Px(if compact { 278. } else { 320. }),
-                                height: Val::Px(142.),
-                                min_height: Val::Px(142.),
-                                flex_shrink: 0.,
-                                padding: UiRect::all(Val::Px(14.)),
-                                flex_direction: FlexDirection::Row,
-                                align_items: AlignItems::Center,
-                                justify_content: JustifyContent::Center,
-                                column_gap: Val::Px(12.),
-                                ..default()
-                            },
-                            BackgroundColor(color),
-                            BorderColor(EDGE),
-                            BorderRadius::all(Val::Px(16.)),
-                        ))
-                        .with_children(|card| {
-                            library_icon(card, art, mode);
-                            card.spawn(Node {
-                                flex_grow: 1.,
-                                flex_shrink: 1.,
-                                min_width: Val::Px(0.),
-                                flex_direction: FlexDirection::Column,
-                                row_gap: Val::Px(6.),
-                                ..default()
-                            })
-                            .with_children(|info| {
-                                info.spawn((
-                                    Node {
-                                        max_width: Val::Percent(100.),
-                                        ..default()
-                                    },
-                                    Text::new(title),
-                                    TextFont {
-                                        font: art.font.clone(),
-                                        font_size: 20.,
-                                        ..default()
-                                    },
-                                    TextColor(Color::WHITE),
-                                ));
-                                info.spawn((
-                                    Node {
-                                        max_width: Val::Percent(100.),
-                                        ..default()
-                                    },
-                                    Text::new(subtitle),
-                                    TextFont {
-                                        font: art.font.clone(),
-                                        font_size: 12.,
-                                        ..default()
-                                    },
-                                    TextColor(Color::srgba(1., 1., 1., 0.86)),
-                                ));
-                            });
-                        });
-                    }
-                });
-            label(
-                root,
-                art,
-                "磁力方块探险家含四种玩法 · 其他小游戏点卡片直接开始",
-                14.,
-                SOFT,
-            );
-        });
-}
-
 // The world fills the phone; controls float above it in a collapsible bottom dock.
 fn mobile_ui(commands: &mut Commands, s: &Session, art: &Art) {
     let (frame, frame_edge, accent, accent_text, panel_color, ink, soft_text) = match s.mode {
@@ -22129,49 +21792,6 @@ fn mobile_ui(commands: &mut Commands, s: &Session, art: &Art) {
             });
         });
     });
-}
-
-#[cfg(test)]
-mod library_gesture_tests {
-    use super::*;
-    #[test]
-    fn card_swipe_scrolls_and_cannot_open_game() {
-        for touch in [None, Some(7)] {
-            let mut g = LibraryDrag::default();
-            g.begin(Vec2::new(50., 200.), touch, true);
-            g.pending_game = Some(GameMode::Slots);
-            assert_eq!(g.move_to(Vec2::new(50., 160.), 2.), 20.);
-            assert_eq!(g.move_to(Vec2::new(50., 100.), 2.), 30.);
-            assert!(g.finish(Some(Vec2::new(50., 100.)), 2.).is_none());
-        }
-    }
-    #[test]
-    fn tap_jitter_does_not_scroll_and_selects_on_release() {
-        let mut g = LibraryDrag::default();
-        g.begin(Vec2::new(50., 100.), Some(1), true);
-        g.pending_game = Some(GameMode::Slots);
-        assert_eq!(g.move_to(Vec2::new(52., 102.), 1.), 0.);
-        assert!(matches!(
-            g.finish(Some(Vec2::new(52., 102.)), 1.),
-            Some(GameMode::Slots)
-        ));
-    }
-    #[test]
-    fn canceled_or_release_only_swipe_never_selects() {
-        for release in [
-            None,
-            Some(Vec2::new(100., 200.)),
-            Some(Vec2::new(200., 100.)),
-        ] {
-            let mut g = LibraryDrag::default();
-            g.begin(Vec2::new(100., 100.), None, true);
-            g.pending_game = Some(GameMode::Slots);
-            assert!(g.finish(release, 1.).is_none());
-        }
-        let mut g = LibraryDrag::default();
-        g.begin(Vec2::ZERO, None, false);
-        assert_eq!(g.move_to(Vec2::new(0., 100.), 1.), 0.);
-    }
 }
 
 // Library/help state is considered separately: help stays with its game, but

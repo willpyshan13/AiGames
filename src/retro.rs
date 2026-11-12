@@ -504,7 +504,7 @@ pub(super) struct SudokuGame {
     solution: [u8; 81],
     pub(super) cells: [u8; 81],
     pub(super) selected: Option<usize>,
-    pub(super) mistakes: u8,
+    pub(super) failed: bool,
     pub(super) won: bool,
     pub(super) size: usize,
     pub(super) variant: u32,
@@ -596,7 +596,7 @@ impl SudokuGame {
             puzzle,
             solution,
             selected: None,
-            mistakes: 0,
+            failed: false,
             won: false,
             size,
             variant,
@@ -663,14 +663,10 @@ impl SudokuGame {
     pub(super) fn reset(&mut self) {
         self.cells = self.puzzle;
         self.selected = None;
-        self.mistakes = 0;
+        self.failed = false;
         self.won = false;
         self.elapsed = None;
     }
-    pub(super) fn is_wrong(&self, index: usize) -> bool {
-        self.cells[index] != 0 && self.cells[index] != self.solution[index]
-    }
-
     pub(super) fn is_given(&self, index: usize) -> bool {
         self.puzzle[index] != 0
     }
@@ -680,12 +676,21 @@ impl SudokuGame {
         }
     }
     fn refresh(&mut self) {
-        self.mistakes = self.cells[..self.size * self.size]
-            .iter()
-            .enumerate()
-            .filter(|(index, value)| **value != 0 && **value != self.solution[*index])
-            .count() as u8;
-        self.won = self.cells[..self.size * self.size] == self.solution[..self.size * self.size];
+        let cells = &self.cells[..self.size * self.size];
+        let full = !cells.contains(&0);
+        self.won = full && cells == &self.solution[..cells.len()];
+        self.failed = full && !self.won;
+    }
+    pub(super) fn progress_label(&self) -> String {
+        if self.won {
+            "全部填对了！".into()
+        } else if self.failed {
+            "答案有误，请检查后重试".into()
+        } else {
+            let total = self.size * self.size;
+            let filled = self.cells[..total].iter().filter(|&&value| value != 0).count();
+            format!("已填 {filled}/{total} 格 · 第 {} 题", u64::from(self.variant) + 1)
+        }
     }
     pub(super) fn set_selected(&mut self, value: u8) {
         if self.won || value == 0 {
@@ -1811,17 +1816,7 @@ pub(super) fn sudoku_ui(commands: &mut Commands, s: &Session, art: &Art, compact
     let box_size = if size == 4 { 2 } else { 3 };
     let tile =
         (400. - 8. - (size - 1) as f32 * 2. - (size / box_size - 1) as f32 * 4.) / size as f32;
-    let filled = g.cells[..size * size]
-        .iter()
-        .filter(|value| **value != 0)
-        .count();
-    let status = if g.won {
-        "全部填对了，继续挑战下一题".to_owned()
-    } else if g.mistakes > 0 {
-        format!("有 {} 格需要再看看", g.mistakes)
-    } else {
-        format!("已填 {filled}/{} 格 · 第 {} 题", size * size, g.variant + 1)
-    };
+    let status = g.progress_label();
     designed_page(
         commands,
         art,
@@ -1879,7 +1874,6 @@ pub(super) fn sudoku_ui(commands: &mut Commands, s: &Session, art: &Art, compact
                                     for x in 0..size {
                                         let index = y * size + x;
                                         let value = g.cells[index];
-                                        let wrong = value != 0 && value != g.solution[index];
                                         let related = g.selected.is_some_and(|selected| {
                                             let sx = selected % size;
                                             let sy = selected / size;
@@ -1888,9 +1882,7 @@ pub(super) fn sudoku_ui(commands: &mut Commands, s: &Session, art: &Art, compact
                                                 || (sx / box_size == x / box_size
                                                     && sy / box_size == y / box_size)
                                         });
-                                        let background = if wrong {
-                                            Color::srgb(0.93, 0.78, 0.73)
-                                        } else if g.selected == Some(index) {
+                                        let background = if g.selected == Some(index) {
                                             Color::srgb(0.92, 0.77, 0.69)
                                         } else if related {
                                             Color::srgb(0.88, 0.91, 0.87)
@@ -1931,9 +1923,7 @@ pub(super) fn sudoku_ui(commands: &mut Commands, s: &Session, art: &Art, compact
                                         .with_children(
                                             |cell| {
                                                 if value != 0 {
-                                                    let color = if wrong {
-                                                        Color::srgb(0.67, 0.29, 0.25)
-                                                    } else if g.is_given(index) {
+                                                    let color = if g.is_given(index) {
                                                         Color::srgb(0.18, 0.26, 0.33)
                                                     } else {
                                                         Color::srgb(0.30, 0.48, 0.62)
@@ -2017,7 +2007,7 @@ pub(super) fn sudoku_ui(commands: &mut Commands, s: &Session, art: &Art, compact
                             art,
                             status,
                             14.,
-                            if g.mistakes > 0 {
+                            if g.failed {
                                 Color::srgb(0.68, 0.35, 0.30)
                             } else {
                                 Color::srgb(0.28, 0.39, 0.45)
@@ -2214,14 +2204,26 @@ mod tests {
     }
 
     #[test]
-    fn sudoku_marks_wrong_entries_and_accepts_the_solution() {
-        let mut game = SudokuGame::new();
-        game.select(2);
-        game.set_selected(9);
-        assert_eq!(game.mistakes, 1);
-        game.set_selected(4);
-        assert_eq!(game.mistakes, 0);
-        assert_eq!(game.cells[2], 4);
+    fn sudoku_checks_only_full_boards_and_can_retry() {
+        for size in [4, 6, 9] {
+            let mut game = SudokuGame::with_size(size, 0, SudokuDifficulty::Medium);
+            let blanks: Vec<_> = (0..size * size).filter(|&i| !game.is_given(i)).collect();
+            let wrong = blanks[0];
+            game.select(wrong);
+            game.set_selected(game.solution[wrong] % size as u8 + 1);
+            for &index in &blanks[1..] {
+                assert!(!game.failed && !game.won);
+                game.select(index);
+                game.set_selected(game.solution[index]);
+            }
+            assert!(game.failed && !game.won);
+            assert_eq!(game.progress_label(), "答案有误，请检查后重试");
+            game.select(wrong);
+            game.clear_selected();
+            assert!(!game.failed && !game.won);
+            game.set_selected(game.solution[wrong]);
+            assert!(game.won && !game.failed);
+        }
     }
     #[test]
     fn sudoku_six_puzzles_have_one_solution_and_different_difficulty() {

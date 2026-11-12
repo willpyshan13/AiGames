@@ -365,15 +365,10 @@ pub(super) fn storybook_ui(
                             cell,
                             661. / n as f32,
                         ];
-                        let wrong = g.is_wrong(i);
-                        if g.selected == Some(i) || wrong {
+                        if g.selected == Some(i) {
                             p.spawn((
                                 area(r, k),
-                                BackgroundColor(if wrong {
-                                    Color::srgba(0.85, 0.40, 0.28, 0.25)
-                                } else {
-                                    Color::srgba(0.5, 0.7, 0.45, 0.25)
-                                }),
+                                BackgroundColor(Color::srgba(0.5, 0.7, 0.45, 0.25)),
                             ));
                         }
                         if v > 0 {
@@ -383,9 +378,7 @@ pub(super) fn storybook_ui(
                                 r,
                                 v.to_string(),
                                 if n == 4 { 78. } else { 43. },
-                                if wrong {
-                                    Color::srgb(0.65, 0.25, 0.2)
-                                } else if g.is_given(i) {
+                                if g.is_given(i) {
                                     INK
                                 } else {
                                     TEAL
@@ -407,16 +400,11 @@ pub(super) fn storybook_ui(
                         BackgroundColor(Color::srgb(0.50, 0.43, 0.32)),
                     ));
                 }
-                let filled = g.cells[..n * n].iter().filter(|v| **v > 0).count();
                 words(
                     p,
                     art,
                     [211., 1145., 518., 68.],
-                    if g.won {
-                        "全部填对了！".into()
-                    } else {
-                        format!("已填 {filled}/{} 格 · 第 {} 题", n * n, g.variant + 1)
-                    },
+                    g.progress_label(),
                     30.,
                     INK,
                     k,
@@ -500,10 +488,7 @@ fn sudoku_six_ui(commands: &mut Commands, game: &SudokuGame, art: &Art, w: f32, 
                     let (r, c) = (index / 6, index % 6);
                     row == r || col == c || (row / box_rows == r / box_rows && col / box_cols == c / box_cols)
                 });
-                let wrong = game.is_wrong(i);
-                let fill = if wrong {
-                    Some(Color::srgb_u8(234, 194, 172))
-                } else if selected {
+                let fill = if selected {
                     Some(Color::srgb_u8(170, 203, 135))
                 } else if related {
                     Some(Color::srgb_u8(229, 234, 208))
@@ -523,9 +508,7 @@ fn sudoku_six_ui(commands: &mut Commands, game: &SudokuGame, art: &Art, w: f32, 
                 }
                 let value = game.cells[i];
                 if value != 0 {
-                    let ink = if wrong {
-                        Color::srgb(0.65, 0.25, 0.2)
-                    } else if game.is_given(i) {
+                    let ink = if game.is_given(i) {
                         Color::srgb_u8(38, 59, 64)
                     } else {
                         TEAL
@@ -552,13 +535,7 @@ fn sudoku_six_ui(commands: &mut Commands, game: &SudokuGame, art: &Art, w: f32, 
                 TextColor(Color::srgb_u8(83, 51, 21)),
             ));
         });
-        let filled = game.cells[..36].iter().filter(|value| **value != 0).count();
-        let progress = if game.won {
-            "全部填对了！".to_owned()
-        } else {
-            format!("已填 {filled}/36 格 · 第 {} 题", game.variant + 1)
-        };
-        words(p, art, [139., 938., 442., 44.], progress, 22., Color::srgb_u8(255, 240, 204), k);
+        words(p, art, [139., 938., 442., 44.], game.progress_label(), 22., Color::srgb_u8(255, 240, 204), k);
 
         sudoku_mode_hits(p, k);
         hit(p, [31., 60., 82., 85.], Action::Library, k);
