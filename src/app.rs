@@ -33,6 +33,8 @@ mod storybook;
 use storybook::*;
 #[path = "retro.rs"]
 mod retro;
+#[path = "sudoku_six.rs"]
+mod sudoku_six;
 use retro::*;
 #[path = "sokoban.rs"]
 mod sokoban;
@@ -4493,6 +4495,7 @@ enum Action {
     SudokuHint,
     SudokuReset,
     SudokuSize(usize),
+    SudokuDifficulty(SudokuDifficulty),
     SudokuNew,
     LightRotate(usize),
     LightReset,
@@ -7339,11 +7342,29 @@ fn animate_crystals(time: Res<Time>, mut crystals: Query<(&mut Transform, &Cryst
     }
 }
 
-fn tick(time: Res<Time>, mut s: ResMut<Session>) {
+fn tick(
+    time: Res<Time>,
+    mut s: ResMut<Session>,
+    mut sudoku_clocks: Query<&mut Text, With<SudokuClockText>>,
+) {
     // The library owns its scroll state.  Letting the game underneath keep
     // animating marked the UI dirty and rebuilt the card list every few frames,
     // which snapped a phone swipe back to the top on release.
     if s.library_open || s.help_open {
+        return;
+    }
+    if s.mode == GameMode::Sudoku {
+        let before = s.sudoku.elapsed.unwrap_or_default().as_secs();
+        s.sudoku.tick_clock(time.delta());
+        let after = s.sudoku.elapsed.unwrap_or_default().as_secs();
+        if after != before {
+            for mut text in &mut sudoku_clocks {
+                text.0 = s.sudoku.clock_label();
+            }
+            if after / 5 != before / 5 {
+                s.persist_sudoku();
+            }
+        }
         return;
     }
     if s.mode == GameMode::CloudBridge {
@@ -9120,6 +9141,11 @@ fn buttons(
             Action::SudokuSize(size) => {
                 if s.mode == GameMode::Sudoku {
                     s.sudoku.set_size(size);
+                }
+            }
+            Action::SudokuDifficulty(difficulty) => {
+                if s.mode == GameMode::Sudoku {
+                    s.sudoku.set_difficulty(difficulty);
                 }
             }
             Action::SudokuNew => {

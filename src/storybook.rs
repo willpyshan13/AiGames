@@ -10,6 +10,8 @@ pub(super) struct StorybookArt {
     elements: Handle<Image>,
     restaurant: Handle<Image>,
     sudoku_nine: Handle<Image>,
+    sudoku_six: Handle<Image>,
+    sudoku_controls: Handle<Image>,
     classic: Handle<Image>,
     literacy_map: Handle<Image>,
     literacy_lesson: Handle<Image>,
@@ -42,6 +44,8 @@ pub(super) fn load_storybook(assets: &AssetServer) -> StorybookArt {
         elements: load("storybook/elements-plate.png"),
         restaurant: load("storybook/restaurant-frame.png"),
         sudoku_nine: load("storybook/sudoku-nine.png"),
+        sudoku_six: load("storybook/sudoku-six.png"),
+        sudoku_controls: load("storybook/sudoku-controls.png"),
         literacy_map: load("storybook/literacy-map.png"),
         literacy_lesson: load("storybook/literacy-lesson.png"),
         literacy_words: load("storybook/literacy-words.png"),
@@ -328,6 +332,7 @@ pub(super) fn storybook_ui(
                 hit(p, [730., 1440., 120., 110.], Action::KlotskiReset, k);
             },
         ),
+        GameMode::Sudoku if s.sudoku.size == 6 => sudoku_six_ui(commands, &s.sudoku, art, w, h),
         GameMode::Sudoku => canvas(
             commands,
             if s.sudoku.size == 9 {
@@ -417,17 +422,16 @@ pub(super) fn storybook_ui(
                     k,
                 );
                 hit(p, [43., 80., 102., 110.], Action::Library, k);
-                hit(p, [152., 270., 325., 106.], Action::SudokuSize(4), k);
-                hit(p, [486., 280., 309., 91.], Action::SudokuSize(9), k);
-                outline(
+                let scale = 941. / 720.;
+                let strip_y = if n == 4 { 0. } else { 88. };
+                sample(
                     p,
-                    if n == 4 {
-                        [152., 270., 325., 106.]
-                    } else {
-                        [486., 280., 309., 91.]
-                    },
+                    &b.sudoku_controls,
+                    [111. * scale, 202. * scale, 500. * scale, 88. * scale],
+                    [0., strip_y, 500., strip_y + 88.],
                     k,
                 );
+                sudoku_mode_hits(p, k * scale);
                 if n == 4 {
                     for i in 0..4 {
                         hit(
@@ -456,6 +460,119 @@ pub(super) fn storybook_ui(
         _ => return false,
     }
     true
+}
+
+fn sudoku_mode_hits(p: &mut ChildSpawnerCommands, k: f32) {
+    for (i, size) in [4, 6, 9].into_iter().enumerate() {
+        hit(
+            p,
+            [117. + i as f32 * 164., 211., 158., 66.],
+            Action::SudokuSize(size),
+            k,
+        );
+    }
+}
+
+#[derive(Component)]
+pub(super) struct SudokuClockText;
+
+fn sudoku_six_ui(commands: &mut Commands, game: &SudokuGame, art: &Art, w: f32, h: f32) {
+    const X: [f32; 7] = [114., 196., 279., 362., 444., 526., 609.];
+    const Y: [f32; 7] = [323., 408., 493., 578., 662., 747., 832.];
+    let b = &art.storybook;
+    canvas(commands, &b.sudoku_six, w, h, Vec2::new(720., 1280.), |p, k| {
+        if game.difficulty == SudokuDifficulty::Advanced {
+            sample(
+                p,
+                &b.sudoku_controls,
+                [139., 882., 207., 52.],
+                [0., 176., 207., 228.],
+                k,
+            );
+        }
+        let (box_rows, box_cols) = SudokuGame::box_dimensions(6);
+        for row in 0..6 {
+            for col in 0..6 {
+                let i = row * 6 + col;
+                let rect = [X[col], Y[row], X[col + 1] - X[col], Y[row + 1] - Y[row]];
+                let selected = game.selected == Some(i);
+                let related = game.selected.is_some_and(|index| {
+                    let (r, c) = (index / 6, index % 6);
+                    row == r || col == c || (row / box_rows == r / box_rows && col / box_cols == c / box_cols)
+                });
+                let wrong = game.is_wrong(i);
+                let fill = if wrong {
+                    Some(Color::srgb_u8(234, 194, 172))
+                } else if selected {
+                    Some(Color::srgb_u8(170, 203, 135))
+                } else if related {
+                    Some(Color::srgb_u8(229, 234, 208))
+                } else {
+                    None
+                };
+                if let Some(fill) = fill {
+                    // Inset the highlight by half the neighboring line width.
+                    let left = if col % box_cols == 0 { 3. } else { 1. };
+                    let right = if (col + 1) % box_cols == 0 { 2. } else { 0. };
+                    let top = if row % box_rows == 0 { 3. } else { 1. };
+                    let bottom = if (row + 1) % box_rows == 0 { 2. } else { 0. };
+                    p.spawn((
+                        area([rect[0] + left, rect[1] + top, rect[2] - left - right, rect[3] - top - bottom], k),
+                        BackgroundColor(fill),
+                    ));
+                }
+                let value = game.cells[i];
+                if value != 0 {
+                    let ink = if wrong {
+                        Color::srgb(0.65, 0.25, 0.2)
+                    } else if game.is_given(i) {
+                        Color::srgb_u8(38, 59, 64)
+                    } else {
+                        TEAL
+                    };
+                    words(p, art, rect, value.to_string(), 42., ink, k);
+                }
+                hit(p, rect, Action::SudokuSelect(i), k);
+            }
+        }
+        p.spawn(Node {
+            align_items: AlignItems::Center,
+            justify_content: JustifyContent::Center,
+            ..area([355., 884., 226., 51.], k)
+        })
+        .with_children(|p| {
+            p.spawn((
+                SudokuClockText,
+                Text::new(game.clock_label()),
+                TextFont {
+                    font: art.font.clone(),
+                    font_size: 25. * k,
+                    ..default()
+                },
+                TextColor(Color::srgb_u8(83, 51, 21)),
+            ));
+        });
+        let filled = game.cells[..36].iter().filter(|value| **value != 0).count();
+        let progress = if game.won {
+            "全部填对了！".to_owned()
+        } else {
+            format!("已填 {filled}/36 格 · 第 {} 题", game.variant + 1)
+        };
+        words(p, art, [139., 938., 442., 44.], progress, 22., Color::srgb_u8(255, 240, 204), k);
+
+        sudoku_mode_hits(p, k);
+        hit(p, [31., 60., 82., 85.], Action::Library, k);
+        hit(p, [141., 884., 97., 51.], Action::SudokuDifficulty(SudokuDifficulty::Medium), k);
+        hit(p, [246., 884., 97., 51.], Action::SudokuDifficulty(SudokuDifficulty::Advanced), k);
+        for digit in 1..=6 {
+            let x = 141. + f32::from(digit - 1) * 74.;
+            hit(p, [x, 984., 69., 72.], Action::SudokuDigit(digit), k);
+        }
+        hit(p, [57., 1081., 190., 81.], Action::SudokuClear, k);
+        hit(p, [261., 1081., 199., 81.], Action::SudokuHint, k);
+        hit(p, [471., 1081., 191., 81.], Action::SudokuNew, k);
+        hit(p, [289., 1183., 143., 52.], Action::SudokuReset, k);
+    });
 }
 
 fn paper(p: &mut ChildSpawnerCommands, art: &Art, r: [f32; 4], k: f32) {
@@ -1924,6 +2041,7 @@ fn same_action(a: Action, b: Action) -> bool {
         | (Action::SudokuSize(x), Action::SudokuSize(y))
         | (Action::SudokuSelect(x), Action::SudokuSelect(y)) => x == y,
         (Action::MathAnswer(x), Action::MathAnswer(y)) => x == y,
+        (Action::SudokuDifficulty(x), Action::SudokuDifficulty(y)) => x == y,
         (Action::SudokuDigit(x), Action::SudokuDigit(y))
         | (Action::ElementPick(x), Action::ElementPick(y)) => x == y,
         (Action::ClassicMove(x, y), Action::ClassicMove(xx, yy))

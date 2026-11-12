@@ -1,5 +1,5 @@
 use super::*;
-use std::collections::VecDeque;
+use std::{collections::VecDeque, time::Duration};
 
 const SNAKE_W: i8 = 18;
 const SNAKE_H: i8 = 24;
@@ -492,6 +492,13 @@ impl KlotskiGame {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) enum SudokuDifficulty {
+    #[default]
+    Medium,
+    Advanced,
+}
+
 pub(super) struct SudokuGame {
     puzzle: [u8; 81],
     solution: [u8; 81],
@@ -501,12 +508,14 @@ pub(super) struct SudokuGame {
     pub(super) won: bool,
     pub(super) size: usize,
     pub(super) variant: u32,
+    pub(super) difficulty: SudokuDifficulty,
+    pub(super) elapsed: Option<Duration>,
 }
 impl SudokuGame {
     pub(super) fn new() -> Self {
-        Self::with_size(9, 0)
+        Self::with_size(9, 0, SudokuDifficulty::Medium)
     }
-    fn with_size(size: usize, variant: u32) -> Self {
+    fn with_size(size: usize, variant: u32, difficulty: SudokuDifficulty) -> Self {
         let classic_puzzle = [
             5, 3, 0, 0, 7, 0, 0, 0, 0, 6, 0, 0, 1, 9, 5, 0, 0, 0, 0, 9, 8, 0, 0, 0, 0, 6, 0, 8, 0,
             0, 0, 6, 0, 0, 0, 3, 4, 0, 0, 8, 0, 3, 0, 0, 1, 7, 0, 0, 0, 2, 0, 0, 0, 6, 0, 6, 0, 0,
@@ -519,36 +528,67 @@ impl SudokuGame {
         ];
         let beginner_puzzle = [1, 0, 0, 4, 0, 4, 0, 2, 2, 0, 4, 0, 4, 0, 0, 1];
         let beginner_solution = [1, 2, 3, 4, 3, 4, 1, 2, 2, 1, 4, 3, 4, 3, 2, 1];
+        let six_medium = [
+            0, 2, 0, 4, 0, 0,
+            0, 0, 6, 0, 0, 0,
+            2, 3, 0, 5, 6, 0,
+            0, 6, 1, 2, 0, 4,
+            3, 0, 0, 6, 0, 2,
+            6, 0, 0, 0, 4, 0,
+        ];
+        let six_advanced = [
+            1, 2, 0, 0, 0, 6,
+            0, 5, 0, 0, 0, 3,
+            0, 0, 0, 0, 0, 0,
+            5, 6, 1, 0, 0, 0,
+            0, 0, 5, 0, 1, 0,
+            6, 0, 0, 3, 0, 0,
+        ];
+        let six_solution: [u8; 36] = std::array::from_fn(|i| {
+            let (row, col) = (i / 6, i % 6);
+            (1 + (row * 3 + row / 2 + col) % 6) as u8
+        });
+        let (source_puzzle, source_solution): (&[u8], &[u8]) = match size {
+            4 => (&beginner_puzzle, &beginner_solution),
+            6 => (
+                match difficulty {
+                    SudokuDifficulty::Medium => &six_medium,
+                    SudokuDifficulty::Advanced => &six_advanced,
+                },
+                &six_solution,
+            ),
+            _ => (&classic_puzzle, &classic_solution),
+        };
         let mut puzzle = [0; 81];
         let mut solution = [0; 81];
-        let box_size = if size == 4 { 2 } else { 3 };
+        let (box_rows, box_cols) = Self::box_dimensions(size);
+        let shift = variant as usize / 2;
+        let digit_shift = ((variant / 3) as usize) % size;
+        let remap = |value: u8| {
+            if value == 0 {
+                0
+            } else {
+                ((value as usize - 1 + digit_shift) % size + 1) as u8
+            }
+        };
         for row in 0..size {
             for col in 0..size {
-                let shift = (variant as usize / 2) % box_size;
                 let mut source_row =
-                    (row / box_size) * box_size + (row % box_size + shift) % box_size;
+                    (row / box_rows) * box_rows + (row % box_rows + shift) % box_rows;
                 let mut source_col =
-                    (col / box_size) * box_size + (col % box_size + shift) % box_size;
+                    (col / box_cols) * box_cols + (col % box_cols + shift) % box_cols;
                 if variant % 2 == 1 {
-                    std::mem::swap(&mut source_row, &mut source_col);
+                    if size == 6 {
+                        source_row = size - 1 - source_row;
+                        source_col = size - 1 - source_col;
+                    } else {
+                        std::mem::swap(&mut source_row, &mut source_col);
+                    }
                 }
                 let source = source_row * size + source_col;
                 let target = row * size + col;
-                let (raw_puzzle, raw_solution) = if size == 4 {
-                    (beginner_puzzle[source], beginner_solution[source])
-                } else {
-                    (classic_puzzle[source], classic_solution[source])
-                };
-                let digit_shift = ((variant / 3) as usize) % size;
-                let remap = |value: u8| {
-                    if value == 0 {
-                        0
-                    } else {
-                        ((value as usize - 1 + digit_shift) % size + 1) as u8
-                    }
-                };
-                puzzle[target] = remap(raw_puzzle);
-                solution[target] = remap(raw_solution);
+                puzzle[target] = remap(source_puzzle[source]);
+                solution[target] = remap(source_solution[source]);
             }
         }
         Self {
@@ -560,21 +600,72 @@ impl SudokuGame {
             won: false,
             size,
             variant,
+            difficulty,
+            elapsed: None,
+        }
+    }
+    pub(super) fn box_dimensions(size: usize) -> (usize, usize) {
+        match size {
+            4 => (2, 2),
+            6 => (2, 3),
+            _ => (3, 3),
         }
     }
     pub(super) fn set_size(&mut self, size: usize) {
-        if (size == 4 || size == 9) && self.size != size {
-            *self = Self::with_size(size, 0);
+        if matches!(size, 4 | 6 | 9) && self.size != size {
+            *self = Self::with_size(size, 0, SudokuDifficulty::Medium);
+        }
+    }
+    pub(super) fn set_difficulty(&mut self, difficulty: SudokuDifficulty) {
+        if self.size == 6 && self.difficulty != difficulty {
+            *self = Self::with_size(6, 0, difficulty);
         }
     }
     pub(super) fn new_puzzle(&mut self) {
-        *self = Self::with_size(self.size, self.variant.wrapping_add(1));
+        let variant = self.variant.wrapping_add(1);
+        let mut next = Self::with_size(self.size, variant, self.difficulty);
+        if self.size == 6 {
+            let previous = self.puzzle[..36].try_into().unwrap();
+            if let Some((puzzle, solution)) =
+                sudoku_six::generate(self.difficulty == SudokuDifficulty::Advanced, previous)
+            {
+                next.set_six_board(&puzzle, &solution);
+            } else if next.puzzle == self.puzzle {
+                // Keep the displayed round number even if generation uses the next template.
+                let fallback = Self::with_size(6, variant.wrapping_add(1), self.difficulty);
+                next.set_six_board(
+                    fallback.puzzle[..36].try_into().unwrap(),
+                    fallback.solution[..36].try_into().unwrap(),
+                );
+            }
+        }
+        *self = next;
+    }
+    fn set_six_board(&mut self, puzzle: &[u8; 36], solution: &[u8; 36]) {
+        self.puzzle[..36].copy_from_slice(puzzle);
+        self.cells[..36].copy_from_slice(puzzle);
+        self.solution[..36].copy_from_slice(solution);
+    }
+    pub(super) fn tick_clock(&mut self, delta: Duration) {
+        if let Some(elapsed) = self.elapsed.as_mut().filter(|_| !self.won) {
+            *elapsed = elapsed.saturating_add(delta);
+        }
+    }
+    pub(super) fn clock_label(&self) -> String {
+        let seconds = self.elapsed.unwrap_or_default().as_secs();
+        format!("用时  {:02}:{:02}", seconds / 60, seconds % 60)
+    }
+    fn start_clock(&mut self) {
+        if self.size == 6 {
+            self.elapsed.get_or_insert(Duration::ZERO);
+        }
     }
     pub(super) fn reset(&mut self) {
         self.cells = self.puzzle;
         self.selected = None;
         self.mistakes = 0;
         self.won = false;
+        self.elapsed = None;
     }
     pub(super) fn is_wrong(&self, index: usize) -> bool {
         self.cells[index] != 0 && self.cells[index] != self.solution[index]
@@ -597,21 +688,28 @@ impl SudokuGame {
         self.won = self.cells[..self.size * self.size] == self.solution[..self.size * self.size];
     }
     pub(super) fn set_selected(&mut self, value: u8) {
+        if self.won || value == 0 {
+            return;
+        }
         if let Some(index) = self
             .selected
             .filter(|index| !self.is_given(*index) && value <= self.size as u8)
         {
+            self.start_clock();
             self.cells[index] = value;
             self.refresh();
         }
     }
     pub(super) fn clear_selected(&mut self) {
-        if let Some(index) = self.selected.filter(|index| !self.is_given(*index)) {
+        if let Some(index) = self.selected.filter(|index| !self.won && !self.is_given(*index)) {
             self.cells[index] = 0;
             self.refresh();
         }
     }
     pub(super) fn hint(&mut self) {
+        if self.won {
+            return;
+        }
         let index = self
             .selected
             .filter(|index| !self.is_given(*index))
@@ -620,6 +718,7 @@ impl SudokuGame {
                     .find(|index| !self.is_given(*index) && self.cells[*index] == 0)
             });
         if let Some(index) = index {
+            self.start_clock();
             self.cells[index] = self.solution[index];
             self.selected = Some(index);
             self.refresh();
@@ -634,6 +733,12 @@ pub(super) struct SudokuSave {
     variant: u32,
     cells: Vec<u8>,
     selected: Option<usize>,
+    #[serde(default)]
+    difficulty: SudokuDifficulty,
+    #[serde(default)]
+    elapsed: Option<Duration>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    givens: Option<Vec<u8>>,
 }
 impl SudokuSave {
     pub(super) fn from_game(game: &SudokuGame) -> Self {
@@ -643,17 +748,30 @@ impl SudokuSave {
             variant: game.variant,
             cells: game.cells[..game.size * game.size].to_vec(),
             selected: game.selected,
+            difficulty: game.difficulty,
+            elapsed: game.elapsed,
+            givens: (game.size == 6).then(|| game.puzzle[..36].to_vec()),
         }
     }
     fn into_game(self) -> Option<SudokuGame> {
         if self.version != 1
-            || !matches!(self.size, 4 | 9)
+            || !matches!(self.size, 4 | 6 | 9)
             || self.cells.len() != self.size * self.size
             || self.selected.is_some_and(|index| index >= self.cells.len())
         {
             return None;
         }
-        let mut game = SudokuGame::with_size(self.size, self.variant);
+        let mut game = SudokuGame::with_size(self.size, self.variant, self.difficulty);
+        if self.size == 6 {
+            game.elapsed = self.elapsed;
+            if let Some(givens) = self.givens {
+                let puzzle = givens.as_slice().try_into().ok()?;
+                let solution = sudoku_six::unique_solution(puzzle)?;
+                game.set_six_board(puzzle, &solution);
+            }
+        } else if self.givens.is_some() {
+            return None;
+        }
         for (index, value) in self.cells.into_iter().enumerate() {
             if value > self.size as u8 || (game.is_given(index) && value != game.puzzle[index]) {
                 return None;
@@ -2105,4 +2223,145 @@ mod tests {
         assert_eq!(game.mistakes, 0);
         assert_eq!(game.cells[2], 4);
     }
+    #[test]
+    fn sudoku_six_puzzles_have_one_solution_and_different_difficulty() {
+        fn candidates(board: &[u8; 36], index: usize) -> Vec<u8> {
+            let (row, col) = (index / 6, index % 6);
+            (1..=6)
+                .filter(|digit| {
+                    !board.iter().enumerate().any(|(i, value)| {
+                        *value == *digit
+                            && (i / 6 == row
+                                || i % 6 == col
+                                || (i / 12 == row / 2 && i % 6 / 3 == col / 3))
+                    })
+                })
+                .collect()
+        }
+        fn count_solutions(board: &mut [u8; 36]) -> u8 {
+            let Some((index, options)) = board.iter().enumerate()
+                .filter(|(_, value)| **value == 0)
+                .map(|(i, _)| (i, candidates(board, i)))
+                .min_by_key(|(_, options)| options.len()) else {
+                return 1;
+            };
+            let mut count = 0;
+            for digit in options {
+                board[index] = digit;
+                count += count_solutions(board);
+                board[index] = 0;
+                if count >= 2 {
+                    break;
+                }
+            }
+            count
+        }
+
+        for difficulty in [SudokuDifficulty::Medium, SudokuDifficulty::Advanced] {
+            for variant in 0..36 {
+                let game = SudokuGame::with_size(6, variant, difficulty);
+                let mut board: [u8; 36] = game.cells[..36].try_into().unwrap();
+                assert_eq!(count_solutions(&mut board), 1);
+                while let Some((index, digit)) = (0..36).filter(|&i| board[i] == 0).find_map(|i| {
+                    match candidates(&board, i).as_slice() {
+                        [digit] => Some((i, *digit)),
+                        _ => None,
+                    }
+                }) {
+                    assert_eq!(digit, game.solution[index]);
+                    board[index] = digit;
+                }
+                assert_eq!(board.contains(&0), difficulty == SudokuDifficulty::Advanced);
+                for i in 0..36 {
+                    let mut solved: [u8; 36] = game.solution[..36].try_into().unwrap();
+                    solved[i] = 0;
+                    assert_eq!(candidates(&solved, i), [game.solution[i]]);
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn sudoku_six_clock_stops_on_completion_and_round_trips_through_save() {
+        let mut game = SudokuGame::with_size(6, 0, SudokuDifficulty::Advanced);
+        let second = Duration::from_secs(1);
+        game.select(0);
+        game.set_selected(3);
+        game.tick_clock(second);
+        assert!(game.elapsed.is_none());
+
+        game.select(13);
+        game.set_selected(7);
+        assert!(game.elapsed.is_none());
+        game.set_selected(3);
+        game.tick_clock(second);
+        let saved = serde_json::to_vec(&SudokuSave::from_game(&game)).unwrap();
+        let mut game = serde_json::from_slice::<SudokuSave>(&saved).unwrap().into_game().unwrap();
+        assert_eq!(game.difficulty, SudokuDifficulty::Advanced);
+        assert_eq!(game.elapsed, Some(second));
+        assert_eq!(game.cells[13], 3);
+
+        for i in 0..36 {
+            game.select(i);
+            game.set_selected(game.solution[i]);
+        }
+        assert!(game.won);
+        game.tick_clock(second);
+        assert_eq!(game.elapsed, Some(second));
+        game.reset();
+        assert!(!game.won);
+        assert!(game.elapsed.is_none());
+    }
+
+    #[test]
+    fn sudoku_random_round_restores_its_own_clues_and_solution() {
+        let mut game = SudokuGame::with_size(6, 0, SudokuDifficulty::Advanced);
+        let initial = game.puzzle;
+        game.new_puzzle();
+        assert_ne!(game.puzzle, initial);
+        game.hint();
+        game.tick_clock(Duration::from_secs(12));
+
+        let saved = serde_json::to_vec(&SudokuSave::from_game(&game)).unwrap();
+        let mut restored = serde_json::from_slice::<SudokuSave>(&saved)
+            .unwrap()
+            .into_game()
+            .unwrap();
+        assert_eq!(restored.puzzle, game.puzzle);
+        assert_eq!(restored.solution, game.solution);
+        assert_eq!(restored.cells, game.cells);
+        assert_eq!(restored.elapsed, game.elapsed);
+        assert_eq!(restored.selected, game.selected);
+        restored.reset();
+        assert_eq!(restored.cells, game.puzzle);
+        assert_eq!(restored.elapsed, None);
+    }
+
+    #[test]
+    fn sudoku_accepts_six_cell_saves_without_stored_clues() {
+        let mut game = SudokuGame::with_size(6, 27, SudokuDifficulty::Advanced);
+        game.hint();
+        let mut old_save = serde_json::to_value(SudokuSave::from_game(&game)).unwrap();
+        old_save.as_object_mut().unwrap().remove("givens");
+        let restored = serde_json::from_value::<SudokuSave>(old_save)
+            .unwrap()
+            .into_game()
+            .unwrap();
+        assert_eq!(restored.puzzle, game.puzzle);
+        assert_eq!(restored.cells, game.cells);
+        assert_eq!(restored.difficulty, game.difficulty);
+    }
+
+    #[test]
+    fn sudoku_accepts_saves_created_before_timed_challenges() {
+        let game = SudokuGame::with_size(4, 3, SudokuDifficulty::Medium);
+        let old_save = serde_json::json!({
+            "version": 1, "size": 4, "variant": 3, "cells": &game.cells[..16], "selected": 1
+        });
+        let restored = serde_json::from_value::<SudokuSave>(old_save).unwrap().into_game().unwrap();
+        assert_eq!(restored.cells, game.cells);
+        assert_eq!(restored.selected, Some(1));
+        assert!(restored.elapsed.is_none());
+    }
+
 }

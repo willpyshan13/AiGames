@@ -749,6 +749,60 @@ fn scenario(s: &Session) -> VecDeque<QaStep> {
             check(&mut p, "更换题目", |s| {
                 s.sudoku.variant == 1 && s.sudoku.size == 4
             });
+            click(&mut p, SudokuSize(6));
+            check(&mut p, "六宫格默认中级，16 个已知数", |s| {
+                s.sudoku.size == 6
+                    && s.sudoku.difficulty == super::retro::SudokuDifficulty::Medium
+                    && s.sudoku.cells[..36].iter().filter(|&&digit| digit != 0).count() == 16
+            });
+            click(&mut p, SudokuSelect(14));
+            p.push_back(QaStep::Wait(35));
+            check(&mut p, "仅选格不会开始计时", |s| s.sudoku.elapsed.is_none());
+            click(&mut p, SudokuDigit(4));
+            check(&mut p, "数字键填入正确答案", |s| {
+                s.sudoku.cells[14] == 4 && !s.sudoku.is_wrong(14)
+            });
+            click(&mut p, SudokuClear);
+            p.push_back(QaStep::Wait(35));
+            check(&mut p, "首次填数后开始正计时", |s| {
+                s.sudoku.elapsed.is_some_and(|time| time.as_secs() >= 1)
+            });
+            p.push_back(QaStep::Shot("six-medium"));
+            click(&mut p, Library);
+            p.push_back(QaStep::Wait(45));
+            check(&mut p, "游戏库暂停计时并保存", |s| {
+                s.library_open && s.sudoku.elapsed == load_sudoku().elapsed
+            });
+            click(&mut p, LibraryReturn);
+            p.push_back(QaStep::Wait(35));
+            check(&mut p, "返回原局后继续计时", |s| {
+                s.sudoku.elapsed > load_sudoku().elapsed
+            });
+            click(&mut p, SudokuDifficulty(super::retro::SudokuDifficulty::Advanced));
+            check(&mut p, "高级有 12 个已知数，从零计时", |s| {
+                s.sudoku.difficulty == super::retro::SudokuDifficulty::Advanced
+                    && s.sudoku.cells[..36].iter().filter(|&&digit| digit != 0).count() == 12
+                    && s.sudoku.elapsed.is_none()
+            });
+            click(&mut p, SudokuSelect(13));
+            click(&mut p, SudokuDigit(3));
+            click(&mut p, SudokuClear);
+            p.push_back(QaStep::Wait(35));
+            p.push_back(QaStep::Shot("six-advanced"));
+            click(&mut p, SudokuReset);
+            check(&mut p, "重来保留难度并清零", |s| {
+                s.sudoku.elapsed.is_none()
+                    && s.sudoku.difficulty == super::retro::SudokuDifficulty::Advanced
+            });
+            click(&mut p, SudokuHint);
+            click(&mut p, SudokuNew);
+            check(&mut p, "换题保留难度并清零", |s| {
+                s.sudoku.variant == 1
+                    && s.sudoku.elapsed.is_none()
+                    && s.sudoku.difficulty == super::retro::SudokuDifficulty::Advanced
+            });
+            click(&mut p, SudokuSize(9));
+            check(&mut p, "仍可切换到 9×9", |s| s.sudoku.size == 9);
         }
         GameMode::Breakout => {
             click(&mut p, BreakoutLaunch);
